@@ -32,7 +32,7 @@ public class GameNewsController {
     @GetMapping
     public PageResponse<GameNewsDto> list(
             @RequestParam(required = false) String q,
-            @PageableDefault(size = 10, sort = "gameTime", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(size = 10, sort = "gameStartTime", direction = Sort.Direction.DESC) Pageable pageable) {
         return PageResponse.from(gameNewsService.list(q, pageable));
     }
 

@@ -25,7 +25,7 @@
               </div>
             </div>
             <div class="game-info">
-              <span class="game-time">🕐 {{ formatTime(item.gameTime) }}</span>
+              <span class="game-time">🕐 {{ formatTimeRange(item.gameStartTime, item.gameEndTime) }}</span>
             </div>
             <div class="game-title">{{ item.title }}</div>
             <div class="game-summary">{{ item.summary }}</div>
@@ -62,8 +62,8 @@
           </template>
         </el-table-column>
         <el-table-column prop="summary" label="摘要" min-width="200" show-overflow-tooltip />
-        <el-table-column label="比赛时间" width="170">
-          <template #default="{ row }">{{ formatTime(row.gameTime) }}</template>
+        <el-table-column label="比赛时间" width="210">
+          <template #default="{ row }">{{ formatTimeRange(row.gameStartTime, row.gameEndTime) }}</template>
         </el-table-column>
         <el-table-column v-if="auth.isAdmin" label="操作" width="140" fixed="right">
           <template #default="{ row }">
@@ -86,7 +86,7 @@
       <template v-if="current">
         <div class="detail-meta">
           <el-tag :type="statusType(current.status)">{{ statusLabel(current.status) }}</el-tag>
-          <span class="detail-time">🕐 {{ formatTime(current.gameTime) }}</span>
+          <span class="detail-time">🕐 {{ formatTimeRange(current.gameStartTime, current.gameEndTime) }}</span>
         </div>
         <div class="detail-score" v-if="current.status === 'FINISHED'">
           <div class="score-box"><strong>{{ current.homeTeam }}</strong><span class="big-score">{{ current.homeScore }}</span></div>
@@ -139,17 +139,13 @@
         </el-row>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="比赛时间" prop="gameTime">
-              <el-date-picker v-model="form.gameTime" type="datetime" placeholder="选择时间" format="YYYY-MM-DD HH:mm" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%" />
+            <el-form-item label="开始时间" prop="gameStartTime">
+              <el-date-picker v-model="form.gameStartTime" type="datetime" placeholder="选择开始时间" format="YYYY-MM-DD HH:mm" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="状态" prop="status">
-              <el-select v-model="form.status" style="width:100%">
-                <el-option label="未开始" value="SCHEDULED" />
-                <el-option label="进行中" value="LIVE" />
-                <el-option label="已结束" value="FINISHED" />
-              </el-select>
+            <el-form-item label="结束时间" prop="gameEndTime">
+              <el-date-picker v-model="form.gameEndTime" type="datetime" placeholder="选择结束时间" format="YYYY-MM-DD HH:mm" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -189,7 +185,7 @@ const submitting = ref(false)
 const formRef = ref<FormInstance>()
 const form = reactive<GameNewsPayload>({
   title: '', summary: '', content: '', homeTeam: '', awayTeam: '',
-  homeScore: null, awayScore: null, gameTime: '', status: 'SCHEDULED',
+  homeScore: null, awayScore: null, gameStartTime: '', gameEndTime: '',
 })
 
 const todayStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
@@ -202,8 +198,20 @@ const rules: FormRules = {
   content: [{ required: true, message: '请输入内容', trigger: 'blur' }],
   homeTeam: [{ required: true, message: '请输入主队', trigger: 'blur' }],
   awayTeam: [{ required: true, message: '请输入客队', trigger: 'blur' }],
-  gameTime: [{ required: true, message: '请选择时间', trigger: 'change' }],
-  status: [{ required: true, message: '请选择状态', trigger: 'change' }],
+  gameStartTime: [{ required: true, message: '请选择开始时间', trigger: 'change' }],
+  gameEndTime: [
+    { required: true, message: '请选择结束时间', trigger: 'change' },
+    {
+      validator: (_rule: any, value: string, callback: (err?: Error) => void) => {
+        if (value && form.gameStartTime && value <= form.gameStartTime) {
+          callback(new Error('结束时间必须晚于开始时间'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change',
+    },
+  ],
 }
 
 function statusType(s: string) {
@@ -214,8 +222,22 @@ function statusLabel(s: string) {
   const map: Record<string, string> = { SCHEDULED: '未开始', LIVE: '进行中', FINISHED: '已结束' }
   return map[s] || s
 }
-function formatTime(t: string) {
+function formatTimeSingle(t: string) {
   return new Date(t).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+function formatDate(t: string) {
+  return new Date(t).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+}
+function formatHM(t: string) {
+  return new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+function formatTimeRange(start: string, end: string) {
+  const sDate = formatDate(start)
+  const eDate = formatDate(end)
+  if (sDate === eDate) {
+    return `${sDate} ${formatHM(start)} - ${formatHM(end)}`
+  }
+  return `${formatTimeSingle(start)} - ${formatTimeSingle(end)}`
 }
 
 async function load() {
@@ -266,8 +288,8 @@ function openEdit(item: GameNews) {
   form.awayTeam = item.awayTeam
   form.homeScore = item.homeScore
   form.awayScore = item.awayScore
-  form.gameTime = item.gameTime
-  form.status = item.status
+  form.gameStartTime = item.gameStartTime
+  form.gameEndTime = item.gameEndTime
   formVisible.value = true
 }
 
@@ -279,8 +301,8 @@ function resetForm() {
   form.awayTeam = ''
   form.homeScore = null
   form.awayScore = null
-  form.gameTime = ''
-  form.status = 'SCHEDULED'
+  form.gameStartTime = ''
+  form.gameEndTime = ''
   formRef.value?.resetFields()
 }
 
@@ -331,7 +353,9 @@ onMounted(() => {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-light);
 }
 .section-header h2 {
   margin: 0;
@@ -340,6 +364,17 @@ onMounted(() => {
   font-family: var(--font-heading);
   font-weight: 700;
   letter-spacing: 0.3px;
+  position: relative;
+}
+.section-header h2::after {
+  content: '';
+  position: absolute;
+  bottom: -13px;
+  left: 0;
+  width: 40px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  border-radius: 1px;
 }
 .date {
   color: var(--text-muted);
@@ -368,24 +403,38 @@ onMounted(() => {
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   z-index: 1;
 }
+.game-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 230, 118, 0.02) 0%, transparent 40%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--duration-normal) var(--ease-smooth);
+}
 .game-card--scheduled::before {
-  background: var(--warning);
+  background: linear-gradient(90deg, var(--warning), #FFB74D);
+  box-shadow: 0 0 12px var(--warning-glow);
 }
 .game-card--live::before {
-  background: var(--danger);
+  background: linear-gradient(90deg, var(--danger), #FF6B7A);
+  box-shadow: 0 0 12px var(--danger-glow);
   animation: livePulse 1.5s ease-in-out infinite;
 }
 .game-card--finished::before {
   background: var(--border-medium);
 }
 @keyframes livePulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%, 100% { opacity: 1; box-shadow: 0 0 12px var(--danger-glow); }
+  50% { opacity: 0.5; box-shadow: 0 0 20px var(--danger-glow); }
 }
 .game-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   border-color: var(--accent) !important;
-  box-shadow: 0 4px 20px rgba(0, 230, 118, 0.1) !important;
+  box-shadow: 0 8px 32px rgba(0, 230, 118, 0.12) !important;
+}
+.game-card:hover::after {
+  opacity: 1;
 }
 .game-teams {
   display: flex;
@@ -412,6 +461,7 @@ onMounted(() => {
   color: var(--accent);
   margin-top: 4px;
   font-family: var(--font-heading);
+  text-shadow: 0 0 20px var(--accent-glow);
 }
 .game-vs {
   display: flex;
@@ -427,19 +477,25 @@ onMounted(() => {
   letter-spacing: 2px;
 }
 .game-info {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .game-time {
   font-size: 12px;
   color: var(--text-muted);
+  padding: 4px 10px;
+  background: rgba(0, 230, 118, 0.04);
+  border-radius: var(--radius-sm);
+  display: inline-block;
+  border: 1px solid rgba(0, 230, 118, 0.06);
 }
 .game-title {
   font-weight: 700;
   font-size: 14px;
   color: var(--text-primary);
   font-family: var(--font-heading);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   letter-spacing: 0.2px;
+  line-height: 1.4;
 }
 .game-summary {
   font-size: 13px;
@@ -451,7 +507,7 @@ onMounted(() => {
   overflow: hidden;
 }
 .toolbar {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 .cell-title {
   display: flex;
@@ -461,12 +517,25 @@ onMounted(() => {
 .cell-link {
   color: var(--accent);
   cursor: pointer;
-  transition: color var(--duration-fast);
+  transition: all var(--duration-fast) var(--ease-smooth);
   font-weight: 500;
+  position: relative;
+}
+.cell-link::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: var(--accent);
+  transition: width var(--duration-normal) var(--ease-smooth);
 }
 .cell-link:hover {
   color: #33EB91;
-  text-decoration: underline;
+}
+.cell-link:hover::after {
+  width: 100%;
 }
 .mr-8 { margin-right: 8px; }
 .mx-4 { margin: 0 4px; color: var(--text-dim); font-weight: 600; }
@@ -504,59 +573,74 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 .detail-time {
   color: var(--text-muted);
   font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 .detail-score {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 20px;
-  padding: 16px 0;
+  gap: 24px;
+  padding: 20px 0;
+  background: linear-gradient(135deg, rgba(0, 230, 118, 0.03) 0%, rgba(0, 230, 118, 0.01) 100%);
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(0, 230, 118, 0.08);
 }
 .score-box {
   text-align: center;
+  min-width: 80px;
 }
 .score-box strong {
   display: block;
   font-size: 15px;
   color: var(--text-primary);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   font-family: var(--font-heading);
   font-weight: 700;
+  letter-spacing: 0.3px;
 }
 .big-score {
-  font-size: 40px;
+  font-size: 44px;
   font-weight: 700;
   color: var(--accent);
   font-family: var(--font-heading);
+  text-shadow: 0 0 30px var(--accent-glow);
+  line-height: 1;
 }
 .score-divider {
   font-size: 32px;
   font-weight: 300;
-  color: var(--text-muted);
+  color: var(--text-dim);
 }
 .detail-vs {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 30px;
-  padding: 20px 0;
+  gap: 32px;
+  padding: 24px 0;
+  background: linear-gradient(135deg, rgba(0, 230, 118, 0.02) 0%, transparent 100%);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-light);
 }
 .detail-team {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--text-primary);
   font-family: var(--font-heading);
+  letter-spacing: 0.3px;
 }
 .detail-vs-text {
-  font-size: 16px;
-  color: var(--text-muted);
+  font-size: 14px;
+  color: var(--text-dim);
   font-weight: 700;
-  letter-spacing: 2px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
 }
 .detail-content {
   font-size: 14px;

@@ -13,5 +13,5 @@ public record GameNewsRequest(
         @NotBlank @Size(max = 80) String awayTeam,
         Integer homeScore,
         Integer awayScore,
-        @NotNull LocalDateTime gameTime,
-        @NotBlank @Size(max = 16) String status) {}
+        @NotNull LocalDateTime gameStartTime,
+        @NotNull LocalDateTime gameEndTime) {}
