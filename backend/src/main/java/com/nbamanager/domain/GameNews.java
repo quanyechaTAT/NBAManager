@@ -50,15 +50,13 @@ public class GameNews {
     @Column(nullable = true)
     private Integer awayScore;
 
-    /** 比赛时间 */
+    /** 比赛开始时间 */
     @Column(nullable = false)
-    private LocalDateTime gameTime;
+    private LocalDateTime gameStartTime;
 
-    /**
-     * 比赛状态：SCHEDULED-未开始, LIVE-进行中, FINISHED-已结束
-     */
-    @Column(nullable = false, length = 16)
-    private String status;
+    /** 比赛结束时间 */
+    @Column(nullable = false)
+    private LocalDateTime gameEndTime;
 
     /** 创建时间 */
     @Column(nullable = false)

@@ -7,7 +7,6 @@ import com.nbamanager.web.dto.GameNewsDto;
 import com.nbamanager.web.dto.GameNewsRequest;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -87,15 +86,30 @@ public class GameNewsService {
         g.setAwayTeam(req.awayTeam());
         g.setHomeScore(req.homeScore());
         g.setAwayScore(req.awayScore());
-        g.setGameTime(req.gameTime());
-        g.setStatus(req.status());
+        g.setGameStartTime(req.gameStartTime());
+        g.setGameEndTime(req.gameEndTime());
+    }
+
+    /**
+     * 根据当前时间自动计算比赛状态：
+     * - 当前时间 < 开始时间 → SCHEDULED（未开始）
+     * - 开始时间 <= 当前时间 <= 结束时间 → LIVE（进行中）
+     * - 当前时间 > 结束时间 → FINISHED（已结束）
+     */
+    private String calcStatus(LocalDateTime startTime, LocalDateTime endTime) {
+        LocalDateTime now = LocalDateTime.now();
+        if (now.isBefore(startTime)) return "SCHEDULED";
+        if (now.isAfter(endTime)) return "FINISHED";
+        return "LIVE";
     }
 
     private GameNewsDto toDto(GameNews g) {
         return new GameNewsDto(
                 g.getId(), g.getTitle(), g.getSummary(), g.getContent(),
                 g.getHomeTeam(), g.getAwayTeam(), g.getHomeScore(), g.getAwayScore(),
-                g.getGameTime(), g.getStatus(), g.getCreateTime());
+                g.getGameStartTime(), g.getGameEndTime(),
+                calcStatus(g.getGameStartTime(), g.getGameEndTime()),
+                g.getCreateTime());
     }
 
     private static ApiException notFound(Long id) {

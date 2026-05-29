@@ -11,6 +11,7 @@ public record GameNewsDto(
         String awayTeam,
         Integer homeScore,
         Integer awayScore,
-        LocalDateTime gameTime,
+        LocalDateTime gameStartTime,
+        LocalDateTime gameEndTime,
         String status,
         LocalDateTime createTime) {}

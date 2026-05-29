@@ -9,8 +9,8 @@ export interface GameNewsPayload {
   awayTeam: string
   homeScore: number | null
   awayScore: number | null
-  gameTime: string
-  status: string
+  gameStartTime: string
+  gameEndTime: string
 }
 
 /** 分页获取赛事资讯 */

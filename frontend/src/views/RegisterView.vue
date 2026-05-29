@@ -195,6 +195,28 @@ h1 {
   box-shadow: var(--shadow-lg) !important;
   position: relative;
   z-index: 1;
+  overflow: hidden;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-light), var(--accent));
+  z-index: 2;
+}
+.card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 120px;
+  background: linear-gradient(180deg, rgba(0, 230, 118, 0.04) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
 }
 .card-head {
   margin-bottom: 24px;
@@ -249,16 +271,22 @@ h1 {
   font-weight: 700 !important;
   font-family: var(--font-body);
   letter-spacing: 0.5px;
-  background: var(--accent) !important;
+  background: linear-gradient(135deg, var(--accent) 0%, #00C868 100%) !important;
   border-color: var(--accent) !important;
   color: #0D1117 !important;
   transition: all var(--duration-fast) var(--ease-smooth) !important;
+  box-shadow: 0 2px 12px var(--accent-glow);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 .login-btn:hover {
-  background: #33EB91 !important;
+  background: linear-gradient(135deg, #33EB91 0%, #00E676 100%) !important;
   border-color: #33EB91 !important;
-  box-shadow: 0 4px 16px var(--accent-glow);
-  transform: translateY(-1px);
+  box-shadow: 0 6px 24px var(--accent-glow-strong);
+  transform: translateY(-2px);
+}
+.login-btn:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 1px 4px var(--accent-glow);
 }
 .link-row {
   text-align: center;

@@ -318,6 +318,8 @@ onMounted(async () => {
   align-items: flex-start;
   gap: 16px;
   margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-light);
 }
 .section-head h2 {
   margin: 0 0 6px;
@@ -326,6 +328,17 @@ onMounted(async () => {
   font-size: 20px;
   font-weight: 700;
   letter-spacing: 0.3px;
+  position: relative;
+}
+.section-head h2::after {
+  content: '';
+  position: absolute;
+  bottom: -17px;
+  left: 0;
+  width: 40px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  border-radius: 1px;
 }
 .section-head p {
   margin: 0;

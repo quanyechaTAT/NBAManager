@@ -158,9 +158,19 @@ async function submitPwd() {
   background: var(--bg-sidebar);
   color: var(--text-primary);
   border-right: 1px solid var(--border-light);
-  box-shadow: 1px 0 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 1px 0 12px rgba(0, 0, 0, 0.3);
   position: relative;
   overflow: hidden;
+}
+.aside::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1px;
+  height: 100%;
+  background: linear-gradient(180deg, var(--accent-glow) 0%, transparent 30%, transparent 70%, var(--accent-glow) 100%);
+  z-index: 2;
 }
 .brand {
   display: flex;
@@ -170,6 +180,7 @@ async function submitPwd() {
   border-bottom: 1px solid var(--border-light);
   position: relative;
   z-index: 1;
+  background: linear-gradient(180deg, rgba(0, 230, 118, 0.03) 0%, transparent 100%);
 }
 .logo {
   width: 72px;
@@ -229,6 +240,7 @@ async function submitPwd() {
   background: rgba(0, 230, 118, 0.08) !important;
   color: var(--accent) !important;
   font-weight: 600;
+  box-shadow: inset 0 0 16px rgba(0, 230, 118, 0.04);
 }
 :deep(.el-menu-item.is-active::before) {
   content: '';
@@ -238,8 +250,9 @@ async function submitPwd() {
   transform: translateY(-50%);
   width: 3px;
   height: 20px;
-  background: var(--accent);
+  background: linear-gradient(180deg, var(--accent-light), var(--accent));
   border-radius: 0 3px 3px 0;
+  box-shadow: 0 0 8px var(--accent-glow);
 }
 .header {
   display: flex;
@@ -247,11 +260,13 @@ async function submitPwd() {
   justify-content: space-between;
   height: 60px;
   background: var(--bg-header);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border-light);
   padding: 0 28px;
   position: relative;
   z-index: 1;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 .title {
   font-size: 18px;
