@@ -9,9 +9,9 @@ import com.nbamanager.repository.GameNewsRepository;
 import com.nbamanager.repository.PlayerRepository;
 import com.nbamanager.repository.TeamRepository;
 import com.nbamanager.repository.UserAccountRepository;
+import jakarta.persistence.EntityManager;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +32,7 @@ public class DataInitializer {
     private final PlayerRepository playerRepository;
     private final GameNewsRepository gameNewsRepository;
     private final PasswordEncoder passwordEncoder;
+    private final EntityManager entityManager;
 
     @Bean
     @Transactional
@@ -63,6 +64,17 @@ public class DataInitializer {
                     }
                 }
                 playerRepository.saveAll(allPlayers);
+            }
+
+            // 迁移旧数据：将遗留的 game_time 列数据填充到 game_start_time / game_end_time
+            @SuppressWarnings("unchecked")
+            List<Object[]> nullRows = entityManager.createNativeQuery(
+                    "SELECT id FROM game_news WHERE game_start_time IS NULL").getResultList();
+            if (!nullRows.isEmpty()) {
+                log.info("迁移旧赛事资讯的时间数据（共{}条）...", nullRows.size());
+                entityManager.createNativeQuery(
+                        "UPDATE game_news SET game_start_time = game_time, game_end_time = DATE_ADD(game_time, INTERVAL 2 HOUR) WHERE game_start_time IS NULL")
+                        .executeUpdate();
             }
         };
     }
@@ -119,27 +131,27 @@ public class DataInitializer {
             newsList.add(news("🔥 湖人 VS 勇士巅峰对决", "詹姆斯与库里再度交锋，湖人主场迎战勇士",
                     "洛杉矶湖人队将在斯台普斯中心迎战金州勇士队。两队本赛季状态火热，詹姆斯场均25.7分，库里场均26.4分。本场比赛将是西部季后赛卡位战的关键一战，双方必将全力以赴。",
                     "湖人", "勇士", null, null,
-                    today.atTime(10, 30), "SCHEDULED"));
+                    today.atTime(10, 30), today.atTime(12, 30)));
             newsList.add(news("🏆 凯尔特人冲击连胜纪录", "东部霸主凯尔特人力争十连胜",
                     "波士顿凯尔特人目前以64胜18负的战绩领跑全联盟，塔图姆和布朗双探花组合发挥出色。他们将在主场迎战雄鹿队，若能取胜将创造本赛季最长连胜纪录。",
                     "凯尔特人", "雄鹿", null, null,
-                    today.atTime(12, 0), "SCHEDULED"));
+                    today.atTime(13, 0), today.atTime(15, 0)));
             newsList.add(news("⚡ 掘金主场迎战太阳，西部强强对话", "约基奇对阵杜兰特，MVP级别的较量",
                     "丹佛掘金队将在主场迎战菲尼克斯太阳队。约基奇本赛季场均26.4分12.4篮板9.0助攻，几乎场均三双。杜兰特则场均27.1分，两位超级巨星的对决令人期待。",
                     "掘金", "太阳", null, null,
-                    today.atTime(14, 30), "SCHEDULED"));
+                    today.atTime(15, 30), today.atTime(17, 30)));
             newsList.add(news("📊 本周东西部排名分析", "常规赛收官阶段，各队冲刺季后赛",
                     "随着常规赛进入收官阶段，东西部的排名争夺愈发激烈。东部方面凯尔特人已锁定第一，雄鹿、骑士紧随其后。西部方面掘金、湖人、勇士的排名仍在变动，最后几场比赛将决定最终座次。",
                     "全联盟", "全联盟", null, null,
-                    today.atTime(16, 0), "SCHEDULED"));
+                    today.atTime(18, 0), today.atTime(20, 0)));
             newsList.add(news("🏀 湖人 112:108 勇士 — 加时险胜！", "詹姆斯砍下32分，湖人加时逆转勇士",
                     "在刚刚结束的焦点战中，洛杉矶湖人队通过加时赛以112比108险胜金州勇士队。勒布朗·詹姆斯全场贡献32分8篮板7助攻，安东尼·戴维斯也有28分14篮板的出色表现。库里虽然命中6记三分砍下30分，但未能帮助球队取胜。",
                     "湖人", "勇士", 112, 108,
-                    today.atTime(8, 0), "FINISHED"));
+                    today.atTime(6, 0), today.atTime(8, 0)));
             newsList.add(news("🎯 凯尔特人 120:105 雄鹿 — 豪取十连胜", "塔图姆35分率队大胜",
                     "凯尔特人延续火热状态，以120比105击败雄鹿，豪取十连胜。杰森·塔图姆砍下35分9篮板，杰伦·布朗也有26分进账。雄鹿方面字母哥虽然拿下31分，但独木难支。",
                     "凯尔特人", "雄鹿", 120, 105,
-                    today.atTime(9, 0), "FINISHED"));
+                    today.atTime(7, 0), today.atTime(9, 0)));
             gameNewsRepository.saveAll(newsList);
     }
 
@@ -168,7 +180,7 @@ public class DataInitializer {
     private static GameNews news(String title, String summary, String content,
                                   String homeTeam, String awayTeam,
                                   Integer homeScore, Integer awayScore,
-                                  LocalDateTime gameTime, String status) {
+                                  LocalDateTime gameStartTime, LocalDateTime gameEndTime) {
         GameNews g = new GameNews();
         g.setTitle(title);
         g.setSummary(summary);
@@ -177,8 +189,8 @@ public class DataInitializer {
         g.setAwayTeam(awayTeam);
         g.setHomeScore(homeScore);
         g.setAwayScore(awayScore);
-        g.setGameTime(gameTime);
-        g.setStatus(status);
+        g.setGameStartTime(gameStartTime);
+        g.setGameEndTime(gameEndTime);
         g.setCreateTime(LocalDateTime.now());
         return g;
     }

@@ -258,6 +258,8 @@ onMounted(async () => {
   align-items: flex-start;
   gap: 16px;
   margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-light);
 }
 .section-head h2 {
   margin: 0 0 6px;
@@ -266,6 +268,17 @@ onMounted(async () => {
   font-size: 20px;
   font-weight: 700;
   letter-spacing: 0.3px;
+  position: relative;
+}
+.section-head h2::after {
+  content: '';
+  position: absolute;
+  bottom: -17px;
+  left: 0;
+  width: 40px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  border-radius: 1px;
 }
 .section-head p {
   margin: 0;
@@ -315,6 +328,23 @@ onMounted(async () => {
   border-radius: var(--radius-lg);
   padding: 20px;
   height: 100%;
+  transition: all var(--duration-normal) var(--ease-smooth);
+  position: relative;
+  overflow: hidden;
+}
+.rank-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-light), transparent);
+  opacity: 0.5;
+}
+.rank-card:hover {
+  border-color: var(--border-medium);
+  box-shadow: var(--shadow-md);
 }
 .rank-header {
   margin-bottom: 12px;
@@ -356,9 +386,10 @@ onMounted(async () => {
 }
 .rank-row-head:hover { background: transparent; }
 .rank-first {
-  background: rgba(0, 230, 118, 0.06);
+  background: linear-gradient(90deg, rgba(0, 230, 118, 0.08), rgba(0, 230, 118, 0.02));
   border-radius: var(--radius-sm);
   border-left: 2px solid var(--accent);
+  box-shadow: 0 0 12px rgba(0, 230, 118, 0.05);
 }
 .rank-no { width: 28px; text-align: center; color: var(--text-muted); font-size: 13px; font-weight: 600; }
 .rank-no-gold { color: var(--accent); }

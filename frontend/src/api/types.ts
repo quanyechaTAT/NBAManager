@@ -51,7 +51,8 @@ export interface GameNews {
   awayTeam: string
   homeScore: number | null
   awayScore: number | null
-  gameTime: string
+  gameStartTime: string
+  gameEndTime: string
   status: 'SCHEDULED' | 'LIVE' | 'FINISHED'
   createTime: string
 }
