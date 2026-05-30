@@ -56,3 +56,14 @@ export interface GameNews {
   status: 'SCHEDULED' | 'LIVE' | 'FINISHED'
   createTime: string
 }
+
+export interface MatchRecord {
+  id: number
+  homeTeam: string
+  awayTeam: string
+  homeScore: number
+  awayScore: number
+  matchDate: string
+  season: string
+  status: 'SCHEDULED' | 'LIVE' | 'FINISHED'
+}
