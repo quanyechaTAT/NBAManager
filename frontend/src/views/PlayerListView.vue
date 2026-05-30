@@ -1,5 +1,17 @@
 <template>
-  <el-card shadow="never" class="card">
+  <div class="page-wrapper animated-bg">
+    <!-- 浮动光晕粒子 -->
+    <div class="bg-particles">
+      <div class="particle"></div>
+      <div class="particle"></div>
+      <div class="particle"></div>
+      <div class="particle"></div>
+    </div>
+    <!-- 科技网格线 -->
+    <div class="bg-grid"></div>
+
+    <div class="page-inner">
+    <el-card shadow="never" class="card slide-up-enter">
     <div class="section-head">
       <div>
         <h2>球员资料</h2>
@@ -83,6 +95,8 @@
       </template>
     </el-dialog>
   </el-card>
+  </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -300,6 +314,12 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.page-wrapper {
+  min-height: calc(100vh - 108px);
+  position: relative;
+  border-radius: var(--radius-lg);
+  padding: 0;
+}
 .head-actions {
   display: flex;
   gap: 12px;
@@ -320,6 +340,17 @@ onMounted(async () => {
   margin-bottom: 20px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border-light);
+  position: relative;
+}
+.section-head::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 40px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--purple), transparent);
+  border-radius: 1px;
 }
 .section-head h2 {
   margin: 0 0 6px;
@@ -328,17 +359,6 @@ onMounted(async () => {
   font-size: 20px;
   font-weight: 700;
   letter-spacing: 0.3px;
-  position: relative;
-}
-.section-head h2::after {
-  content: '';
-  position: absolute;
-  bottom: -17px;
-  left: 0;
-  width: 40px;
-  height: 2px;
-  background: linear-gradient(90deg, var(--accent), transparent);
-  border-radius: 1px;
 }
 .section-head p {
   margin: 0;
@@ -354,9 +374,11 @@ onMounted(async () => {
   max-width: 1100px;
   background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
-  border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-sm) !important;
+  border-radius: var(--radius-xl) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24) !important;
   transition: all var(--duration-normal) var(--ease-smooth);
+  position: relative;
+  z-index: 1;
 }
 :deep(.el-input__wrapper) {
   background: #1C2333 !important;
@@ -368,8 +390,8 @@ onMounted(async () => {
   border-color: var(--border-medium) !important;
 }
 :deep(.el-input__wrapper.is-focus) {
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 0 2px var(--accent-glow) !important;
+  border-color: var(--purple) !important;
+  box-shadow: 0 0 0 2px var(--purple-glow) !important;
 }
 :deep(.el-input__inner) { color: var(--text-primary) !important; font-family: var(--font-body); }
 :deep(.el-input__inner::placeholder) { color: var(--text-dim) !important; }
@@ -385,8 +407,8 @@ onMounted(async () => {
   border-color: var(--border-medium) !important;
 }
 :deep(.el-select .el-select__wrapper.is-focused) {
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 0 2px var(--accent-glow) !important;
+  border-color: var(--purple) !important;
+  box-shadow: 0 0 0 2px var(--purple-glow) !important;
 }
 :deep(.el-select .el-select__placeholder),
 :deep(.el-select .el-select__selected-item span) {
@@ -400,8 +422,8 @@ onMounted(async () => {
   color: var(--text-muted) !important;
 }
 :deep(.el-select .el-tag) {
-  background: rgba(0, 230, 118, 0.1) !important;
-  border-color: rgba(0, 230, 118, 0.25) !important;
-  color: var(--accent) !important;
+  background: var(--purple-dim) !important;
+  border-color: rgba(108, 92, 231, 0.25) !important;
+  color: var(--purple-light) !important;
 }
 </style>

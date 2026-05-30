@@ -6,12 +6,14 @@ import com.nbamanager.exception.ApiException;
 import com.nbamanager.repository.UserAccountRepository;
 import com.nbamanager.security.JwtService;
 import com.nbamanager.security.UserPrincipal;
+import com.nbamanager.service.NbaDataSyncService;
 import com.nbamanager.web.dto.ChangePasswordRequest;
 import com.nbamanager.web.dto.LoginRequest;
 import com.nbamanager.web.dto.LoginResponse;
 import com.nbamanager.web.dto.RegisterRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -28,12 +30,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+@Slf4j
 public class AuthController {
 
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final UserAccountRepository userAccountRepository;
     private final PasswordEncoder passwordEncoder;
+    private final NbaDataSyncService dataSyncService;
 
     @PostMapping("/login")
     public LoginResponse login(@Valid @RequestBody LoginRequest request) {
@@ -42,6 +46,13 @@ public class AuthController {
                         new UsernamePasswordAuthenticationToken(request.username(), request.password()));
         UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
         String token = jwtService.generateToken(principal.getUsername(), principal.getRole());
+
+        // 管理员登录时触发数据同步
+        if (principal.getRole() == Role.ADMIN) {
+            log.info("管理员 {} 登录成功，触发NBA数据同步", principal.getUsername());
+            dataSyncService.syncAll(); // 异步执行，不会阻塞登录
+        }
+
         return new LoginResponse(token, principal.getUsername(), principal.getRole());
     }
 

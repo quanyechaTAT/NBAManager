@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth'
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior: () => ({ top: 0 }),
   routes: [
     {
       path: '/login',
@@ -33,7 +34,13 @@ const router = createRouter({
           path: 'teams',
           name: 'teams',
           component: () => import('@/views/TeamListView.vue'),
-          meta: { title: '球队数据' },
+          meta: { title: '球队战绩' },
+        },
+        {
+          path: 'teams/detail',
+          name: 'team-detail',
+          component: () => import('@/views/TeamDetailView.vue'),
+          meta: { title: '球队详情' },
         },
         {
           path: 'players',
