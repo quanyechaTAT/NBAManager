@@ -11,23 +11,49 @@
         </div>
       </div>
       <el-menu :default-active="active" router class="side-menu">
-        <el-menu-item index="/dashboard">📊 数据看板</el-menu-item>
-        <el-menu-item index="/teams">🏀 球队数据</el-menu-item>
-        <el-menu-item index="/players">⭐ 球员数据</el-menu-item>
-        <el-menu-item index="/news">📰 赛事资讯</el-menu-item>
+        <el-menu-item index="/dashboard">
+          <el-icon><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></el-icon>
+          <span>数据看板</span>
+        </el-menu-item>
+        <el-menu-item index="/teams">
+          <el-icon><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></el-icon>
+          <span>球队战绩</span>
+        </el-menu-item>
+        <el-menu-item index="/players">
+          <el-icon><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></el-icon>
+          <span>球员数据</span>
+        </el-menu-item>
+        <el-menu-item index="/news">
+          <el-icon><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/></svg></el-icon>
+          <span>赛事资讯</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
       <el-header class="header">
-        <span class="title">{{ pageTitle }}</span>
+        <div class="header-left">
+          <span class="title">{{ detailTeamName || pageTitle }}</span>
+        </div>
         <div class="right">
-          <el-tag :type="auth.isAdmin ? 'warning' : 'info'" effect="light">{{ roleLabel }}</el-tag>
+          <el-tag :type="auth.isAdmin ? 'warning' : 'info'" effect="light" class="role-tag">{{ roleLabel }}</el-tag>
+          <div class="user-avatar">
+            <span>{{ auth.username?.charAt(0)?.toUpperCase() }}</span>
+          </div>
           <span class="user">{{ auth.username }}</span>
-          <el-button class="logout-btn" link @click="showPwdDialog = true">修改密码</el-button>
-          <el-button class="logout-btn" link @click="onLogout">退出</el-button>
+          <el-dropdown trigger="click">
+            <el-button class="more-btn" link>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="showPwdDialog = true">修改密码</el-dropdown-item>
+                <el-dropdown-item divided @click="onLogout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </el-header>
-      <el-main class="main">
+      <el-main class="main" ref="mainRef">
         <router-view />
       </el-main>
     </el-container>
@@ -54,7 +80,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
@@ -64,12 +90,28 @@ import { changePasswordApi } from '@/api/auth'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const mainRef = ref<{ $el: HTMLElement } | null>(null)
+
+// 路由变化时滚动到顶部
+watch(() => route.path, () => {
+  if (mainRef.value?.$el) {
+    mainRef.value.$el.scrollTop = 0
+  }
+})
 
 const active = computed(() => {
   if (route.path.startsWith('/teams')) return '/teams'
   if (route.path.startsWith('/players')) return '/players'
   if (route.path.startsWith('/news')) return '/news'
   return '/dashboard'
+})
+
+// 球队详情页标题显示球队名称
+const detailTeamName = computed(() => {
+  if (route.name === 'team-detail') {
+    return (route.query.name as string) || '球队详情'
+  }
+  return null
 })
 
 const pageTitle = computed(() => (route.meta.title as string) || '')
@@ -158,19 +200,8 @@ async function submitPwd() {
   background: var(--bg-sidebar);
   color: var(--text-primary);
   border-right: 1px solid var(--border-light);
-  box-shadow: 1px 0 12px rgba(0, 0, 0, 0.3);
   position: relative;
   overflow: hidden;
-}
-.aside::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 1px;
-  height: 100%;
-  background: linear-gradient(180deg, var(--accent-glow) 0%, transparent 30%, transparent 70%, var(--accent-glow) 100%);
-  z-index: 2;
 }
 .brand {
   display: flex;
@@ -180,7 +211,6 @@ async function submitPwd() {
   border-bottom: 1px solid var(--border-light);
   position: relative;
   z-index: 1;
-  background: linear-gradient(180deg, rgba(0, 230, 118, 0.03) 0%, transparent 100%);
 }
 .logo {
   width: 72px;
@@ -215,14 +245,17 @@ async function submitPwd() {
   letter-spacing: 1.5px;
   text-transform: uppercase;
 }
+
+/* 侧边栏菜单 */
 :deep(.el-menu) {
   background: transparent !important;
   border-right: none !important;
   position: relative;
   z-index: 1;
+  padding: 8px 0;
 }
 :deep(.el-menu-item) {
-  margin: 4px 12px;
+  margin: 2px 12px;
   border-radius: var(--radius-md);
   color: var(--text-secondary) !important;
   font-size: 14px;
@@ -231,16 +264,22 @@ async function submitPwd() {
   transition: all var(--duration-fast) var(--ease-smooth) !important;
   position: relative;
   letter-spacing: 0.2px;
+  height: 42px;
+  line-height: 42px;
+}
+:deep(.el-menu-item .el-icon) {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
 }
 :deep(.el-menu-item:hover) {
   background: var(--bg-hover) !important;
   color: var(--text-primary) !important;
 }
 :deep(.el-menu-item.is-active) {
-  background: rgba(0, 230, 118, 0.08) !important;
-  color: var(--accent) !important;
+  background: var(--purple-dim) !important;
+  color: var(--purple-light) !important;
   font-weight: 600;
-  box-shadow: inset 0 0 16px rgba(0, 230, 118, 0.04);
 }
 :deep(.el-menu-item.is-active::before) {
   content: '';
@@ -250,10 +289,11 @@ async function submitPwd() {
   transform: translateY(-50%);
   width: 3px;
   height: 20px;
-  background: linear-gradient(180deg, var(--accent-light), var(--accent));
+  background: linear-gradient(180deg, var(--purple-light), var(--purple));
   border-radius: 0 3px 3px 0;
-  box-shadow: 0 0 8px var(--accent-glow);
 }
+
+/* 顶部栏 */
 .header {
   display: flex;
   align-items: center;
@@ -266,7 +306,9 @@ async function submitPwd() {
   padding: 0 28px;
   position: relative;
   z-index: 1;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+.header-left {
+  flex: 0 0 auto;
 }
 .title {
   font-size: 18px;
@@ -278,25 +320,83 @@ async function submitPwd() {
 .right {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
+}
+.role-tag {
+  border-radius: 20px !important;
+  font-size: 12px !important;
+  padding: 0 10px !important;
+}
+.user-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--purple), var(--cyan));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-heading);
+  flex-shrink: 0;
 }
 .user {
   color: var(--text-secondary);
   font-size: 14px;
   font-weight: 500;
 }
-.logout-btn {
+.more-btn {
   color: var(--text-muted) !important;
-  font-size: 14px;
-  transition: color var(--duration-fast) var(--ease-smooth) !important;
+  padding: 4px !important;
 }
-.logout-btn:hover {
-  color: var(--accent) !important;
+.more-btn svg {
+  width: 20px;
+  height: 20px;
 }
+.more-btn:hover {
+  color: var(--text-primary) !important;
+}
+
+/* 主内容区 */
 .main {
   background: var(--bg-page);
   min-height: calc(100vh - 60px);
   padding: 24px;
+  position: relative;
+  z-index: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.main::before {
+  content: '';
+  position: fixed;
+  top: 60px;
+  left: 220px;
+  right: 0;
+  bottom: 0;
+  background: url('/images/login-bg.png') center / cover no-repeat;
+  opacity: 0.06;
+  pointer-events: none;
+  z-index: 0;
+}
+.main::after {
+  content: '';
+  position: fixed;
+  top: 60px;
+  left: 220px;
+  right: 0;
+  bottom: 0;
+  background-image:
+    linear-gradient(rgba(108, 92, 231, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(108, 92, 231, 0.015) 1px, transparent 1px);
+  background-size: 80px 80px;
+  pointer-events: none;
+  z-index: 0;
+  mask-image: radial-gradient(ellipse at 50% 30%, rgba(0,0,0,0.5) 0%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 30%, rgba(0,0,0,0.5) 0%, transparent 70%);
+}
+.main > * {
   position: relative;
   z-index: 1;
 }

@@ -9,4 +9,6 @@ public interface TeamRepository extends JpaRepository<Team, Long> {
 
     Page<Team> findByNameContainingIgnoreCaseOrCityContainingIgnoreCase(
             String name, String city, Pageable pageable);
+
+    Team findByName(String name);
 }

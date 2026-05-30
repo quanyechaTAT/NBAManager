@@ -1,12 +1,25 @@
 <template>
-  <div class="page">
+  <div class="page animated-bg">
+    <!-- 浮动光晕粒子 -->
+    <div class="bg-particles">
+      <div class="particle"></div>
+      <div class="particle"></div>
+      <div class="particle"></div>
+      <div class="particle"></div>
+    </div>
+    <!-- 科技网格线 -->
+    <div class="bg-grid"></div>
+
+    <div class="page-inner stagger-in">
     <!-- 今日赛事卡片 -->
     <div class="section-header">
-      <h2>📅 今日赛事</h2>
-      <span class="date">{{ todayStr }}</span>
+      <div class="section-header-left">
+        <h2>📅 今日赛事</h2>
+        <span class="date">{{ todayStr }}</span>
+      </div>
       <el-button v-if="auth.isAdmin" type="primary" size="small" @click="openCreate">+ 新增资讯</el-button>
     </div>
-    <el-row :gutter="16" class="today-games" v-loading="todayLoading">
+    <el-row :gutter="16" class="today-games stagger-in" v-loading="todayLoading">
       <template v-if="todayNews.length">
         <el-col :xs="24" :sm="12" :md="8" v-for="item in todayNews" :key="item.id">
           <el-card shadow="hover" class="game-card" :class="`game-card--${item.status.toLowerCase()}`" @click="showDetail(item)">
@@ -36,12 +49,21 @@
     </el-row>
 
     <!-- 全部资讯列表 -->
-    <div class="section-header" style="margin-top: 28px;">
-      <h2>📰 全部资讯</h2>
+    <div class="section-header slide-up-enter" style="margin-top: 28px; animation-delay: 0.3s;">
+      <div class="section-header-left">
+        <h2>📰 全部资讯</h2>
+        <span class="section-sub">赛事资讯汇总</span>
+      </div>
     </div>
-    <el-card shadow="never">
+    <el-card shadow="never" class="news-list-card">
       <div class="toolbar">
-        <el-input v-model="q" placeholder="搜索标题/球队..." clearable style="width: 280px" @keyup.enter="load" @clear="load" />
+        <div class="search-input-wrap">
+          <svg class="search-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input v-model="q" class="search-input" type="text" placeholder="搜索标题/球队..." @keyup.enter="load" />
+          <button v-if="q" class="search-clear" @click="q = ''; load()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
       </div>
       <el-table :data="list" stripe v-loading="loading">
         <el-table-column prop="title" label="标题" min-width="280">
@@ -155,6 +177,7 @@
         <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
       </template>
     </el-dialog>
+    </div>
   </div>
 </template>
 
@@ -348,14 +371,23 @@ onMounted(() => {
 <style scoped>
 .page {
   padding: 4px 0;
+  min-height: calc(100vh - 108px);
+  position: relative;
+  border-radius: var(--radius-lg);
 }
 .section-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
   margin-bottom: 16px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border-light);
+}
+.section-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .section-header h2 {
   margin: 0;
@@ -364,17 +396,10 @@ onMounted(() => {
   font-family: var(--font-heading);
   font-weight: 700;
   letter-spacing: 0.3px;
-  position: relative;
 }
-.section-header h2::after {
-  content: '';
-  position: absolute;
-  bottom: -13px;
-  left: 0;
-  width: 40px;
-  height: 2px;
-  background: linear-gradient(90deg, var(--accent), transparent);
-  border-radius: 1px;
+.section-sub {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 .date {
   color: var(--text-muted);
@@ -508,6 +533,73 @@ onMounted(() => {
 }
 .toolbar {
   margin-bottom: 16px;
+}
+.news-list-card {
+  overflow: visible;
+}
+/* 搜索栏 */
+.search-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  transition: all var(--duration-fast) var(--ease-smooth);
+  max-width: 320px;
+}
+.search-input-wrap:hover {
+  border-color: var(--border-medium);
+}
+.search-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+.search-input-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.search-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font-body);
+  letter-spacing: 0.2px;
+  min-width: 180px;
+}
+.search-input::placeholder {
+  color: var(--text-dim);
+}
+.search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: var(--border-light);
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  transition: all var(--duration-fast) var(--ease-smooth);
+  flex-shrink: 0;
+}
+.search-clear svg {
+  width: 11px;
+  height: 11px;
+  color: var(--text-muted);
+}
+.search-clear:hover {
+  background: var(--border-medium);
+}
+.search-clear:hover svg {
+  color: var(--text-primary);
 }
 .cell-title {
   display: flex;

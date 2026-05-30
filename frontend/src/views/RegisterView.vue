@@ -1,6 +1,14 @@
 <template>
-  <div class="wrap">
-    <div class="hero">
+  <div class="wrap animated-bg">
+    <!-- 浮动光晕粒子 -->
+    <div class="bg-particles">
+      <div class="particle"></div>
+      <div class="particle"></div>
+      <div class="particle"></div>
+      <div class="particle"></div>
+    </div>
+
+    <div class="hero slide-up-enter">
       <p class="eyebrow">NBA DATA CENTER</p>
       <h1>NBA 数据分析系统</h1>
       <p class="desc">集中管理球队与球员基础数据，提供清晰的列表维护、权限控制和可视化看板。</p>
@@ -11,7 +19,7 @@
       </div>
     </div>
 
-    <el-card class="card" shadow="always">
+    <el-card class="card slide-up-enter" shadow="always" style="animation-delay: 0.15s;">
       <div class="card-head">
         <h2>注册新账号</h2>
         <p>创建账号即可开始使用系统</p>
@@ -138,7 +146,6 @@ async function submit() {
   color: var(--text-primary);
   position: relative;
   z-index: 1;
-
 }
 .eyebrow {
   margin: 0 0 18px;

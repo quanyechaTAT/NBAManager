@@ -1,10 +1,22 @@
 <template>
-  <el-card shadow="never" class="card">
+  <div class="page-wrapper animated-bg">
+    <!-- 浮动光晕粒子 -->
+    <div class="bg-particles">
+      <div class="particle"></div>
+      <div class="particle"></div>
+      <div class="particle"></div>
+      <div class="particle"></div>
+    </div>
+    <!-- 科技网格线 -->
+    <div class="bg-grid"></div>
+
+    <div class="page-inner">
+    <el-card shadow="never" class="card slide-up-enter">
     <!-- 球队 CRUD 表格（仅管理员可见） -->
     <template v-if="auth.isAdmin">
       <div class="section-head">
         <div>
-          <h2>球队数据</h2>
+          <h2>球队战绩</h2>
           <p>维护球队基本信息、胜负场数据。</p>
         </div>
         <el-button type="primary" @click="openCreate">新建球队</el-button>
@@ -50,7 +62,7 @@
         <p>东西部分区按净胜场排序，含胜场差。</p>
       </div>
     </div>
-    <el-row :gutter="16" class="rankings" v-loading="rankLoading">
+    <el-row :gutter="16" class="rankings stagger-in" v-loading="rankLoading">
       <el-col :span="12" v-for="(ranks, conf) in rankings" :key="conf">
         <div class="rank-card">
           <div class="rank-header">
@@ -68,7 +80,7 @@
             </div>
             <div v-for="(r, i) in ranks" :key="r.teamName" class="rank-row" :class="{ 'rank-first': i === 0 }">
               <span class="rank-no" :class="{ 'rank-no-gold': i === 0 }">{{ i + 1 }}</span>
-              <span class="rank-name">{{ r.teamName }}</span>
+              <span class="rank-name rank-name--link" @click="goTeamDetail(r.teamName)">{{ r.teamName }}</span>
               <span class="rank-stat">{{ r.wins }}</span>
               <span class="rank-stat">{{ r.losses }}</span>
               <span class="rank-stat">{{ winPct(r.wins, r.losses) }}</span>
@@ -107,16 +119,24 @@
       </template>
     </el-dialog>
   </el-card>
+  </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { createTeam, deleteTeam, fetchRankings, fetchTeams, updateTeam } from '@/api/team'
 import type { Team, TeamRank } from '@/api/types'
 
 const auth = useAuthStore()
+const router = useRouter()
+
+function goTeamDetail(teamName: string) {
+  router.push({ path: '/teams/detail', query: { name: teamName } })
+}
 
 /* -------- 球队 CRUD -------- */
 const loading = ref(false)
@@ -252,6 +272,12 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.page-wrapper {
+  min-height: calc(100vh - 108px);
+  position: relative;
+  border-radius: var(--radius-lg);
+  padding: 0;
+}
 .section-head {
   display: flex;
   justify-content: space-between;
@@ -260,6 +286,17 @@ onMounted(async () => {
   margin-bottom: 20px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border-light);
+  position: relative;
+}
+.section-head::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 40px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--purple), transparent);
+  border-radius: 1px;
 }
 .section-head h2 {
   margin: 0 0 6px;
@@ -268,17 +305,6 @@ onMounted(async () => {
   font-size: 20px;
   font-weight: 700;
   letter-spacing: 0.3px;
-  position: relative;
-}
-.section-head h2::after {
-  content: '';
-  position: absolute;
-  bottom: -17px;
-  left: 0;
-  width: 40px;
-  height: 2px;
-  background: linear-gradient(90deg, var(--accent), transparent);
-  border-radius: 1px;
 }
 .section-head p {
   margin: 0;
@@ -300,9 +326,11 @@ onMounted(async () => {
   max-width: 1100px;
   background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
-  border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-sm) !important;
+  border-radius: var(--radius-xl) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24) !important;
   transition: all var(--duration-normal) var(--ease-smooth);
+  position: relative;
+  z-index: 1;
 }
 :deep(.el-input__wrapper) {
   background: #1C2333 !important;
@@ -314,8 +342,8 @@ onMounted(async () => {
   border-color: var(--border-medium) !important;
 }
 :deep(.el-input__wrapper.is-focus) {
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 0 2px var(--accent-glow) !important;
+  border-color: var(--purple) !important;
+  box-shadow: 0 0 0 2px var(--purple-glow) !important;
 }
 :deep(.el-input__inner) { color: var(--text-primary) !important; font-family: var(--font-body); }
 :deep(.el-input__inner::placeholder) { color: var(--text-dim) !important; }
@@ -339,7 +367,7 @@ onMounted(async () => {
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-light), transparent);
+  background: linear-gradient(90deg, var(--purple), var(--purple-light), transparent);
   opacity: 0.5;
 }
 .rank-card:hover {
@@ -362,7 +390,7 @@ onMounted(async () => {
   left: 0;
   width: 60px;
   height: 2px;
-  background: linear-gradient(90deg, var(--accent), transparent);
+  background: linear-gradient(90deg, var(--purple), transparent);
   border-radius: 2px;
 }
 .rank-title {
@@ -386,13 +414,33 @@ onMounted(async () => {
 }
 .rank-row-head:hover { background: transparent; }
 .rank-first {
-  background: linear-gradient(90deg, rgba(0, 230, 118, 0.08), rgba(0, 230, 118, 0.02));
+  background: linear-gradient(90deg, rgba(108, 92, 231, 0.1), rgba(108, 92, 231, 0.02));
   border-radius: var(--radius-sm);
-  border-left: 2px solid var(--accent);
-  box-shadow: 0 0 12px rgba(0, 230, 118, 0.05);
+  border-left: 2px solid var(--purple);
 }
 .rank-no { width: 28px; text-align: center; color: var(--text-muted); font-size: 13px; font-weight: 600; }
 .rank-no-gold { color: var(--accent); }
 .rank-name { flex: 1; color: var(--text-primary); font-size: 14px; font-weight: 500; }
+.rank-name--link {
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-smooth);
+  position: relative;
+}
+.rank-name--link:hover {
+  color: var(--accent);
+}
+.rank-name--link::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: var(--accent);
+  transition: width var(--duration-normal) var(--ease-smooth);
+}
+.rank-name--link:hover::after {
+  width: 100%;
+}
 .rank-stat { width: 52px; text-align: center; color: var(--text-secondary); font-size: 13px; }
 </style>
