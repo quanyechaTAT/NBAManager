@@ -67,12 +67,13 @@ public class NbaLiveSyncService {
                 int homeScore = game.optInt("homeScore", 0);
                 int awayScore = game.optInt("awayScore", 0);
                 String status = game.optString("status", "SCHEDULED");
+                String gameId = game.optString("gameId", null);
 
                 // 更新或创建GameNews记录
                 updated += updateOrCreateGameNews(homeTeam, awayTeam, homeScore, awayScore, status);
 
                 // 更新MatchRecord
-                updateMatchRecord(homeTeam, awayTeam, homeScore, awayScore, status);
+                updateMatchRecord(homeTeam, awayTeam, homeScore, awayScore, status, gameId);
             }
 
             if (updated > 0) {
@@ -177,7 +178,7 @@ public class NbaLiveSyncService {
      * 更新MatchRecord
      */
     private void updateMatchRecord(String homeTeam, String awayTeam,
-                                    int homeScore, int awayScore, String status) {
+                                    int homeScore, int awayScore, String status, String gameId) {
         LocalDate today = LocalDate.now();
 
         // 查找今天的比赛记录
@@ -194,6 +195,9 @@ public class NbaLiveSyncService {
                 record.setAwayScore(awayScore);
             }
             record.setStatus(status);
+            if (gameId != null && !gameId.isEmpty() && record.getNbaGameId() == null) {
+                record.setNbaGameId(gameId);
+            }
             matchRecordRepository.save(record);
         } else if ("LIVE".equals(status) || "FINISHED".equals(status)) {
             MatchRecord record = new MatchRecord();
@@ -204,6 +208,7 @@ public class NbaLiveSyncService {
             record.setMatchDate(today);
             record.setSeason("2025-26");
             record.setStatus(status);
+            record.setNbaGameId(gameId);
             matchRecordRepository.save(record);
         }
     }

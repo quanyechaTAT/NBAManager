@@ -74,6 +74,216 @@ POSITION_MAP = {
     'G': '控卫', 'F': '大前锋',
 }
 
+# 球员英文名 -> 中文名 映射（覆盖当前NBA主要球员）
+PLAYER_CN_MAP = {
+    # 湖人
+    'Luka Doncic': '卢卡·东契奇', 'Luka Dončić': '卢卡·东契奇',
+    'LeBron James': '勒布朗·詹姆斯', 'Austin Reaves': '奥斯汀·里夫斯',
+    'Rui Hachimura': '八村塁', 'Dalton Knecht': '道尔顿·克内克特',
+    'Christian Wood': '克里斯蒂安·伍德', 'Jarred Vanderbilt': '贾里德·范德比尔特',
+    'Jaxson Hayes': '杰克森·海耶斯', 'Gabe Vincent': '加布·文森特',
+    'Dorian Finney-Smith': '多里安·芬尼-史密斯', 'Shake Milton': '谢克·米尔顿',
+    # 勇士
+    'Stephen Curry': '斯蒂芬·库里', 'Jimmy Butler': '吉米·巴特勒',
+    'Brandin Podziemski': '布兰丁·波杰姆斯基', 'Jonathan Kuminga': '乔纳森·库明加',
+    'De\'Anthony Melton': '德安东尼·梅尔顿', 'Gary Payton II': '加里·佩顿二世',
+    'Buddy Hield': '巴迪·希尔德', 'Quinten Post': '昆顿·波斯特',
+    'Pat Spencer': '帕特·斯宾塞', 'Trayce Jackson-Davis': '特雷斯·杰克逊-戴维斯',
+    'Gui Santos': '吉·桑托斯', 'Kevon Looney': '凯文·卢尼',
+    'Moses Moody': '摩西·穆迪',
+    # 凯尔特人
+    'Jayson Tatum': '杰森·塔图姆', 'Jaylen Brown': '杰伦·布朗',
+    'Kristaps Porzingis': '克里斯塔普斯·波尔津吉斯', 'Derrick White': '德里克·怀特',
+    'Jrue Holiday': '朱·霍勒迪', 'Payton Pritchard': '佩顿·普里查德',
+    'Al Horford': '艾尔·霍福德', 'Sam Hauser': '萨姆·豪瑟',
+    'Luke Kornet': '卢克·科内特',
+    # 雄鹿
+    'Giannis Antetokounmpo': '扬尼斯·阿德托昆博', 'Damian Lillard': '达米安·利拉德',
+    'Khris Middleton': '克里斯·米德尔顿', 'Brook Lopez': '布鲁克·洛佩兹',
+    'Bobby Portis': '博比·波蒂斯',
+    # 掘金
+    'Nikola Jokic': '尼古拉·约基奇', 'Nikola Jokić': '尼古拉·约基奇', 'Jamal Murray': '贾马尔·穆雷',
+    'Michael Porter Jr.': '迈克尔·波特', 'Aaron Gordon': '阿隆·戈登',
+    'Kentavious Caldwell-Pope': '肯塔维厄斯·考德威尔-波普',
+    # 太阳
+    'Kevin Durant': '凯文·杜兰特', 'Devin Booker': '德文·布克',
+    'Bradley Beal': '布拉德利·比尔', 'Jusuf Nurkic': '尤素夫·努尔基奇',
+    # 雷霆
+    'Shai Gilgeous-Alexander': '谢伊·吉尔杰斯-亚历山大',
+    'Chet Holmgren': '切特·霍姆格伦', 'Jalen Williams': '杰伦·威廉姆斯',
+    'Lu Dort': '卢·多尔特', 'Isaiah Joe': '以赛亚·乔',
+    # 马刺
+    'Victor Wembanyama': '维克托·文班亚马', 'Devin Vassell': '德文·瓦塞尔',
+    'Keldon Johnson': '凯尔登·约翰逊', 'Jeremy Sochan': '杰里米·索汉',
+    'Chris Paul': '克里斯·保罗',
+    # 火箭
+    'Alperen Sengun': '阿尔佩伦·申京', 'Jalen Green': '杰伦·格林',
+    'Amen Thompson': '阿门·汤普森', 'Fred VanVleet': '弗雷德·范弗利特',
+    'Dillon Brooks': '狄龙·布鲁克斯',
+    # 尼克斯
+    'Jalen Brunson': '杰伦·布伦森', 'Julius Randle': '朱利叶斯·兰德尔',
+    'OG Anunoby': 'OG·阿奴诺比', 'Donte DiVincenzo': '唐特·迪温琴佐',
+    'Mikal Bridges': '米卡尔·布里奇斯', 'Karl-Anthony Towns': '卡尔-安东尼·唐斯',
+    # 骑士
+    'Donovan Mitchell': '多诺万·米切尔', 'Darius Garland': '达里厄斯·加兰',
+    'Evan Mobley': '埃文·莫布利', 'Jarrett Allen': '贾勒特·阿伦',
+    # 森林狼
+    'Anthony Edwards': '安东尼·爱德华兹', 'Rudy Gobert': '鲁迪·戈贝尔',
+    'Jaden McDaniels': '杰登·麦克丹尼尔斯', 'Naz Reid': '纳兹·里德',
+    # 活塞
+    'Cade Cunningham': '凯德·坎宁安', 'Jaden Ivey': '杰登·艾维',
+    'Jalen Duren': '杰伦·杜伦', 'Tobias Harris': '托拜亚斯·哈里斯',
+    # 独行侠
+    'Kyrie Irving': '凯里·欧文', 'P.J. Washington': 'PJ·华盛顿',
+    'Daniel Gafford': '丹尼尔·加福德', 'Dereck Lively': '德里克·莱夫利',
+    # 76人
+    'Joel Embiid': '乔尔·恩比德', 'Tyrese Maxey': '泰瑞斯·马克西',
+    'Paul George': '保罗·乔治', 'Caleb Martin': '凯莱布·马丁',
+    # 老鹰
+    'Trae Young': '特雷·杨', 'Dejounte Murray': '德章泰·穆雷',
+    'Jalen Johnson': '杰伦·约翰逊', 'Clint Capela': '克林特·卡佩拉',
+    # 猛龙
+    'Pascal Siakam': '帕斯卡尔·西亚卡姆', 'Scottie Barnes': '斯科蒂·巴恩斯',
+    'RJ Barrett': 'RJ·巴雷特', 'Immanuel Quickley': '伊曼纽尔·奎克利',
+    # 热火
+    'Bam Adebayo': '巴姆·阿德巴约', 'Jimmy Butler': '吉米·巴特勒',
+    'Tyler Herro': '泰勒·希罗', 'Terry Rozier': '特里·罗齐尔',
+    # 快船
+    'Kawhi Leonard': '科怀·伦纳德', 'James Harden': '詹姆斯·哈登',
+    'Norman Powell': '诺曼·鲍威尔', 'Ivica Zubac': '伊维察·祖巴茨',
+    # 国王
+    'De\'Aaron Fox': '达龙·福克斯', 'Domantas Sabonis': '多曼塔斯·萨博尼斯',
+    'DeMar DeRozan': '德玛尔·德罗赞', 'Keegan Murray': '基根·穆雷',
+    # 鹈鹕
+    'Zion Williamson': '锡安·威廉姆森', 'Brandon Ingram': '布兰登·英格拉姆',
+    'CJ McCollum': 'CJ·麦科勒姆', 'Herbert Jones': '赫伯特·琼斯',
+    # 魔术
+    'Paolo Banchero': '保罗·班切罗', 'Franz Wagner': '弗朗茨·瓦格纳',
+    'Jalen Suggs': '杰伦·萨格斯', 'Wendell Carter Jr.': '温德尔·卡特',
+    # 步行者
+    'Tyrese Haliburton': '泰瑞斯·哈利伯顿', 'Andrew Nembhard': '安德鲁·内姆哈德',
+    'Myles Turner': '迈尔斯·特纳', 'Bennedict Mathurin': '本内迪克特·马图林',
+    # 公牛
+    'Zach LaVine': '扎克·拉文', 'Nikola Vucevic': '尼古拉·武切维奇',
+    'Coby White': '科比·怀特', 'Ayo Dosunmu': '阿约·多苏穆',
+    # 灰熊
+    'Ja Morant': '贾·莫兰特', 'Desmond Bane': '德斯蒙德·贝恩',
+    'Jaren Jackson Jr.': '小贾伦·杰克逊', 'Marcus Smart': '马库斯·斯马特',
+    # 开拓者
+    'Anfernee Simons': '安芬尼·西蒙斯', 'Jerami Grant': '杰拉米·格兰特',
+    'Deandre Ayton': '德安德烈·艾顿', 'Shaedon Sharpe': '谢登·夏普',
+    # 爵士
+    'Lauri Markkanen': '劳里·马尔卡宁', 'Collin Sexton': '科林·塞克斯顿',
+    'Jordan Clarkson': '乔丹·克拉克森', 'John Collins': '约翰·柯林斯',
+    # 篮网
+    'Cameron Thomas': '卡梅隆·托马斯', 'Dennis Schroder': '丹尼斯·施罗德',
+    'Nic Claxton': '尼古拉斯·克拉克斯顿', 'Dorian Finney-Smith': '多里安·芬尼-史密斯',
+    # 黄蜂
+    'LaMelo Ball': '拉梅洛·鲍尔', 'Miles Bridges': '迈尔斯·布里奇斯',
+    'Brandon Miller': '布兰登·米勒', 'Mark Williams': '马克·威廉姆斯',
+    # 奇才
+    'Kyle Kuzma': '凯尔·库兹马', 'Jordan Poole': '乔丹·普尔',
+    'Deni Avdija': '德尼·阿夫迪亚', 'Corey Kispert': '科里·基斯珀特',
+    'Alex Sarr': '亚历克斯·萨尔',
+    # 其他球员
+    'Nikola Vučević': '尼古拉·武切维奇', 'Nikola Vucevic': '尼古拉·武切维奇',
+    'Andrew Wiggins': '安德鲁·威金斯', 'Anthony Black': '安东尼·布莱克',
+    'Anthony Davis': '安东尼·戴维斯', 'Cooper Flagg': '库珀·弗拉格',
+    'Dariq Whitehead': '达里克·怀特黑德', 'Grayson Allen': '格雷森·阿伦',
+    'Jabari Smith Jr.': '贾巴里·史密斯', 'Jaime Jaquez Jr.': '海梅·哈克斯',
+    'Jimmy Butler III': '吉米·巴特勒', 'Josh Giddey': '约什·吉迪',
+    'Kevin Porter Jr.': '小凯文·波特', 'Keyonte George': '基扬特·乔治',
+    'Kon Knueppel': '康·克内佩尔', 'Matas Buzelis': '马塔斯·布泽利斯',
+    'Naji Marshall': '纳吉·马歇尔', 'Nickeil Alexander-Walker': '尼基尔·亚历山大-沃克',
+    'Onyeka Okongwu': '奥涅卡·奥孔武', 'Russell Westbrook': '拉塞尔·威斯布鲁克',
+    'Ryan Rollins': '瑞安·罗林斯', 'Saddiq Bey': '萨迪克·贝',
+    'Stephon Castle': '斯蒂芬·卡斯尔', 'Trey Murphy III': '特雷·墨菲',
+    'Ty Jerome': '泰·杰罗姆', 'VJ Edgecombe': 'VJ·埃奇科姆',
+}
+
+# 球员英文名 -> 球衣号码 映射
+PLAYER_JERSEY_MAP = {
+    # 湖人
+    'Luka Doncic': 77, 'LeBron James': 23, 'Austin Reaves': 15,
+    'Rui Hachimura': 28, 'Dalton Knecht': 4, 'Christian Wood': 35,
+    'Jarred Vanderbilt': 2, 'Jaxson Hayes': 10, 'Gabe Vincent': 7,
+    # 勇士
+    'Stephen Curry': 30, 'Jimmy Butler': 22, 'Brandin Podziemski': 2,
+    'Jonathan Kuminga': 00, 'De\'Anthony Melton': 8, 'Gary Payton II': 0,
+    'Buddy Hield': 24, 'Quinten Post': 21, 'Pat Spencer': 61,
+    'Trayce Jackson-Davis': 32, 'Gui Santos': 15, 'Kevon Looney': 5,
+    'Moses Moody': 4,
+    # 凯尔特人
+    'Jayson Tatum': 0, 'Jaylen Brown': 7, 'Kristaps Porzingis': 8,
+    'Derrick White': 9, 'Jrue Holiday': 4, 'Payton Pritchard': 11,
+    'Al Horford': 42, 'Sam Hauser': 30, 'Luke Kornet': 40,
+    # 雄鹿
+    'Giannis Antetokounmpo': 34, 'Damian Lillard': 0, 'Khris Middleton': 22,
+    'Brook Lopez': 11, 'Bobby Portis': 9,
+    # 掘金
+    'Nikola Jokic': 15, 'Nikola Jokić': 15, 'Jamal Murray': 27, 'Michael Porter Jr.': 1,
+    'Aaron Gordon': 50,
+    # 太阳
+    'Kevin Durant': 35, 'Devin Booker': 1, 'Bradley Beal': 3,
+    # 雷霆
+    'Shai Gilgeous-Alexander': 2, 'Chet Holmgren': 7, 'Jalen Williams': 8,
+    # 马刺
+    'Victor Wembanyama': 1, 'Devin Vassell': 24, 'Chris Paul': 3,
+    # 火箭
+    'Alperen Sengun': 28, 'Jalen Green': 4, 'Fred VanVleet': 5,
+    # 尼克斯
+    'Jalen Brunson': 11, 'Julius Randle': 30, 'OG Anunoby': 8,
+    'Mikal Bridges': 1, 'Karl-Anthony Towns': 32,
+    # 骑士
+    'Donovan Mitchell': 45, 'Darius Garland': 10, 'Evan Mobley': 4,
+    'Jarrett Allen': 31,
+    # 森林狼
+    'Anthony Edwards': 5, 'Rudy Gobert': 27,
+    # 活塞
+    'Cade Cunningham': 2, 'Jaden Ivey': 23,
+    # 独行侠
+    'Kyrie Irving': 11, 'P.J. Washington': 25, 'Dereck Lively': 1,
+    # 76人
+    'Joel Embiid': 21, 'Tyrese Maxey': 0, 'Paul George': 13,
+    # 老鹰
+    'Trae Young': 11, 'Dejounte Murray': 5,
+    # 猛龙
+    'Scottie Barnes': 4, 'RJ Barrett': 9,
+    # 热火
+    'Bam Adebayo': 13, 'Tyler Herro': 14, 'Terry Rozier': 2,
+    # 快船
+    'Kawhi Leonard': 2, 'James Harden': 1, 'Norman Powell': 24,
+    # 国王
+    'De\'Aaron Fox': 5, 'Domantas Sabonis': 10, 'DeMar DeRozan': 10,
+    # 鹈鹕
+    'Zion Williamson': 1, 'Brandon Ingram': 14, 'CJ McCollum': 3,
+    # 魔术
+    'Paolo Banchero': 5, 'Franz Wagner': 22,
+    # 步行者
+    'Tyrese Haliburton': 0, 'Myles Turner': 33,
+    # 公牛
+    'Zach LaVine': 8, 'Nikola Vucevic': 9,
+    # 灰熊
+    'Ja Morant': 12, 'Desmond Bane': 22, 'Jaren Jackson Jr.': 13,
+    # 开拓者
+    'Anfernee Simons': 1, 'Jerami Grant': 9,
+    # 爵士
+    'Lauri Markkanen': 23, 'Collin Sexton': 2,
+    # 篮网
+    'Cameron Thomas': 24, 'Nic Claxton': 33,
+    # 黄蜂
+    'LaMelo Ball': 1, 'Miles Bridges': 0, 'Brandon Miller': 24,
+    # 奇才
+    'Kyle Kuzma': 33, 'Jordan Poole': 13, 'Alex Sarr': 20,
+    # 其他球员
+    'Andrew Wiggins': 22, 'Anthony Black': 0, 'Anthony Davis': 3,
+    'Cooper Flagg': 0, 'Grayson Allen': 8, 'Jabari Smith Jr.': 10,
+    'Jaime Jaquez Jr.': 11, 'Josh Giddey': 3, 'Kevin Porter Jr.': 3,
+    'Keyonte George': 3, 'Naji Marshall': 0, 'Nickeil Alexander-Walker': 6,
+    'Onyeka Okongwu': 17, 'Russell Westbrook': 4, 'Saddiq Bey': 41,
+    'Stephon Castle': 0, 'Trey Murphy III': 25, 'Ty Jerome': 2,
+}
+
 # nba_api team id -> 中文名
 TEAM_ID_TO_CN = {}
 
@@ -234,7 +444,7 @@ def fetch_player_stats():
             usg_pct = 20.0  # 默认值
 
         result.append({
-            'name': data.get('PLAYER_NAME', ''),
+            'name': PLAYER_CN_MAP.get(data.get('PLAYER_NAME', ''), data.get('PLAYER_NAME', '')),
             'team': cn_team,
             'position': position,
             'ppg': round(ppg, 1),
@@ -251,6 +461,7 @@ def fetch_player_stats():
             'per': round(per, 1),
             'tsPct': round(ts_pct, 3),
             'usgPct': round(usg_pct, 1),
+            'jersey': PLAYER_JERSEY_MAP.get(data.get('PLAYER_NAME', ''), 0),
         })
 
     # 按得分排序，取前100名
@@ -402,9 +613,10 @@ def fetch_boxscore(game_id):
 
             if rs['name'] == 'PlayerStats':
                 team_id = _safe_int(d.get('TEAM_ID'))
+                en_name = d.get('PLAYER_NAME', '')
                 player_stats.append({
                     'playerId': _safe_int(d.get('PLAYER_ID')),
-                    'playerName': d.get('PLAYER_NAME', ''),
+                    'playerName': PLAYER_CN_MAP.get(en_name, en_name),
                     'teamId': team_id,
                     'teamName': TEAM_ID_TO_CN.get(team_id, d.get('TEAM_ABBREVIATION', '')),
                     'minutes': d.get('MIN', ''),
@@ -464,6 +676,10 @@ def fetch_playbyplay(game_id, start_period=0, end_period=10):
             desc = d.get('HOMEDESCRIPTION') or d.get('VISITORDESCRIPTION') or d.get('NEUTRALDESCRIPTION', '')
             if not desc:
                 continue
+            en_name = d.get('PLAYER1_NAME', '')
+            # 替换描述中的英文名为中文
+            if en_name and en_name in PLAYER_CN_MAP:
+                desc = desc.replace(en_name, PLAYER_CN_MAP[en_name])
             events.append({
                 'period': _safe_int(d.get('PERIOD')),
                 'gameClock': d.get('PCTIMESTRING', ''),
@@ -472,7 +688,7 @@ def fetch_playbyplay(game_id, start_period=0, end_period=10):
                 'awayScore': _safe_int(d.get('SCOREAWAY')),
                 'eventType': d.get('EVENTMSGTYPE', ''),
                 'playerId': _safe_int(d.get('PLAYER1_ID')),
-                'playerName': d.get('PLAYER1_NAME', ''),
+                'playerName': PLAYER_CN_MAP.get(en_name, en_name),
             })
 
     print(f"获取到 {len(events)} 条Play-by-Play事件", file=sys.stderr)
@@ -600,7 +816,11 @@ def main():
         season = sys.argv[3] if len(sys.argv) > 3 else None
         result['gameLog'] = fetch_player_gamelog(int(sys.argv[2]), season)
 
-    # 输出JSON到stdout
+    # 输出JSON到文件（避免Windows编码问题）
+    output_file = os.path.join(os.path.dirname(__file__), 'output.json')
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+    # 同时输出到stdout
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

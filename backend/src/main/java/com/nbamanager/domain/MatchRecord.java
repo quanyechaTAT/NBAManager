@@ -51,4 +51,8 @@ public class MatchRecord {
     /** SCHEDULED / LIVE / FINISHED */
     @Column(nullable = false, length = 16)
     private String status;
+
+    /** NBA官方比赛ID（10位数字，如 0022400001） */
+    @Column(length = 16)
+    private String nbaGameId;
 }

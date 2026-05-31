@@ -11,7 +11,8 @@ public record MatchRecordDto(
         Integer awayScore,
         LocalDate matchDate,
         String season,
-        String status
+        String status,
+        String nbaGameId
 ) {
     public static MatchRecordDto from(MatchRecord m) {
         return new MatchRecordDto(
@@ -22,7 +23,8 @@ public record MatchRecordDto(
                 m.getAwayScore(),
                 m.getMatchDate(),
                 m.getSeason(),
-                m.getStatus()
+                m.getStatus(),
+                m.getNbaGameId()
         );
     }
 }
