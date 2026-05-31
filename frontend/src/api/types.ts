@@ -80,6 +80,7 @@ export interface MatchRecord {
   matchDate: string
   season: string
   status: 'SCHEDULED' | 'LIVE' | 'FINISHED'
+  nbaGameId: string | null
 }
 
 export interface BoxScorePlayer {
