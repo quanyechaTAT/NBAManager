@@ -120,6 +120,9 @@
         </div>
         <el-divider />
         <div class="detail-content">{{ current.content }}</div>
+        <div style="margin-top: 16px; text-align: right;">
+          <el-button type="primary" plain size="small" @click="goToMatchDetail(current)">📊 查看比赛详细数据</el-button>
+        </div>
       </template>
     </el-dialog>
 
@@ -183,6 +186,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { fetchNews, fetchTodayNews, createNews, updateNews, deleteNews, type GameNewsPayload } from '@/api/news'
 import { useAuthStore } from '@/stores/auth'
@@ -291,6 +295,11 @@ async function loadToday() {
 function showDetail(item: GameNews) {
   current.value = item
   dialogVisible.value = true
+}
+
+const router = useRouter()
+function goToMatchDetail(item: GameNews) {
+  router.push({ path: '/match-detail', query: { gameId: String(item.id), homeTeam: item.homeTeam, awayTeam: item.awayTeam, homeScore: item.homeScore ?? '', awayScore: item.awayScore ?? '', status: item.status } })
 }
 
 // --- 管理员操作 ---

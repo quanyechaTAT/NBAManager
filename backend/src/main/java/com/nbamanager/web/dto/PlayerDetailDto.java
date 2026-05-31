@@ -1,26 +1,26 @@
 package com.nbamanager.web.dto;
 
-public record PlayerDto(
+public record PlayerDetailDto(
         Long id,
         String name,
         Long teamId,
         String teamName,
         String position,
+        Integer jerseyNumber,
+        String height,
+        Integer weight,
+        String country,
+        Integer gamesPlayed,
+        Double minutesPerGame,
         Double pointsPerGame,
         Double reboundsPerGame,
         Double assistsPerGame,
         Double stealsPerGame,
-        Integer gamesPlayed,
-        Double minutesPerGame,
+        Double blocksPerGame,
+        Double turnoversPerGame,
         Double fieldGoalPct,
         Double threePointPct,
         Double freeThrowPct,
-        Double blocksPerGame,
-        Double turnoversPerGame,
         Double efficiency,
         Double trueShootingPct,
-        Double usagePct,
-        Integer jerseyNumber,
-        String height,
-        Integer weight,
-        String country) {}
+        Double usagePct) {}
