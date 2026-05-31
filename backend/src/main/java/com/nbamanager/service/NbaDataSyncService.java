@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +45,8 @@ public class NbaDataSyncService {
      */
     @Async("taskExecutor")
     @Transactional
+    @CacheEvict(value = {"teams", "players", "rankings", "dashboard", "news", "todayGames",
+            "matchRecords", "matchRecordsByTeam", "headToHead"}, allEntries = true, beforeInvocation = false)
     public void syncAll() {
         if (syncing) {
             log.info("数据同步正在进行中，跳过本次同步");
@@ -264,6 +267,18 @@ public class NbaDataSyncService {
             double apg = playerData.getDouble("apg");
             double spg = playerData.getDouble("spg");
 
+            // 扩展字段
+            int gp = playerData.optInt("gp", 65);
+            double mpg = playerData.optDouble("mpg", 28.0);
+            double fgPct = playerData.optDouble("fgPct", 0.460);
+            double threePct = playerData.optDouble("threePct", 0.350);
+            double ftPct = playerData.optDouble("ftPct", 0.800);
+            double bpg = playerData.optDouble("bpg", 0.5);
+            double tpg = playerData.optDouble("tpg", 1.5);
+            double per = playerData.optDouble("per", 110.0);
+            double tsPct = playerData.optDouble("tsPct", fgPct);
+            double usgPct = playerData.optDouble("usgPct", 20.0);
+
             // 查找球队
             Team team = teamRepository.findByName(teamName);
             if (team == null) {
@@ -280,6 +295,16 @@ public class NbaDataSyncService {
                 existingPlayer.setReboundsPerGame(rpg);
                 existingPlayer.setAssistsPerGame(apg);
                 existingPlayer.setStealsPerGame(spg);
+                existingPlayer.setGamesPlayed(gp);
+                existingPlayer.setMinutesPerGame(mpg);
+                existingPlayer.setFieldGoalPct(fgPct);
+                existingPlayer.setThreePointPct(threePct);
+                existingPlayer.setFreeThrowPct(ftPct);
+                existingPlayer.setBlocksPerGame(bpg);
+                existingPlayer.setTurnoversPerGame(tpg);
+                existingPlayer.setEfficiency(per);
+                existingPlayer.setTrueShootingPct(tsPct);
+                existingPlayer.setUsagePct(usgPct);
                 playerRepository.save(existingPlayer);
                 updated++;
             } else {
@@ -292,6 +317,20 @@ public class NbaDataSyncService {
                 newPlayer.setReboundsPerGame(rpg);
                 newPlayer.setAssistsPerGame(apg);
                 newPlayer.setStealsPerGame(spg);
+                newPlayer.setGamesPlayed(gp);
+                newPlayer.setMinutesPerGame(mpg);
+                newPlayer.setFieldGoalPct(fgPct);
+                newPlayer.setThreePointPct(threePct);
+                newPlayer.setFreeThrowPct(ftPct);
+                newPlayer.setBlocksPerGame(bpg);
+                newPlayer.setTurnoversPerGame(tpg);
+                newPlayer.setEfficiency(per);
+                newPlayer.setTrueShootingPct(tsPct);
+                newPlayer.setUsagePct(usgPct);
+                newPlayer.setJerseyNumber(0);
+                newPlayer.setHeight("6-6");
+                newPlayer.setWeight(210);
+                newPlayer.setCountry("美国");
                 playerRepository.save(newPlayer);
                 added++;
             }

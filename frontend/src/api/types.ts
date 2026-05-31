@@ -27,6 +27,20 @@ export interface Player {
   reboundsPerGame: number
   assistsPerGame: number
   stealsPerGame: number
+  gamesPlayed: number
+  minutesPerGame: number
+  fieldGoalPct: number
+  threePointPct: number
+  freeThrowPct: number
+  blocksPerGame: number
+  turnoversPerGame: number
+  efficiency: number
+  trueShootingPct: number
+  usagePct: number
+  jerseyNumber: number
+  height: string
+  weight: number
+  country: string
 }
 
 export interface TeamRank {
@@ -66,4 +80,54 @@ export interface MatchRecord {
   matchDate: string
   season: string
   status: 'SCHEDULED' | 'LIVE' | 'FINISHED'
+}
+
+export interface BoxScorePlayer {
+  playerId: number
+  playerName: string
+  teamName: string
+  minutes: string
+  points: number
+  rebounds: number
+  assists: number
+  steals: number
+  blocks: number
+  turnovers: number
+  fgMade: number
+  fgAttempted: number
+  fgPct: number
+  threeMade: number
+  threeAttempted: number
+  threePct: number
+  ftMade: number
+  ftAttempted: number
+  ftPct: number
+  plusMinus: number
+  starter: boolean
+}
+
+export interface BoxScore {
+  gameId: string
+  homeTeam: string
+  awayTeam: string
+  homePlayers: BoxScorePlayer[]
+  awayPlayers: BoxScorePlayer[]
+  quarterScores: QuarterScore[]
+}
+
+export interface PlayByPlayEvent {
+  period: number
+  gameClock: string
+  description: string
+  homeScore: number
+  awayScore: number
+  eventType: string
+  playerId: number
+  playerName: string
+}
+
+export interface QuarterScore {
+  period: number
+  homeScore: number
+  awayScore: number
 }

@@ -8,6 +8,8 @@ import com.nbamanager.repository.TeamRepository;
 import com.nbamanager.web.dto.PlayerDto;
 import com.nbamanager.web.dto.PlayerRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -52,12 +54,14 @@ public class PlayerService {
         return page.map(this::toDto);
     }
 
+    @Cacheable(value = "players", key = "#id")
     @Transactional(readOnly = true)
     public PlayerDto get(Long id) {
         Player p = playerRepository.findById(id).orElseThrow(() -> notFound(id));
         return toDto(p);
     }
 
+    @CacheEvict(value = {"players", "dashboard"}, allEntries = true)
     @Transactional
     public PlayerDto create(PlayerRequest req) {
         Team team = teamRepository.findById(req.teamId()).orElseThrow(() -> teamNotFound(req.teamId()));
@@ -66,6 +70,7 @@ public class PlayerService {
         return toDto(playerRepository.save(p));
     }
 
+    @CacheEvict(value = {"players", "dashboard"}, allEntries = true)
     @Transactional
     public PlayerDto update(Long id, PlayerRequest req) {
         Player p = playerRepository.findById(id).orElseThrow(() -> notFound(id));
@@ -74,6 +79,7 @@ public class PlayerService {
         return toDto(playerRepository.save(p));
     }
 
+    @CacheEvict(value = {"players", "dashboard"}, allEntries = true)
     @Transactional
     public void delete(Long id) {
         if (!playerRepository.existsById(id)) {
@@ -90,6 +96,20 @@ public class PlayerService {
         p.setReboundsPerGame(req.reboundsPerGame());
         p.setAssistsPerGame(req.assistsPerGame());
         p.setStealsPerGame(req.stealsPerGame());
+        p.setGamesPlayed(req.gamesPlayed());
+        p.setMinutesPerGame(req.minutesPerGame());
+        p.setFieldGoalPct(req.fieldGoalPct());
+        p.setThreePointPct(req.threePointPct());
+        p.setFreeThrowPct(req.freeThrowPct());
+        p.setBlocksPerGame(req.blocksPerGame());
+        p.setTurnoversPerGame(req.turnoversPerGame());
+        p.setEfficiency(req.efficiency());
+        p.setTrueShootingPct(req.trueShootingPct());
+        p.setUsagePct(req.usagePct());
+        p.setJerseyNumber(req.jerseyNumber());
+        p.setHeight(req.height());
+        p.setWeight(req.weight());
+        p.setCountry(req.country());
     }
 
     private PlayerDto toDto(Player p) {
@@ -103,7 +123,21 @@ public class PlayerService {
                 p.getPointsPerGame(),
                 p.getReboundsPerGame(),
                 p.getAssistsPerGame(),
-                p.getStealsPerGame());
+                p.getStealsPerGame(),
+                p.getGamesPlayed(),
+                p.getMinutesPerGame(),
+                p.getFieldGoalPct(),
+                p.getThreePointPct(),
+                p.getFreeThrowPct(),
+                p.getBlocksPerGame(),
+                p.getTurnoversPerGame(),
+                p.getEfficiency(),
+                p.getTrueShootingPct(),
+                p.getUsagePct(),
+                p.getJerseyNumber(),
+                p.getHeight(),
+                p.getWeight(),
+                p.getCountry());
     }
 
     private static ApiException notFound(Long id) {

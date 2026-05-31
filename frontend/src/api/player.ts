@@ -9,6 +9,20 @@ export interface PlayerPayload {
   reboundsPerGame: number
   assistsPerGame: number
   stealsPerGame: number
+  gamesPlayed: number
+  minutesPerGame: number
+  fieldGoalPct: number
+  threePointPct: number
+  freeThrowPct: number
+  blocksPerGame: number
+  turnoversPerGame: number
+  efficiency: number
+  trueShootingPct: number
+  usagePct: number
+  jerseyNumber: number
+  height: string
+  weight: number
+  country: string
 }
 
 export function fetchPlayers(params: { q?: string; teamId?: number; position?: string; page: number; size: number }) {

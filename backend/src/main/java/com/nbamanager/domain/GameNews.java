@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import lombok.Getter;
@@ -12,7 +13,10 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "game_news")
+@Table(name = "game_news", indexes = {
+        @Index(name = "idx_news_game_start_time", columnList = "gameStartTime"),
+        @Index(name = "idx_news_title", columnList = "title")
+})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -61,4 +65,8 @@ public class GameNews {
     /** 创建时间 */
     @Column(nullable = false)
     private LocalDateTime createTime;
+
+    /** 比赛状态：SCHEDULED / LIVE / FINISHED */
+    @Column(nullable = false, length = 16)
+    private String status = "SCHEDULED";
 }
