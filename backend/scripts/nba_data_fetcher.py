@@ -2,63 +2,61 @@
 # -*- coding: utf-8 -*-
 """
 NBA数据获取脚本
-从ESPN API和nba_api获取真实的NBA数据
+从nba_api获取真实的NBA数据（stats.nba.com + cdn.nba.com）
 """
 
 import json
 import sys
-import requests
+import time
 from datetime import datetime, timedelta
 
-# NBA球队英文名到中文名映射
+# 确保stdout使用UTF-8编码（Windows兼容）
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
+try:
+    from nba_api.stats.endpoints import (
+        LeagueStandingsV3,
+        LeagueDashPlayerStats,
+        ScoreboardV2,
+        BoxScoreTraditionalV2,
+        PlayByPlayV2,
+        PlayerCareerStats,
+        PlayerGameLog,
+    )
+    from nba_api.live.nba.endpoints import scoreboard as live_scoreboard
+    from nba_api.stats.static import teams as nba_teams
+    HAS_NBA_API = True
+except ImportError:
+    HAS_NBA_API = False
+
+# 球队英文名/缩写到中文名映射
 TEAM_NAME_MAP = {
-    # 东部联盟
-    'Detroit Pistons': '活塞',
-    'Atlanta Hawks': '老鹰',
-    'Boston Celtics': '凯尔特人',
-    'Philadelphia 76ers': '76人',
-    'Orlando Magic': '魔术',
-    'Toronto Raptors': '猛龙',
-    'Cleveland Cavaliers': '骑士',
-    'New York Knicks': '尼克斯',
-    'Miami Heat': '热火',
-    'Charlotte Hornets': '黄蜂',
-    'Washington Wizards': '奇才',
-    'Indiana Pacers': '步行者',
-    'Brooklyn Nets': '篮网',
-    'Chicago Bulls': '公牛',
-    'Milwaukee Bucks': '雄鹿',
-    # 西部联盟
-    'Los Angeles Lakers': '湖人',
-    'San Antonio Spurs': '马刺',
-    'Portland Trail Blazers': '开拓者',
-    'Phoenix Suns': '太阳',
-    'Minnesota Timberwolves': '森林狼',
-    'Houston Rockets': '火箭',
-    'Denver Nuggets': '掘金',
-    'Golden State Warriors': '勇士',
-    'LA Clippers': '快船',
-    'Sacramento Kings': '国王',
-    'Utah Jazz': '爵士',
-    'Memphis Grizzlies': '灰熊',
-    'New Orleans Pelicans': '鹈鹕',
-    'Dallas Mavericks': '独行侠',
-    'Oklahoma City Thunder': '雷霆',
+    'Detroit Pistons': '活塞', 'Atlanta Hawks': '老鹰', 'Boston Celtics': '凯尔特人',
+    'Philadelphia 76ers': '76人', 'Orlando Magic': '魔术', 'Toronto Raptors': '猛龙',
+    'Cleveland Cavaliers': '骑士', 'New York Knicks': '尼克斯', 'Miami Heat': '热火',
+    'Charlotte Hornets': '黄蜂', 'Washington Wizards': '奇才', 'Indiana Pacers': '步行者',
+    'Brooklyn Nets': '篮网', 'Chicago Bulls': '公牛', 'Milwaukee Bucks': '雄鹿',
+    'Los Angeles Lakers': '湖人', 'San Antonio Spurs': '马刺', 'Portland Trail Blazers': '开拓者',
+    'Phoenix Suns': '太阳', 'Minnesota Timberwolves': '森林狼', 'Houston Rockets': '火箭',
+    'Denver Nuggets': '掘金', 'Golden State Warriors': '勇士', 'LA Clippers': '快船',
+    'Sacramento Kings': '国王', 'Utah Jazz': '爵士', 'Memphis Grizzlies': '灰熊',
+    'New Orleans Pelicans': '鹈鹕', 'Dallas Mavericks': '独行侠', 'Oklahoma City Thunder': '雷霆',
 }
 
-# 球队英文缩写到中文名映射
 TEAM_ABBR_MAP = {
     'DET': '活塞', 'ATL': '老鹰', 'BOS': '凯尔特人', 'PHI': '76人',
-    'ORL': '魔术', 'TOR': '猛龙', 'CLE': '骑士', 'NY': '尼克斯',
+    'ORL': '魔术', 'TOR': '猛龙', 'CLE': '骑士', 'NYK': '尼克斯',
     'MIA': '热火', 'CHA': '黄蜂', 'WSH': '奇才', 'IND': '步行者',
     'BKN': '篮网', 'CHI': '公牛', 'MIL': '雄鹿',
-    'LAL': '湖人', 'SA': '马刺', 'POR': '开拓者', 'PHX': '太阳',
-    'MIN': '森林狼', 'HOU': '火箭', 'DEN': '掘金', 'GS': '勇士',
-    'LAC': '快船', 'SAC': '国王', 'UTAH': '爵士', 'MEM': '灰熊',
-    'NO': '鹈鹕', 'DAL': '独行侠', 'OKC': '雷霆',
+    'LAL': '湖人', 'SAS': '马刺', 'POR': '开拓者', 'PHX': '太阳',
+    'MIN': '森林狼', 'HOU': '火箭', 'DEN': '掘金', 'GSW': '勇士',
+    'LAC': '快船', 'SAC': '国王', 'UTA': '爵士', 'MEM': '灰熊',
+    'NOP': '鹈鹕', 'DAL': '独行侠', 'OKC': '雷霆',
 }
 
-# 球队中文名到城市映射
 TEAM_CITY_MAP = {
     '活塞': '底特律', '老鹰': '亚特兰大', '凯尔特人': '波士顿', '76人': '费城',
     '魔术': '奥兰多', '猛龙': '多伦多', '骑士': '克利夫兰', '尼克斯': '纽约',
@@ -70,202 +68,511 @@ TEAM_CITY_MAP = {
     '鹈鹕': '新奥尔良', '独行侠': '达拉斯', '雷霆': '俄克拉荷马城',
 }
 
+# 位置映射
+POSITION_MAP = {
+    'PG': '控卫', 'SG': '分卫', 'SF': '小前锋', 'PF': '大前锋', 'C': '中锋',
+    'G': '控卫', 'F': '大前锋',
+}
+
+# nba_api team id -> 中文名
+TEAM_ID_TO_CN = {}
+
+
+def _init_team_map():
+    """初始化球队ID映射"""
+    global TEAM_ID_TO_CN
+    if TEAM_ID_TO_CN:
+        return
+    if HAS_NBA_API:
+        for t in nba_teams.get_teams():
+            cn = TEAM_NAME_MAP.get(t['full_name'], TEAM_ABBR_MAP.get(t['abbreviation'], t['full_name']))
+            TEAM_ID_TO_CN[t['id']] = cn
+
+
+def _safe_float(val, default=0.0):
+    """安全转换为float"""
+    try:
+        if val is None:
+            return default
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_int(val, default=0):
+    """安全转换为int"""
+    try:
+        if val is None:
+            return default
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
+def _get_current_season():
+    """获取当前赛季字符串，如 '2024-25'"""
+    now = datetime.now()
+    if now.month >= 10:
+        return f"{now.year}-{str(now.year + 1)[-2:]}"
+    else:
+        return f"{now.year - 1}-{str(now.year)[-2:]}"
+
 
 def fetch_team_standings():
-    """从ESPN获取球队战绩"""
-    print("正在获取球队战绩数据...", file=sys.stderr)
-    url = "https://site.api.espn.com/apis/v2/sports/basketball/nba/standings"
+    """从nba_api获取球队战绩"""
+    _init_team_map()
+    print("正在从nba_api获取球队战绩数据...", file=sys.stderr)
 
     try:
-        resp = requests.get(url, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
+        standings = LeagueStandingsV3(season=_get_current_season(), timeout=30)
+        df = standings.get_dict()
+        time.sleep(1.0)
     except Exception as e:
         print(f"获取球队数据失败: {e}", file=sys.stderr)
         return []
 
     result = []
-    for conf in data.get('children', []):
-        conf_name = conf.get('name', '')
-        conference = '东部' if 'Eastern' in conf_name else '西部'
+    for row in df.get('resultSets', [{}])[0].get('rowSet', []):
+        headers = df['resultSets'][0]['headers']
+        data = dict(zip(headers, row))
 
-        for entry in conf.get('standings', {}).get('entries', []):
-            team = entry.get('team', {})
-            stats = {}
-            for s in entry.get('stats', []):
-                if 'value' in s:
-                    stats[s.get('type', '')] = s['value']
+        team_id = _safe_int(data.get('TeamID'))
+        cn_name = TEAM_ID_TO_CN.get(team_id, data.get('TeamCity', ''))
+        city = TEAM_CITY_MAP.get(cn_name, data.get('TeamCity', ''))
+        conf = data.get('Conference', '')
+        conference = '东部' if conf == 'East' else '西部'
 
-            en_name = team.get('displayName', '')
-            cn_name = TEAM_NAME_MAP.get(en_name, en_name)
-            city = TEAM_CITY_MAP.get(cn_name, team.get('location', ''))
-
-            result.append({
-                'name': cn_name,
-                'city': city,
-                'conference': conference,
-                'wins': int(stats.get('wins', 0)),
-                'losses': int(stats.get('losses', 0))
-            })
+        result.append({
+            'name': cn_name,
+            'city': city,
+            'conference': conference,
+            'wins': _safe_int(data.get('WINS')),
+            'losses': _safe_int(data.get('LOSSES')),
+        })
 
     print(f"获取到 {len(result)} 支球队数据", file=sys.stderr)
     return result
 
 
 def fetch_player_stats():
-    """获取球员统计数据（基于2024-25赛季公开数据）"""
-    print("正在获取球员统计数据...", file=sys.stderr)
+    """从nba_api获取球员统计数据（基础+高级）"""
+    _init_team_map()
+    print("正在从nba_api获取球员统计数据...", file=sys.stderr)
+    season = _get_current_season()
 
-    # 2024-25赛季主要球员数据（来源：NBA官方统计）
-    # 由于API限制，使用预设的公开数据
-    players = [
-        # 得分榜前列球员
-        {'name': '扬尼斯·阿德托昆博', 'team': '雄鹿', 'position': '大前锋', 'ppg': 30.4, 'rpg': 11.5, 'apg': 6.5, 'spg': 1.2},
-        {'name': '谢伊·吉尔杰斯-亚历山大', 'team': '雷霆', 'position': '控卫', 'ppg': 30.1, 'rpg': 5.5, 'apg': 6.2, 'spg': 2.0},
-        {'name': '杰伦·布伦森', 'team': '尼克斯', 'position': '控卫', 'ppg': 28.7, 'rpg': 3.5, 'apg': 6.7, 'spg': 0.9},
-        {'name': '乔尔·恩比德', 'team': '76人', 'position': '中锋', 'ppg': 27.9, 'rpg': 11.2, 'apg': 5.5, 'spg': 1.2},
-        {'name': '凯文·杜兰特', 'team': '太阳', 'position': '小前锋', 'ppg': 27.1, 'rpg': 6.6, 'apg': 5.0, 'spg': 0.8},
-        {'name': '德文·布克', 'team': '太阳', 'position': '分卫', 'ppg': 27.1, 'rpg': 4.5, 'apg': 6.9, 'spg': 0.9},
-        {'name': '杰森·塔图姆', 'team': '凯尔特人', 'position': '小前锋', 'ppg': 26.5, 'rpg': 8.3, 'apg': 5.1, 'spg': 1.2},
-        {'name': '多诺万·米切尔', 'team': '骑士', 'position': '分卫', 'ppg': 26.6, 'rpg': 4.3, 'apg': 6.1, 'spg': 1.8},
-        {'name': '尼古拉·约基奇', 'team': '掘金', 'position': '中锋', 'ppg': 26.4, 'rpg': 12.4, 'apg': 9.0, 'spg': 1.4},
-        {'name': '斯蒂芬·库里', 'team': '勇士', 'position': '控卫', 'ppg': 26.6, 'rpg': 3.6, 'apg': 4.4, 'spg': 1.6},
-        {'name': '吉米·巴特勒', 'team': '勇士', 'position': '小前锋', 'ppg': 20.0, 'rpg': 5.6, 'apg': 4.9, 'spg': 1.4},
-        {'name': '克里斯塔普斯·波尔津吉斯', 'team': '凯尔特人', 'position': '中锋', 'ppg': 17.8, 'rpg': 6.5, 'apg': 2.3, 'spg': 0.9},
-        {'name': '布兰丁·波杰姆斯基', 'team': '勇士', 'position': '分卫', 'ppg': 16.0, 'rpg': 5.1, 'apg': 4.0, 'spg': 1.0},
-        {'name': '乔纳森·库明加', 'team': '勇士', 'position': '大前锋', 'ppg': 12.1, 'rpg': 5.9, 'apg': 2.5, 'spg': 0.4},
-        {'name': '德安东尼·梅尔顿', 'team': '勇士', 'position': '分卫', 'ppg': 11.9, 'rpg': 2.8, 'apg': 2.3, 'spg': 0.5},
-        {'name': '加里·佩顿二世', 'team': '勇士', 'position': '控卫', 'ppg': 8.9, 'rpg': 6.6, 'apg': 2.3, 'spg': 1.5},
-        {'name': '艾尔·霍福德', 'team': '凯尔特人', 'position': '中锋', 'ppg': 7.8, 'rpg': 5.4, 'apg': 2.4, 'spg': 0.6},
-        {'name': '巴迪·希尔德', 'team': '勇士', 'position': '分卫', 'ppg': 8.0, 'rpg': 2.5, 'apg': 1.5, 'spg': 0.8},
-        {'name': '昆顿·波斯特', 'team': '勇士', 'position': '中锋', 'ppg': 7.7, 'rpg': 4.0, 'apg': 1.4, 'spg': 0.4},
-        {'name': '帕特·斯宾塞', 'team': '勇士', 'position': '控卫', 'ppg': 7.2, 'rpg': 2.4, 'apg': 3.5, 'spg': 0.7},
-        {'name': '特雷斯·杰克逊-戴维斯', 'team': '勇士', 'position': '大前锋', 'ppg': 4.2, 'rpg': 3.1, 'apg': 0.9, 'spg': 0.4},
-        {'name': '吉·桑托斯', 'team': '勇士', 'position': '小前锋', 'ppg': 4.0, 'rpg': 2.6, 'apg': 1.8, 'spg': 0.6},
-        {'name': '特雷·杨', 'team': '老鹰', 'position': '控卫', 'ppg': 26.4, 'rpg': 3.0, 'apg': 11.4, 'spg': 1.0},
-        {'name': '达龙·福克斯', 'team': '国王', 'position': '控卫', 'ppg': 26.2, 'rpg': 4.6, 'apg': 5.8, 'spg': 2.0},
-        {'name': '安东尼·爱德华兹', 'team': '森林狼', 'position': '分卫', 'ppg': 25.9, 'rpg': 5.4, 'apg': 5.1, 'spg': 1.3},
-        {'name': '泰瑞斯·马克西', 'team': '76人', 'position': '控卫', 'ppg': 25.9, 'rpg': 3.7, 'apg': 6.2, 'spg': 1.0},
-        {'name': '凯里·欧文', 'team': '独行侠', 'position': '分卫', 'ppg': 25.6, 'rpg': 5.2, 'apg': 5.2, 'spg': 1.1},
-        {'name': '卢卡·东契奇', 'team': '湖人', 'position': '控卫', 'ppg': 32.1, 'rpg': 7.1, 'apg': 8.6, 'spg': 1.7},
-        {'name': '勒布朗·詹姆斯', 'team': '湖人', 'position': '小前锋', 'ppg': 24.7, 'rpg': 6.8, 'apg': 7.1, 'spg': 1.1},
-        {'name': '维克托·文班亚马', 'team': '马刺', 'position': '中锋', 'ppg': 24.5, 'rpg': 10.8, 'apg': 3.9, 'spg': 1.2},
-        {'name': '保罗·班切罗', 'team': '魔术', 'position': '大前锋', 'ppg': 22.6, 'rpg': 6.9, 'apg': 5.4, 'spg': 1.0},
-        {'name': '八村塁', 'team': '湖人', 'position': '大前锋', 'ppg': 14.5, 'rpg': 5.3, 'apg': 1.2, 'spg': 0.7},
-        {'name': '道尔顿·克内克特', 'team': '湖人', 'position': '分卫', 'ppg': 9.2, 'rpg': 2.5, 'apg': 0.9, 'spg': 0.3},
-        {'name': '克里斯蒂安·伍德', 'team': '湖人', 'position': '大前锋', 'ppg': 9.0, 'rpg': 4.6, 'apg': 0.8, 'spg': 0.5},
-        {'name': '贾里德·范德比尔特', 'team': '湖人', 'position': '大前锋', 'ppg': 5.2, 'rpg': 7.1, 'apg': 1.5, 'spg': 1.4},
-        {'name': '杰克森·海耶斯', 'team': '湖人', 'position': '中锋', 'ppg': 5.6, 'rpg': 4.3, 'apg': 0.7, 'spg': 0.5},
-        {'name': '加布·文森特', 'team': '湖人', 'position': '控卫', 'ppg': 6.1, 'rpg': 1.6, 'apg': 1.9, 'spg': 0.8},
-        {'name': '达米安·利拉德', 'team': '雄鹿', 'position': '控卫', 'ppg': 24.3, 'rpg': 4.4, 'apg': 7.0, 'spg': 1.0},
-        {'name': '凯德·坎宁安', 'team': '活塞', 'position': '控卫', 'ppg': 24.0, 'rpg': 6.2, 'apg': 9.3, 'spg': 1.1},
-        {'name': '拉梅洛·鲍尔', 'team': '黄蜂', 'position': '控卫', 'ppg': 23.5, 'rpg': 5.8, 'apg': 8.0, 'spg': 1.5},
-        {'name': '杰伦·布朗', 'team': '凯尔特人', 'position': '分卫', 'ppg': 24.3, 'rpg': 6.1, 'apg': 4.6, 'spg': 1.3},
-        {'name': '锡安·威廉姆森', 'team': '鹈鹕', 'position': '大前锋', 'ppg': 22.9, 'rpg': 5.8, 'apg': 5.0, 'spg': 1.1},
-        {'name': '弗朗茨·瓦格纳', 'team': '魔术', 'position': '小前锋', 'ppg': 24.4, 'rpg': 5.7, 'apg': 5.7, 'spg': 1.4},
-        {'name': '科怀·伦纳德', 'team': '快船', 'position': '小前锋', 'ppg': 23.8, 'rpg': 6.5, 'apg': 3.6, 'spg': 1.6},
-        {'name': '劳里·马尔卡宁', 'team': '爵士', 'position': '大前锋', 'ppg': 23.2, 'rpg': 8.2, 'apg': 2.0, 'spg': 0.9},
-        {'name': '阿尔佩伦·申京', 'team': '火箭', 'position': '中锋', 'ppg': 21.2, 'rpg': 9.3, 'apg': 5.0, 'spg': 1.2},
-        {'name': '贾马尔·穆雷', 'team': '掘金', 'position': '控卫', 'ppg': 21.2, 'rpg': 4.1, 'apg': 6.5, 'spg': 0.9},
-        {'name': '杰伦·威廉姆斯', 'team': '雷霆', 'position': '小前锋', 'ppg': 21.0, 'rpg': 5.5, 'apg': 5.0, 'spg': 1.2},
-        {'name': '帕斯卡尔·西亚卡姆', 'team': '步行者', 'position': '大前锋', 'ppg': 21.5, 'rpg': 7.5, 'apg': 3.5, 'spg': 0.8},
-        {'name': '德章泰·穆雷', 'team': '老鹰', 'position': '分卫', 'ppg': 22.5, 'rpg': 5.3, 'apg': 6.4, 'spg': 1.4},
-        {'name': '杰拉米·格兰特', 'team': '开拓者', 'position': '大前锋', 'ppg': 21.0, 'rpg': 3.5, 'apg': 2.8, 'spg': 0.8},
-        {'name': '迈尔斯·布里奇斯', 'team': '黄蜂', 'position': '大前锋', 'ppg': 21.2, 'rpg': 7.5, 'apg': 3.2, 'spg': 0.8},
-        {'name': '巴姆·阿德巴约', 'team': '热火', 'position': '中锋', 'ppg': 20.4, 'rpg': 10.2, 'apg': 4.8, 'spg': 1.0},
-        {'name': '多曼塔斯·萨博尼斯', 'team': '国王', 'position': '中锋', 'ppg': 20.2, 'rpg': 14.0, 'apg': 6.2, 'spg': 0.8},
-        {'name': '泰瑞斯·哈利伯顿', 'team': '步行者', 'position': '控卫', 'ppg': 20.1, 'rpg': 3.7, 'apg': 10.8, 'spg': 1.2},
-        {'name': '斯科蒂·巴恩斯', 'team': '猛龙', 'position': '小前锋', 'ppg': 19.8, 'rpg': 8.2, 'apg': 6.0, 'spg': 1.2},
-        {'name': '米卡尔·布里奇斯', 'team': '篮网', 'position': '小前锋', 'ppg': 19.6, 'rpg': 4.5, 'apg': 3.6, 'spg': 1.0},
-        {'name': '德文·瓦塞尔', 'team': '马刺', 'position': '分卫', 'ppg': 19.5, 'rpg': 3.8, 'apg': 4.1, 'spg': 1.1},
-        {'name': '杰伦·格林', 'team': '火箭', 'position': '分卫', 'ppg': 22.5, 'rpg': 4.8, 'apg': 3.5, 'spg': 0.8},
-        {'name': '安芬尼·西蒙斯', 'team': '开拓者', 'position': '控卫', 'ppg': 22.6, 'rpg': 3.0, 'apg': 5.5, 'spg': 0.8},
-        {'name': '布兰登·英格拉姆', 'team': '鹈鹕', 'position': '小前锋', 'ppg': 22.2, 'rpg': 5.6, 'apg': 5.2, 'spg': 0.8},
-        {'name': '奥斯汀·里夫斯', 'team': '湖人', 'position': '分卫', 'ppg': 16.3, 'rpg': 4.2, 'apg': 4.0, 'spg': 0.9},
-        {'name': '切特·霍姆格伦', 'team': '雷霆', 'position': '中锋', 'ppg': 16.5, 'rpg': 7.8, 'apg': 2.4, 'spg': 0.8},
-        {'name': '德里克·怀特', 'team': '凯尔特人', 'position': '控卫', 'ppg': 14.5, 'rpg': 4.2, 'apg': 4.9, 'spg': 1.1},
-        {'name': '朱·霍勒迪', 'team': '凯尔特人', 'position': '控卫', 'ppg': 12.1, 'rpg': 4.5, 'apg': 5.2, 'spg': 0.8},
-        {'name': '佩顿·普里查德', 'team': '凯尔特人', 'position': '控卫', 'ppg': 8.9, 'rpg': 2.8, 'apg': 2.9, 'spg': 0.5},
-        {'name': '萨姆·豪瑟', 'team': '凯尔特人', 'position': '小前锋', 'ppg': 7.2, 'rpg': 2.5, 'apg': 1.1, 'spg': 0.4},
-        {'name': '卢克·科内特', 'team': '凯尔特人', 'position': '中锋', 'ppg': 4.9, 'rpg': 4.0, 'apg': 0.9, 'spg': 0.3},
-    ]
+    # 获取基础数据
+    try:
+        base = LeagueDashPlayerStats(
+            season=season,
+            measure_type_detailed_defense='Base',
+            per_mode_detailed='PerGame',
+            timeout=60
+        )
+        base_df = base.get_dict()
+        time.sleep(1.0)
+    except Exception as e:
+        print(f"获取基础球员数据失败: {e}", file=sys.stderr)
+        return []
 
-    print(f"获取到 {len(players)} 名球员数据", file=sys.stderr)
-    return players
+    # 获取高级数据
+    try:
+        advanced = LeagueDashPlayerStats(
+            season=season,
+            measure_type_detailed_defense='Advanced',
+            per_mode_detailed='PerGame',
+            timeout=60
+        )
+        adv_df = advanced.get_dict()
+        time.sleep(1.0)
+    except Exception as e:
+        print(f"获取高级球员数据失败: {e}", file=sys.stderr)
+        adv_df = None
+
+    # 解析基础数据
+    base_headers = base_df['resultSets'][0]['headers']
+    base_rows = base_df['resultSets'][0]['rowSet']
+
+    # 构建高级数据索引 (player_id -> data)
+    adv_map = {}
+    if adv_df:
+        adv_headers = adv_df['resultSets'][0]['headers']
+        for row in adv_df['resultSets'][0]['rowSet']:
+            data = dict(zip(adv_headers, row))
+            adv_map[_safe_int(data.get('PLAYER_ID'))] = data
+
+    result = []
+    for row in base_rows:
+        data = dict(zip(base_headers, row))
+
+        player_id = _safe_int(data.get('PLAYER_ID'))
+        team_id = _safe_int(data.get('TEAM_ID'))
+        cn_team = TEAM_ID_TO_CN.get(team_id, data.get('TEAM_ABBREVIATION', ''))
+
+        # 位置映射
+        pos_raw = data.get('PLAYER_POSITION', '')
+        position = POSITION_MAP.get(pos_raw, '控卫')
+
+        # 基础数据
+        gp = _safe_int(data.get('GP'))
+        ppg = _safe_float(data.get('PTS'))
+        rpg = _safe_float(data.get('REB'))
+        apg = _safe_float(data.get('AST'))
+        spg = _safe_float(data.get('STL'))
+        bpg = _safe_float(data.get('BLK'))
+        tpg = _safe_float(data.get('TOV'))
+        mpg = _safe_float(data.get('MIN'))
+        fg_pct = _safe_float(data.get('FG_PCT'))
+        three_pct = _safe_float(data.get('FG3_PCT'))
+        ft_pct = _safe_float(data.get('FT_PCT'))
+
+        # 高级数据
+        adv = adv_map.get(player_id, {})
+        per = _safe_float(adv.get('E_OFF_RATING'), 110.0)  # 进攻效率 (每100回合得分)
+        ts_pct = _safe_float(adv.get('TS_PCT'), fg_pct)
+        usg_pct = _safe_float(adv.get('USG_PCT')) * 100  # 转为百分比
+        if usg_pct < 1.0:
+            usg_pct = 20.0  # 默认值
+
+        result.append({
+            'name': data.get('PLAYER_NAME', ''),
+            'team': cn_team,
+            'position': position,
+            'ppg': round(ppg, 1),
+            'rpg': round(rpg, 1),
+            'apg': round(apg, 1),
+            'spg': round(spg, 1),
+            'gp': gp,
+            'mpg': round(mpg, 1),
+            'fgPct': round(fg_pct, 3),
+            'threePct': round(three_pct, 3),
+            'ftPct': round(ft_pct, 3),
+            'bpg': round(bpg, 1),
+            'tpg': round(tpg, 1),
+            'per': round(per, 1),
+            'tsPct': round(ts_pct, 3),
+            'usgPct': round(usg_pct, 1),
+        })
+
+    # 按得分排序，取前100名
+    result.sort(key=lambda x: x['ppg'], reverse=True)
+    result = result[:100]
+
+    print(f"获取到 {len(result)} 名球员数据", file=sys.stderr)
+    return result
+
+
+def fetch_today_games():
+    """从nba_api获取今日比赛（实时数据）"""
+    _init_team_map()
+    print("正在获取今日比赛数据...", file=sys.stderr)
+
+    try:
+        sb = live_scoreboard.Scoreboard(timeout=15)
+        data = sb.get_dict()
+        time.sleep(0.5)
+    except Exception as e:
+        print(f"获取今日比赛失败: {e}", file=sys.stderr)
+        return []
+
+    result = []
+    for game in data.get('scoreboard', {}).get('games', []):
+        home = game.get('homeTeam', {})
+        away = game.get('awayTeam', {})
+
+        home_cn = TEAM_ABBR_MAP.get(home.get('teamTricode', ''), home.get('teamName', ''))
+        away_cn = TEAM_ABBR_MAP.get(away.get('teamTricode', ''), away.get('teamName', ''))
+
+        game_status = game.get('gameStatus', 0)
+        if game_status == 1:
+            status = 'SCHEDULED'
+        elif game_status == 2:
+            status = 'LIVE'
+        else:
+            status = 'FINISHED'
+
+        result.append({
+            'gameId': game.get('gameId', ''),
+            'homeTeam': home_cn,
+            'awayTeam': away_cn,
+            'homeScore': _safe_int(home.get('score')),
+            'awayScore': _safe_int(away.get('score')),
+            'status': status,
+            'startTime': game.get('gameEt', ''),
+            'period': game.get('period', 0),
+            'gameClock': game.get('gameClock', ''),
+        })
+
+    print(f"获取到 {len(result)} 场今日比赛", file=sys.stderr)
+    return result
 
 
 def fetch_recent_games():
-    """从ESPN API获取最近30天的真实比赛记录"""
-    print("正在从ESPN获取比赛记录...", file=sys.stderr)
+    """从nba_api获取最近比赛记录"""
+    _init_team_map()
+    print("正在获取最近比赛记录...", file=sys.stderr)
 
     games = []
     today = datetime.now()
 
-    # 获取过去30天的比赛
-    for days_ago in range(30):
+    for days_ago in range(7):
         date = today - timedelta(days=days_ago)
-        date_str = date.strftime('%Y%m%d')
-        url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates={date_str}"
+        date_str = date.strftime('%m/%d/%Y')
 
         try:
-            resp = requests.get(url, timeout=15)
-            resp.raise_for_status()
-            data = resp.json()
-
-            for event in data.get('events', []):
-                event_date = event.get('date', '')
-                status_type = event.get('status', {}).get('type', {}).get('name', '')
-
-                # 只处理已结束的比赛
-                if status_type != 'STATUS_FINAL':
-                    continue
-
-                for comp in event.get('competitions', []):
-                    home_team = None
-                    away_team = None
-                    home_score = 0
-                    away_score = 0
-
-                    for c in comp.get('competitors', []):
-                        team_name_en = c.get('team', {}).get('displayName', '')
-                        team_name_cn = TEAM_NAME_MAP.get(team_name_en, team_name_en)
-                        score = int(c.get('score', 0))
-
-                        if c.get('homeAway') == 'home':
-                            home_team = team_name_cn
-                            home_score = score
-                        else:
-                            away_team = team_name_cn
-                            away_score = score
-
-                    if home_team and away_team:
-                        # 解析日期
-                        match_date = event_date[:10] if event_date else date.strftime('%Y-%m-%d')
-
-                        games.append({
-                            'homeTeam': home_team,
-                            'awayTeam': away_team,
-                            'homeScore': home_score,
-                            'awayScore': away_score,
-                            'date': match_date,
-                            'status': 'FINISHED'
-                        })
-
+            sb = ScoreboardV2(game_date=date_str, timeout=30)
+            data = sb.get_dict()
+            time.sleep(1.0)
         except Exception as e:
             print(f"获取{date_str}比赛数据失败: {e}", file=sys.stderr)
             continue
 
-    print(f"从ESPN获取到 {len(games)} 场比赛记录", file=sys.stderr)
+        # 解析比赛数据
+        result_sets = data.get('resultSets', [])
+        game_header = None
+        line_score = None
+
+        for rs in result_sets:
+            if rs.get('name') == 'GameHeader':
+                game_header = rs
+            elif rs.get('name') == 'LineScore':
+                line_score = rs
+
+        if not game_header or not line_score:
+            continue
+
+        # 构建球队得分索引
+        score_map = {}
+        ls_headers = line_score['headers']
+        for row in line_score['rowSet']:
+            sd = dict(zip(ls_headers, row))
+            game_id = sd.get('GAME_ID')
+            team_id = _safe_int(sd.get('TEAM_ID'))
+            score = _safe_int(sd.get('PTS'))
+            score_map[(game_id, team_id)] = {
+                'team': TEAM_ID_TO_CN.get(team_id, sd.get('TEAM_ABBREVIATION', '')),
+                'score': score,
+            }
+
+        gh_headers = game_header['headers']
+        for row in game_header['rowSet']:
+            gd = dict(zip(gh_headers, row))
+            game_id = gd.get('GAME_ID')
+            home_id = _safe_int(gd.get('HOME_TEAM_ID'))
+            away_id = _safe_int(gd.get('VISITOR_TEAM_ID'))
+
+            home_info = score_map.get((game_id, home_id), {})
+            away_info = score_map.get((game_id, away_id), {})
+
+            if home_info and away_info:
+                games.append({
+                    'homeTeam': home_info.get('team', ''),
+                    'awayTeam': away_info.get('team', ''),
+                    'homeScore': home_info.get('score', 0),
+                    'awayScore': away_info.get('score', 0),
+                    'date': date.strftime('%Y-%m-%d'),
+                    'status': 'FINISHED',
+                    'gameId': game_id,
+                })
+
+    print(f"获取到 {len(games)} 场比赛记录", file=sys.stderr)
     return games
+
+
+def fetch_boxscore(game_id):
+    """获取指定比赛的Box Score"""
+    _init_team_map()
+    print(f"正在获取比赛 {game_id} 的Box Score...", file=sys.stderr)
+
+    try:
+        box = BoxScoreTraditionalV2(game_id=game_id, timeout=30)
+        data = box.get_dict()
+        time.sleep(0.5)
+    except Exception as e:
+        print(f"获取Box Score失败: {e}", file=sys.stderr)
+        return None
+
+    result_sets = data.get('resultSets', [])
+    player_stats = []
+    team_stats = []
+
+    for rs in result_sets:
+        headers = rs['headers']
+        for row in rs.get('rowSet', []):
+            d = dict(zip(headers, row))
+
+            if rs['name'] == 'PlayerStats':
+                team_id = _safe_int(d.get('TEAM_ID'))
+                player_stats.append({
+                    'playerId': _safe_int(d.get('PLAYER_ID')),
+                    'playerName': d.get('PLAYER_NAME', ''),
+                    'teamId': team_id,
+                    'teamName': TEAM_ID_TO_CN.get(team_id, d.get('TEAM_ABBREVIATION', '')),
+                    'minutes': d.get('MIN', ''),
+                    'points': _safe_int(d.get('PTS')),
+                    'rebounds': _safe_int(d.get('REB')),
+                    'assists': _safe_int(d.get('AST')),
+                    'steals': _safe_int(d.get('STL')),
+                    'blocks': _safe_int(d.get('BLK')),
+                    'turnovers': _safe_int(d.get('TO')),
+                    'fgMade': _safe_int(d.get('FGM')),
+                    'fgAttempted': _safe_int(d.get('FGA')),
+                    'fgPct': _safe_float(d.get('FG_PCT')),
+                    'threeMade': _safe_int(d.get('FG3M')),
+                    'threeAttempted': _safe_int(d.get('FG3A')),
+                    'threePct': _safe_float(d.get('FG3_PCT')),
+                    'ftMade': _safe_int(d.get('FTM')),
+                    'ftAttempted': _safe_int(d.get('FTA')),
+                    'ftPct': _safe_float(d.get('FT_PCT')),
+                    'plusMinus': _safe_int(d.get('PLUS_MINUS')),
+                    'starter': d.get('START_POSITION', '') != '',
+                })
+            elif rs['name'] == 'TeamStats':
+                team_id = _safe_int(d.get('TEAM_ID'))
+                team_stats.append({
+                    'teamId': team_id,
+                    'teamName': TEAM_ID_TO_CN.get(team_id, ''),
+                    'points': _safe_int(d.get('PTS')),
+                    'rebounds': _safe_int(d.get('REB')),
+                    'assists': _safe_int(d.get('AST')),
+                })
+
+    print(f"获取到 {len(player_stats)} 名球员的Box Score", file=sys.stderr)
+    return {'players': player_stats, 'teams': team_stats}
+
+
+def fetch_playbyplay(game_id, start_period=0, end_period=10):
+    """获取指定比赛的Play-by-Play"""
+    print(f"正在获取比赛 {game_id} 的Play-by-Play...", file=sys.stderr)
+
+    try:
+        pbp = PlayByPlayV2(game_id=game_id, start_period=start_period, end_period=end_period, timeout=30)
+        data = pbp.get_dict()
+        time.sleep(0.5)
+    except Exception as e:
+        print(f"获取Play-by-Play失败: {e}", file=sys.stderr)
+        return []
+
+    result_sets = data.get('resultSets', [])
+    events = []
+
+    for rs in result_sets:
+        if rs['name'] != 'PlayByPlay':
+            continue
+        headers = rs['headers']
+        for row in rs.get('rowSet', []):
+            d = dict(zip(headers, row))
+            desc = d.get('HOMEDESCRIPTION') or d.get('VISITORDESCRIPTION') or d.get('NEUTRALDESCRIPTION', '')
+            if not desc:
+                continue
+            events.append({
+                'period': _safe_int(d.get('PERIOD')),
+                'gameClock': d.get('PCTIMESTRING', ''),
+                'description': desc,
+                'homeScore': _safe_int(d.get('SCOREHOME')),
+                'awayScore': _safe_int(d.get('SCOREAWAY')),
+                'eventType': d.get('EVENTMSGTYPE', ''),
+                'playerId': _safe_int(d.get('PLAYER1_ID')),
+                'playerName': d.get('PLAYER1_NAME', ''),
+            })
+
+    print(f"获取到 {len(events)} 条Play-by-Play事件", file=sys.stderr)
+    return events
+
+
+def fetch_player_career(player_id):
+    """获取球员生涯数据"""
+    print(f"正在获取球员 {player_id} 的生涯数据...", file=sys.stderr)
+
+    try:
+        career = PlayerCareerStats(player_id=player_id, timeout=30)
+        data = career.get_dict()
+        time.sleep(1.0)
+    except Exception as e:
+        print(f"获取生涯数据失败: {e}", file=sys.stderr)
+        return []
+
+    result = []
+    for rs in data.get('resultSets', []):
+        if rs['name'] != 'SeasonTotalsRegularSeason':
+            continue
+        headers = rs['headers']
+        for row in rs.get('rowSet', []):
+            d = dict(zip(headers, row))
+            team_id = _safe_int(d.get('TEAM_ID'))
+            result.append({
+                'season': d.get('SEASON_ID', ''),
+                'teamName': TEAM_ID_TO_CN.get(team_id, d.get('TEAM_ABBREVIATION', '')),
+                'gamesPlayed': _safe_int(d.get('GP')),
+                'minutesPerGame': round(_safe_float(d.get('MIN')) / max(_safe_int(d.get('GP')), 1), 1),
+                'pointsPerGame': round(_safe_float(d.get('PTS')) / max(_safe_int(d.get('GP')), 1), 1),
+                'reboundsPerGame': round(_safe_float(d.get('REB')) / max(_safe_int(d.get('GP')), 1), 1),
+                'assistsPerGame': round(_safe_float(d.get('AST')) / max(_safe_int(d.get('GP')), 1), 1),
+                'stealsPerGame': round(_safe_float(d.get('STL')) / max(_safe_int(d.get('GP')), 1), 1),
+                'blocksPerGame': round(_safe_float(d.get('BLK')) / max(_safe_int(d.get('GP')), 1), 1),
+                'fgPct': _safe_float(d.get('FG_PCT')),
+                'threePct': _safe_float(d.get('FG3_PCT')),
+                'ftPct': _safe_float(d.get('FT_PCT')),
+            })
+
+    print(f"获取到 {len(result)} 个赛季的生涯数据", file=sys.stderr)
+    return result
+
+
+def fetch_player_gamelog(player_id, season=None):
+    """获取球员比赛日志"""
+    if season is None:
+        season = _get_current_season()
+    print(f"正在获取球员 {player_id} 的比赛日志 ({season})...", file=sys.stderr)
+
+    try:
+        log = PlayerGameLog(player_id=player_id, season=season, timeout=30)
+        data = log.get_dict()
+        time.sleep(1.0)
+    except Exception as e:
+        print(f"获取比赛日志失败: {e}", file=sys.stderr)
+        return []
+
+    result = []
+    for rs in data.get('resultSets', []):
+        if rs['name'] != 'PlayerGameLog':
+            continue
+        headers = rs['headers']
+        for row in rs.get('rowSet', []):
+            d = dict(zip(headers, row))
+            result.append({
+                'gameId': d.get('Game_ID', ''),
+                'matchDate': d.get('GAME_DATE', ''),
+                'opponent': d.get('MATCHUP', ''),
+                'minutes': d.get('MIN', ''),
+                'points': _safe_int(d.get('PTS')),
+                'rebounds': _safe_int(d.get('REB')),
+                'assists': _safe_int(d.get('AST')),
+                'steals': _safe_int(d.get('STL')),
+                'blocks': _safe_int(d.get('BLK')),
+                'turnovers': _safe_int(d.get('TOV')),
+                'fgPct': _safe_float(d.get('FG_PCT')),
+                'threePct': _safe_float(d.get('FG3_PCT')),
+                'ftPct': _safe_float(d.get('FT_PCT')),
+                'plusMinus': _safe_int(d.get('PLUS_MINUS')),
+                'result': d.get('WL', ''),
+            })
+
+    print(f"获取到 {len(result)} 场比赛日志", file=sys.stderr)
+    return result
 
 
 def main():
     """主函数"""
+    if not HAS_NBA_API:
+        print(json.dumps({'error': 'nba_api not installed. Run: pip install nba_api'}, ensure_ascii=False))
+        sys.exit(1)
+
     action = sys.argv[1] if len(sys.argv) > 1 else 'all'
 
     result = {
         'timestamp': datetime.now().isoformat(),
-        'source': 'ESPN API + nba_api'
+        'source': 'nba_api (stats.nba.com + cdn.nba.com)',
+        'season': _get_current_season(),
     }
 
     if action in ('all', 'teams'):
@@ -276,6 +583,22 @@ def main():
 
     if action in ('all', 'games'):
         result['games'] = fetch_recent_games()
+
+    if action == 'today':
+        result['todayGames'] = fetch_today_games()
+
+    if action == 'boxscore' and len(sys.argv) > 2:
+        result['boxscore'] = fetch_boxscore(sys.argv[2])
+
+    if action == 'playbyplay' and len(sys.argv) > 2:
+        result['playByPlay'] = fetch_playbyplay(sys.argv[2])
+
+    if action == 'player_career' and len(sys.argv) > 2:
+        result['career'] = fetch_player_career(int(sys.argv[2]))
+
+    if action == 'player_gamelog' and len(sys.argv) > 2:
+        season = sys.argv[3] if len(sys.argv) > 3 else None
+        result['gameLog'] = fetch_player_gamelog(int(sys.argv[2]), season)
 
     # 输出JSON到stdout
     print(json.dumps(result, ensure_ascii=False, indent=2))

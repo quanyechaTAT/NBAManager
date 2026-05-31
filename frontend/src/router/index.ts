@@ -49,10 +49,22 @@ const router = createRouter({
           meta: { title: '球员数据' },
         },
         {
+          path: 'players/detail',
+          name: 'player-detail',
+          component: () => import('@/views/PlayerDetailView.vue'),
+          meta: { title: '球员详情', requiresAuth: true },
+        },
+        {
           path: 'news',
           name: 'news',
           component: () => import('@/views/NewsView.vue'),
           meta: { title: '赛事资讯' },
+        },
+        {
+          path: 'match-detail',
+          name: 'match-detail',
+          component: () => import('@/views/MatchDetailView.vue'),
+          meta: { title: '比赛详情', requiresAuth: true },
         },
       ],
     },

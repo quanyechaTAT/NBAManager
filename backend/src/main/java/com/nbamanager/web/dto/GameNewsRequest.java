@@ -14,4 +14,5 @@ public record GameNewsRequest(
         Integer homeScore,
         Integer awayScore,
         @NotNull LocalDateTime gameStartTime,
-        @NotNull LocalDateTime gameEndTime) {}
+        @NotNull LocalDateTime gameEndTime,
+        String status) {}

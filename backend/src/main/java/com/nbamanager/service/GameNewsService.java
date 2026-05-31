@@ -8,7 +8,10 @@ import com.nbamanager.web.dto.GameNewsRequest;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -34,6 +37,7 @@ public class GameNewsService {
     }
 
     /** 查询单条资讯 */
+    @Cacheable(value = "news", key = "#id")
     @Transactional(readOnly = true)
     public GameNewsDto get(Long id) {
         return toDto(gameNewsRepository.findById(id)
@@ -41,6 +45,7 @@ public class GameNewsService {
     }
 
     /** 查询今日赛事 */
+    @Cacheable(value = "todayGames", key = "'today'")
     @Transactional(readOnly = true)
     public List<GameNewsDto> getTodayGames() {
         LocalDate today = LocalDate.now();
@@ -48,10 +53,11 @@ public class GameNewsService {
         LocalDateTime end = today.plusDays(1).atStartOfDay();
         return gameNewsRepository.findTodayGames(start, end).stream()
                 .map(this::toDto)
-                .toList();
+                .collect(Collectors.toList());
     }
 
     /** 新增赛事资讯 */
+    @CacheEvict(value = {"news", "todayGames"}, allEntries = true)
     @Transactional
     public GameNewsDto create(GameNewsRequest req) {
         GameNews g = new GameNews();
@@ -61,6 +67,7 @@ public class GameNewsService {
     }
 
     /** 修改赛事资讯 */
+    @CacheEvict(value = {"news", "todayGames"}, allEntries = true)
     @Transactional
     public GameNewsDto update(Long id, GameNewsRequest req) {
         GameNews g = gameNewsRepository.findById(id)
@@ -70,6 +77,7 @@ public class GameNewsService {
     }
 
     /** 删除赛事资讯 */
+    @CacheEvict(value = {"news", "todayGames"}, allEntries = true)
     @Transactional
     public void delete(Long id) {
         if (!gameNewsRepository.existsById(id)) {
@@ -88,6 +96,9 @@ public class GameNewsService {
         g.setAwayScore(req.awayScore());
         g.setGameStartTime(req.gameStartTime());
         g.setGameEndTime(req.gameEndTime());
+        if (req.status() != null && !req.status().isEmpty()) {
+            g.setStatus(req.status());
+        }
     }
 
     /**
@@ -104,11 +115,15 @@ public class GameNewsService {
     }
 
     private GameNewsDto toDto(GameNews g) {
+        // 优先使用实体的状态字段（可被实时同步更新），否则按时间计算
+        String status = (g.getStatus() != null && !g.getStatus().isEmpty())
+                ? g.getStatus()
+                : calcStatus(g.getGameStartTime(), g.getGameEndTime());
         return new GameNewsDto(
                 g.getId(), g.getTitle(), g.getSummary(), g.getContent(),
                 g.getHomeTeam(), g.getAwayTeam(), g.getHomeScore(), g.getAwayScore(),
                 g.getGameStartTime(), g.getGameEndTime(),
-                calcStatus(g.getGameStartTime(), g.getGameEndTime()),
+                status,
                 g.getCreateTime());
     }
 

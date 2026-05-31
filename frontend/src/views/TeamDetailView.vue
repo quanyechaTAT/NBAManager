@@ -94,6 +94,11 @@
             </template>
           </el-table-column>
           <el-table-column label="赛季" width="100" prop="season" />
+          <el-table-column label="详情" width="80" align="center">
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="goToMatchDetail(row)">📊</el-button>
+            </template>
+          </el-table-column>
         </el-table>
       </el-card>
 
@@ -189,6 +194,20 @@ function getResultLabel(row: MatchRecord) {
   const isHome = row.homeTeam === teamName.value
   const won = isHome ? row.homeScore > row.awayScore : row.awayScore > row.homeScore
   return won ? '胜' : '负'
+}
+
+function goToMatchDetail(row: MatchRecord) {
+  router.push({
+    path: '/match-detail',
+    query: {
+      gameId: String(row.id),
+      homeTeam: row.homeTeam,
+      awayTeam: row.awayTeam,
+      homeScore: String(row.homeScore),
+      awayScore: String(row.awayScore),
+      status: row.status,
+    },
+  })
 }
 
 /* 交锋统计 */

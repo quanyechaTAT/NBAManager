@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -36,11 +38,13 @@ public class TeamService {
         return page.map(this::toDto);
     }
 
+    @Cacheable(value = "teams", key = "#id")
     @Transactional(readOnly = true)
     public TeamDto get(Long id) {
         return toDto(teamRepository.findById(id).orElseThrow(() -> notFound(id)));
     }
 
+    @CacheEvict(value = {"teams", "rankings", "dashboard"}, allEntries = true)
     @Transactional
     public TeamDto create(TeamRequest req) {
         Team t = new Team();
@@ -48,6 +52,7 @@ public class TeamService {
         return toDto(teamRepository.save(t));
     }
 
+    @CacheEvict(value = {"teams", "rankings", "dashboard"}, allEntries = true)
     @Transactional
     public TeamDto update(Long id, TeamRequest req) {
         Team t = teamRepository.findById(id).orElseThrow(() -> notFound(id));
@@ -55,6 +60,7 @@ public class TeamService {
         return toDto(teamRepository.save(t));
     }
 
+    @CacheEvict(value = {"teams", "rankings", "dashboard"}, allEntries = true)
     @Transactional
     public void delete(Long id) {
         if (!teamRepository.existsById(id)) {
@@ -64,6 +70,7 @@ public class TeamService {
     }
 
     /** 东西部分区排名（按净胜场排序，含胜场差） */
+    @Cacheable(value = "rankings", key = "'all'")
     @Transactional(readOnly = true)
     public Map<String, List<TeamRankDto>> getConferenceRankings() {
         List<Team> all = teamRepository.findAll();
@@ -76,7 +83,7 @@ public class TeamService {
             // 按净胜场（wins - losses）降序排列
             List<Team> sorted = confTeams.stream()
                     .sorted(Comparator.comparingInt((Team t) -> t.getWins() - t.getLosses()).reversed())
-                    .toList();
+                    .collect(Collectors.toList());
             if (sorted.isEmpty()) {
                 result.put(conf, List.of());
                 continue;

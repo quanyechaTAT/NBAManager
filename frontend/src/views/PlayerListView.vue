@@ -15,7 +15,7 @@
     <div class="section-head">
       <div>
         <h2>球员资料</h2>
-        <p>维护球员所属球队、位置与基础场均数据。</p>
+        <p>维护球员所属球队、位置与详细场均数据。</p>
       </div>
       <div class="head-actions">
         <el-button type="success" plain @click="exportExcel">📥 导出 Excel</el-button>
@@ -34,13 +34,30 @@
       <el-button @click="resetFilters">重置</el-button>
     </div>
     <el-table :data="rows" border stripe v-loading="loading">
-      <el-table-column prop="name" label="姓名" min-width="120" />
-      <el-table-column prop="teamName" label="球队" width="120" />
-      <el-table-column prop="position" label="位置" width="80" />
-      <el-table-column prop="pointsPerGame" label="场均得分" width="100" />
-      <el-table-column prop="reboundsPerGame" label="场均篮板" width="100" />
-      <el-table-column prop="assistsPerGame" label="场均助攻" width="100" />
-      <el-table-column prop="stealsPerGame" label="场均抢断" width="100" />
+      <el-table-column label="姓名" min-width="120">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="goToPlayerDetail(row)">{{ row.name }}</el-button>
+        </template>
+      </el-table-column>
+      <el-table-column prop="teamName" label="球队" width="100" />
+      <el-table-column prop="position" label="位置" width="70" />
+      <el-table-column prop="jerseyNumber" label="球衣" width="60" align="center" />
+      <el-table-column prop="pointsPerGame" label="得分" width="70" align="center" sortable />
+      <el-table-column prop="reboundsPerGame" label="篮板" width="70" align="center" sortable />
+      <el-table-column prop="assistsPerGame" label="助攻" width="70" align="center" sortable />
+      <el-table-column prop="stealsPerGame" label="抢断" width="65" align="center" sortable />
+      <el-table-column prop="blocksPerGame" label="盖帽" width="65" align="center" sortable />
+      <el-table-column label="命中率" width="90" align="center">
+        <template #default="{ row }">
+          {{ (row.fieldGoalPct * 100).toFixed(1) }}%
+        </template>
+      </el-table-column>
+      <el-table-column label="三分" width="80" align="center">
+        <template #default="{ row }">
+          {{ (row.threePointPct * 100).toFixed(1) }}%
+        </template>
+      </el-table-column>
+      <el-table-column prop="efficiency" label="效率" width="65" align="center" sortable />
       <el-table-column v-if="auth.isAdmin" label="操作" width="160" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -61,33 +78,98 @@
       />
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑球员' : '新建球员'" width="520px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑球员' : '新建球员'" width="680px" destroy-on-close>
       <el-form :model="form" label-width="100px">
-        <el-form-item label="姓名">
-          <el-input v-model="form.name" />
-        </el-form-item>
-        <el-form-item label="球队">
-          <el-select v-model="form.teamId" filterable style="width: 100%" :loading="teamsLoading">
-            <el-option v-for="t in teamOptions" :key="t.id" :label="t.name" :value="t.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="位置">
-          <el-select v-model="form.position" style="width: 100%">
-            <el-option v-for="p in positionOptions" :key="p" :label="p" :value="p" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="场均得分">
-          <el-input-number v-model="form.pointsPerGame" :min="0" :step="0.1" :precision="1" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="场均篮板">
-          <el-input-number v-model="form.reboundsPerGame" :min="0" :step="0.1" :precision="1" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="场均助攻">
-          <el-input-number v-model="form.assistsPerGame" :min="0" :step="0.1" :precision="1" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="场均抢断">
-          <el-input-number v-model="form.stealsPerGame" :min="0" :step="0.1" :precision="1" style="width: 100%" />
-        </el-form-item>
+        <el-divider content-position="left">基本信息</el-divider>
+        <div class="form-row">
+          <el-form-item label="姓名" class="form-item-full">
+            <el-input v-model="form.name" />
+          </el-form-item>
+        </div>
+        <div class="form-row">
+          <el-form-item label="球队" class="form-item-half">
+            <el-select v-model="form.teamId" filterable style="width: 100%" :loading="teamsLoading">
+              <el-option v-for="t in teamOptions" :key="t.id" :label="t.name" :value="t.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="位置" class="form-item-half">
+            <el-select v-model="form.position" style="width: 100%">
+              <el-option v-for="p in positionOptions" :key="p" :label="p" :value="p" />
+            </el-select>
+          </el-form-item>
+        </div>
+        <div class="form-row">
+          <el-form-item label="球衣号码" class="form-item-half">
+            <el-input-number v-model="form.jerseyNumber" :min="0" :max="99" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="国籍" class="form-item-half">
+            <el-input v-model="form.country" />
+          </el-form-item>
+        </div>
+        <div class="form-row">
+          <el-form-item label="身高" class="form-item-half">
+            <el-input v-model="form.height" placeholder="如 6-8" />
+          </el-form-item>
+          <el-form-item label="体重(磅)" class="form-item-half">
+            <el-input-number v-model="form.weight" :min="0" :max="400" style="width: 100%" />
+          </el-form-item>
+        </div>
+
+        <el-divider content-position="left">场均数据</el-divider>
+        <div class="form-row">
+          <el-form-item label="得分" class="form-item-third">
+            <el-input-number v-model="form.pointsPerGame" :min="0" :step="0.1" :precision="1" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="篮板" class="form-item-third">
+            <el-input-number v-model="form.reboundsPerGame" :min="0" :step="0.1" :precision="1" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="助攻" class="form-item-third">
+            <el-input-number v-model="form.assistsPerGame" :min="0" :step="0.1" :precision="1" style="width: 100%" />
+          </el-form-item>
+        </div>
+        <div class="form-row">
+          <el-form-item label="抢断" class="form-item-third">
+            <el-input-number v-model="form.stealsPerGame" :min="0" :step="0.1" :precision="1" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="盖帽" class="form-item-third">
+            <el-input-number v-model="form.blocksPerGame" :min="0" :step="0.1" :precision="1" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="失误" class="form-item-third">
+            <el-input-number v-model="form.turnoversPerGame" :min="0" :step="0.1" :precision="1" style="width: 100%" />
+          </el-form-item>
+        </div>
+        <div class="form-row">
+          <el-form-item label="出场次数" class="form-item-third">
+            <el-input-number v-model="form.gamesPlayed" :min="0" :max="82" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="上场时间" class="form-item-third">
+            <el-input-number v-model="form.minutesPerGame" :min="0" :max="48" :step="0.1" :precision="1" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="效率值" class="form-item-third">
+            <el-input-number v-model="form.efficiency" :min="0" :step="0.1" :precision="1" style="width: 100%" />
+          </el-form-item>
+        </div>
+
+        <el-divider content-position="left">命中率</el-divider>
+        <div class="form-row">
+          <el-form-item label="投篮%" class="form-item-third">
+            <el-input-number v-model="form.fieldGoalPct" :min="0" :max="1" :step="0.001" :precision="3" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="三分%" class="form-item-third">
+            <el-input-number v-model="form.threePointPct" :min="0" :max="1" :step="0.001" :precision="3" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="罚球%" class="form-item-third">
+            <el-input-number v-model="form.freeThrowPct" :min="0" :max="1" :step="0.001" :precision="3" style="width: 100%" />
+          </el-form-item>
+        </div>
+        <div class="form-row">
+          <el-form-item label="真实命中率" class="form-item-half">
+            <el-input-number v-model="form.trueShootingPct" :min="0" :max="1" :step="0.001" :precision="3" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="使用率" class="form-item-half">
+            <el-input-number v-model="form.usagePct" :min="0" :max="100" :step="0.1" :precision="1" style="width: 100%" />
+          </el-form-item>
+        </div>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -101,6 +183,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
@@ -110,6 +193,7 @@ import { fetchTeams } from '@/api/team'
 import type { Player, Team } from '@/api/types'
 
 const auth = useAuthStore()
+const router = useRouter()
 const loading = ref(false)
 const saving = ref(false)
 const teamsLoading = ref(false)
@@ -133,6 +217,20 @@ const form = reactive({
   reboundsPerGame: 4,
   assistsPerGame: 3,
   stealsPerGame: 1.0,
+  gamesPlayed: 65,
+  minutesPerGame: 28.0,
+  fieldGoalPct: 0.460,
+  threePointPct: 0.350,
+  freeThrowPct: 0.800,
+  blocksPerGame: 0.5,
+  turnoversPerGame: 1.5,
+  efficiency: 15.0,
+  trueShootingPct: 0.570,
+  usagePct: 20.0,
+  jerseyNumber: 0,
+  height: '6-6',
+  weight: 210,
+  country: '美国',
 })
 
 async function loadTeams() {
@@ -190,6 +288,20 @@ function openCreate() {
   form.reboundsPerGame = 4
   form.assistsPerGame = 3
   form.stealsPerGame = 1.0
+  form.gamesPlayed = 65
+  form.minutesPerGame = 28.0
+  form.fieldGoalPct = 0.460
+  form.threePointPct = 0.350
+  form.freeThrowPct = 0.800
+  form.blocksPerGame = 0.5
+  form.turnoversPerGame = 1.5
+  form.efficiency = 15.0
+  form.trueShootingPct = 0.570
+  form.usagePct = 20.0
+  form.jerseyNumber = 0
+  form.height = '6-6'
+  form.weight = 210
+  form.country = '美国'
   if (teamOptions.value.length) {
     form.teamId = teamOptions.value[0].id
   }
@@ -205,6 +317,20 @@ function openEdit(row: Player) {
   form.reboundsPerGame = row.reboundsPerGame
   form.assistsPerGame = row.assistsPerGame
   form.stealsPerGame = row.stealsPerGame
+  form.gamesPlayed = row.gamesPlayed
+  form.minutesPerGame = row.minutesPerGame
+  form.fieldGoalPct = row.fieldGoalPct
+  form.threePointPct = row.threePointPct
+  form.freeThrowPct = row.freeThrowPct
+  form.blocksPerGame = row.blocksPerGame
+  form.turnoversPerGame = row.turnoversPerGame
+  form.efficiency = row.efficiency
+  form.trueShootingPct = row.trueShootingPct
+  form.usagePct = row.usagePct
+  form.jerseyNumber = row.jerseyNumber
+  form.height = row.height
+  form.weight = row.weight
+  form.country = row.country
   dialogVisible.value = true
 }
 
@@ -223,6 +349,20 @@ async function save() {
       reboundsPerGame: form.reboundsPerGame,
       assistsPerGame: form.assistsPerGame,
       stealsPerGame: form.stealsPerGame,
+      gamesPlayed: form.gamesPlayed,
+      minutesPerGame: form.minutesPerGame,
+      fieldGoalPct: form.fieldGoalPct,
+      threePointPct: form.threePointPct,
+      freeThrowPct: form.freeThrowPct,
+      blocksPerGame: form.blocksPerGame,
+      turnoversPerGame: form.turnoversPerGame,
+      efficiency: form.efficiency,
+      trueShootingPct: form.trueShootingPct,
+      usagePct: form.usagePct,
+      jerseyNumber: form.jerseyNumber,
+      height: form.height,
+      weight: form.weight,
+      country: form.country,
     }
     if (editingId.value) {
       await updatePlayer(editingId.value, payload)
@@ -264,7 +404,6 @@ async function onDelete(row: Player) {
 async function exportExcel() {
   ElMessage.info('正在导出…')
   try {
-    // 请求当前筛选条件下的全部数据（不分页）
     const { data } = await fetchPlayers({
       q: keyword.value || undefined,
       teamId: filterTeamId.value || undefined,
@@ -273,23 +412,23 @@ async function exportExcel() {
       size: 9999,
     })
 
-    const header = ['姓名', '球队', '位置', '场均得分', '场均篮板', '场均助攻', '场均抢断']
+    const header = ['姓名', '球队', '位置', '球衣', '身高', '体重', '国籍',
+      '场均得分', '场均篮板', '场均助攻', '场均抢断', '场均盖帽', '场均失误',
+      '出场次数', '场均时间', '投篮%', '三分%', '罚球%', '真实命中率%', '效率值', '使用率%']
     const rows4Excel = data.content.map((p: Player) => [
-      p.name,
-      p.teamName,
-      p.position,
-      p.pointsPerGame,
-      p.reboundsPerGame,
-      p.assistsPerGame,
-      p.stealsPerGame,
+      p.name, p.teamName, p.position, p.jerseyNumber, p.height, p.weight, p.country,
+      p.pointsPerGame, p.reboundsPerGame, p.assistsPerGame, p.stealsPerGame,
+      p.blocksPerGame, p.turnoversPerGame, p.gamesPlayed, p.minutesPerGame,
+      (p.fieldGoalPct * 100).toFixed(1), (p.threePointPct * 100).toFixed(1),
+      (p.freeThrowPct * 100).toFixed(1), (p.trueShootingPct * 100).toFixed(1),
+      p.efficiency, (p.usagePct).toFixed(1),
     ])
 
     const ws = XLSX.utils.aoa_to_sheet([header, ...rows4Excel])
-
-    // 设置列宽
     ws['!cols'] = [
-      { wch: 16 }, { wch: 14 }, { wch: 8 },
-      { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+      { wch: 16 }, { wch: 10 }, { wch: 8 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 10 },
+      { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
+      { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 8 }, { wch: 8 },
     ]
 
     const wb = XLSX.utils.book_new()
@@ -305,6 +444,10 @@ async function exportExcel() {
   } catch {
     ElMessage.error('导出失败')
   }
+}
+
+function goToPlayerDetail(row: Player) {
+  router.push({ path: '/players/detail', query: { id: String(row.id) } })
 }
 
 onMounted(async () => {
@@ -371,7 +514,7 @@ onMounted(async () => {
   justify-content: flex-end;
 }
 .card {
-  max-width: 1100px;
+  max-width: 1300px;
   background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
   border-radius: var(--radius-xl) !important;
@@ -379,6 +522,21 @@ onMounted(async () => {
   transition: all var(--duration-normal) var(--ease-smooth);
   position: relative;
   z-index: 1;
+}
+.form-row {
+  display: flex;
+  gap: 16px;
+}
+.form-item-full {
+  flex: 1;
+}
+.form-item-half {
+  flex: 1;
+  min-width: 0;
+}
+.form-item-third {
+  flex: 1;
+  min-width: 0;
 }
 :deep(.el-input__wrapper) {
   background: #1C2333 !important;
@@ -396,7 +554,6 @@ onMounted(async () => {
 :deep(.el-input__inner) { color: var(--text-primary) !important; font-family: var(--font-body); }
 :deep(.el-input__inner::placeholder) { color: var(--text-dim) !important; }
 
-/* ---- 筛选下拉框 ---- */
 :deep(.el-select .el-select__wrapper) {
   background: #1C2333 !important;
   border: 1px solid var(--border-light) !important;
@@ -425,5 +582,13 @@ onMounted(async () => {
   background: var(--purple-dim) !important;
   border-color: rgba(108, 92, 231, 0.25) !important;
   color: var(--purple-light) !important;
+}
+:deep(.el-divider__text) {
+  background: var(--bg-card) !important;
+  color: var(--text-secondary) !important;
+  font-size: 13px;
+}
+:deep(.el-divider) {
+  border-color: var(--border-light) !important;
 }
 </style>
