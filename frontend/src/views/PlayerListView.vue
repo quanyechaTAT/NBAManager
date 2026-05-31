@@ -36,7 +36,7 @@
     <el-table :data="rows" border stripe v-loading="loading">
       <el-table-column label="姓名" min-width="120">
         <template #default="{ row }">
-          <el-button link type="primary" @click="goToPlayerDetail(row)">{{ row.name }}</el-button>
+          <span class="player-name-link" @click="goToPlayerDetail(row)">{{ row.name }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="teamName" label="球队" width="100" />
@@ -507,6 +507,16 @@ onMounted(async () => {
   margin: 0;
   color: var(--text-muted);
   font-size: 13px;
+}
+.player-name-link {
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 500;
+  transition: color var(--duration-fast) var(--ease-smooth);
+}
+.player-name-link:hover {
+  color: var(--accent-light);
+  text-decoration: underline;
 }
 .pager {
   margin-top: 16px;

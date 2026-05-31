@@ -139,17 +139,7 @@ public class NbaDataSyncService {
             // 执行脚本
             Process process = pb.start();
 
-            // 读取标准输出
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-            }
-
-            // 读取错误输出
+            // 读取错误输出（用于日志）
             StringBuilder errorOutput = new StringBuilder();
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
@@ -168,10 +158,16 @@ public class NbaDataSyncService {
 
             log.info("Python脚本输出: {}", errorOutput.toString().trim());
 
-            // 解析JSON
-            String jsonStr = output.toString().trim();
+            // 从文件读取JSON（避免Windows编码问题）
+            File outputFile = new File(new File(scriptPath).getParentFile(), "output.json");
+            if (!outputFile.exists()) {
+                log.error("Python脚本输出文件不存在: {}", outputFile.getAbsolutePath());
+                return null;
+            }
+
+            String jsonStr = new String(java.nio.file.Files.readAllBytes(outputFile.toPath()), StandardCharsets.UTF_8);
             if (jsonStr.isEmpty()) {
-                log.error("Python脚本输出为空");
+                log.error("Python脚本输出文件为空");
                 return null;
             }
 
@@ -278,6 +274,7 @@ public class NbaDataSyncService {
             double per = playerData.optDouble("per", 110.0);
             double tsPct = playerData.optDouble("tsPct", fgPct);
             double usgPct = playerData.optDouble("usgPct", 20.0);
+            int jersey = playerData.optInt("jersey", 0);
 
             // 查找球队
             Team team = teamRepository.findByName(teamName);
@@ -290,6 +287,7 @@ public class NbaDataSyncService {
             Player existingPlayer = findPlayerByNameAndTeam(name, team);
             if (existingPlayer != null) {
                 // 更新现有球员
+                existingPlayer.setName(name);  // 更新为中文名
                 existingPlayer.setPosition(position);
                 existingPlayer.setPointsPerGame(ppg);
                 existingPlayer.setReboundsPerGame(rpg);
@@ -305,6 +303,9 @@ public class NbaDataSyncService {
                 existingPlayer.setEfficiency(per);
                 existingPlayer.setTrueShootingPct(tsPct);
                 existingPlayer.setUsagePct(usgPct);
+                if (jersey > 0) {
+                    existingPlayer.setJerseyNumber(jersey);
+                }
                 playerRepository.save(existingPlayer);
                 updated++;
             } else {
@@ -327,7 +328,7 @@ public class NbaDataSyncService {
                 newPlayer.setEfficiency(per);
                 newPlayer.setTrueShootingPct(tsPct);
                 newPlayer.setUsagePct(usgPct);
-                newPlayer.setJerseyNumber(0);
+                newPlayer.setJerseyNumber(jersey > 0 ? jersey : 0);
                 newPlayer.setHeight("6-6");
                 newPlayer.setWeight(210);
                 newPlayer.setCountry("美国");
@@ -364,16 +365,25 @@ public class NbaDataSyncService {
             int awayScore = gameData.getInt("awayScore");
             String dateStr = gameData.getString("date");
             String status = gameData.optString("status", "FINISHED");
+            String nbaGameId = gameData.optString("gameId", null);
 
             LocalDate matchDate = LocalDate.parse(dateStr);
 
             // 检查是否已存在相同比赛
-            boolean exists = matchRecordRepository.findAll().stream()
-                    .anyMatch(m -> m.getHomeTeam().equals(homeTeam)
+            MatchRecord existing = matchRecordRepository.findAll().stream()
+                    .filter(m -> m.getHomeTeam().equals(homeTeam)
                             && m.getAwayTeam().equals(awayTeam)
-                            && m.getMatchDate().equals(matchDate));
+                            && m.getMatchDate().equals(matchDate))
+                    .findFirst()
+                    .orElse(null);
 
-            if (!exists) {
+            if (existing != null) {
+                // 如果已存在但没有nbaGameId，更新它
+                if (nbaGameId != null && !nbaGameId.isEmpty() && existing.getNbaGameId() == null) {
+                    existing.setNbaGameId(nbaGameId);
+                    matchRecordRepository.save(existing);
+                }
+            } else {
                 MatchRecord record = new MatchRecord();
                 record.setHomeTeam(homeTeam);
                 record.setAwayTeam(awayTeam);
@@ -382,6 +392,7 @@ public class NbaDataSyncService {
                 record.setMatchDate(matchDate);
                 record.setSeason("2025-26");
                 record.setStatus(status);
+                record.setNbaGameId(nbaGameId);
                 matchRecordRepository.save(record);
                 added++;
             }

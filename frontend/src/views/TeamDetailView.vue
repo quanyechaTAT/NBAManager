@@ -200,7 +200,7 @@ function goToMatchDetail(row: MatchRecord) {
   router.push({
     path: '/match-detail',
     query: {
-      gameId: String(row.id),
+      gameId: row.nbaGameId || String(row.id),
       homeTeam: row.homeTeam,
       awayTeam: row.awayTeam,
       homeScore: String(row.homeScore),

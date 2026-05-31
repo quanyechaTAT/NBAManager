@@ -161,9 +161,12 @@ public class MatchDetailService {
 
             JSONObject data = new JSONObject(jsonStr);
             if ("boxscore".equals(dataType) && data.has("boxscore")) {
-                saveBoxScore(data.getJSONArray("boxscore"), gameId);
-            } else if ("playbyplay".equals(dataType) && data.has("playbyplay")) {
-                savePlayByPlay(data.getJSONArray("playbyplay"), gameId);
+                JSONObject boxscore = data.getJSONObject("boxscore");
+                if (boxscore.has("players")) {
+                    saveBoxScore(boxscore.getJSONArray("players"), gameId);
+                }
+            } else if ("playbyplay".equals(dataType) && data.has("playByPlay")) {
+                savePlayByPlay(data.getJSONArray("playByPlay"), gameId);
             }
 
             log.info("{}数据获取成功, gameId={}", dataType, gameId);
