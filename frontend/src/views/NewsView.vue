@@ -17,7 +17,10 @@
         <h2>📅 今日赛事</h2>
         <span class="date">{{ todayStr }}</span>
       </div>
-      <el-button v-if="auth.isAdmin" type="primary" size="small" @click="openCreate">+ 新增资讯</el-button>
+      <div class="section-header-right">
+        <el-button type="primary" plain size="small" @click="loadToday" :loading="todayLoading">🔄 刷新</el-button>
+        <el-button v-if="auth.isAdmin" type="primary" size="small" @click="openCreate">+ 新增资讯</el-button>
+      </div>
     </div>
     <el-row :gutter="16" class="today-games stagger-in" v-loading="todayLoading">
       <template v-if="todayNews.length">
@@ -26,7 +29,7 @@
             <div class="game-teams">
               <div class="team team-home">
                 <span class="team-name">{{ item.homeTeam }}</span>
-                <span class="team-score" v-if="item.status === 'FINISHED'">{{ item.homeScore }}</span>
+                <span class="team-score" v-if="item.status === 'LIVE' || item.status === 'FINISHED'">{{ item.homeScore }}</span>
               </div>
               <div class="game-vs">
                 <span class="vs-text">VS</span>
@@ -34,7 +37,7 @@
               </div>
               <div class="team team-away">
                 <span class="team-name">{{ item.awayTeam }}</span>
-                <span class="team-score" v-if="item.status === 'FINISHED'">{{ item.awayScore }}</span>
+                <span class="team-score" v-if="item.status === 'LIVE' || item.status === 'FINISHED'">{{ item.awayScore }}</span>
               </div>
             </div>
             <div class="game-info">
@@ -42,6 +45,11 @@
             </div>
             <div class="game-title">{{ item.title }}</div>
             <div class="game-summary">{{ item.summary }}</div>
+            <div class="game-actions" v-if="item.nbaGameId">
+              <el-button type="primary" plain size="small" class="match-detail-btn" @click.stop="goToMatchDetail(item)">
+                📊 比赛详细数据
+              </el-button>
+            </div>
           </el-card>
         </el-col>
       </template>
@@ -66,10 +74,11 @@
         </div>
       </div>
       <el-table :data="list" stripe v-loading="loading">
-        <el-table-column prop="title" label="标题" min-width="280">
+        <el-table-column label="标题" min-width="320">
           <template #default="{ row }">
             <div class="cell-title" @click="showDetail(row)">
               <el-tag :type="statusType(row.status)" size="small" class="mr-8">{{ statusLabel(row.status) }}</el-tag>
+              <el-tag v-if="row.category && row.category !== 'general'" :type="categoryType(row.category)" size="small" class="mr-8">{{ categoryLabel(row.category) }}</el-tag>
               <span class="cell-link">{{ row.title }}</span>
             </div>
           </template>
@@ -77,15 +86,21 @@
         <el-table-column label="对阵" width="200">
           <template #default="{ row }">
             <span>{{ row.homeTeam }}</span>
-            <span v-if="row.status === 'FINISHED'" class="score-inline"> {{ row.homeScore }}</span>
+            <span v-if="row.status === 'FINISHED' && row.homeScore != null" class="score-inline"> {{ row.homeScore }}</span>
             <span class="mx-4">VS</span>
             <span>{{ row.awayTeam }}</span>
-            <span v-if="row.status === 'FINISHED'" class="score-inline"> {{ row.awayScore }}</span>
+            <span v-if="row.status === 'FINISHED' && row.awayScore != null" class="score-inline"> {{ row.awayScore }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="summary" label="摘要" min-width="200" show-overflow-tooltip />
         <el-table-column label="比赛时间" width="210">
           <template #default="{ row }">{{ formatTimeRange(row.gameStartTime, row.gameEndTime) }}</template>
+        </el-table-column>
+        <el-table-column label="比赛数据" width="110" align="center">
+          <template #default="{ row }">
+            <el-button v-if="row.nbaGameId" type="primary" link size="small" @click.stop="goToMatchDetail(row)">📊 详情</el-button>
+            <span v-else class="no-data-text">—</span>
+          </template>
         </el-table-column>
         <el-table-column v-if="auth.isAdmin" label="操作" width="140" fixed="right">
           <template #default="{ row }">
@@ -104,13 +119,17 @@
     </el-card>
 
     <!-- 详情对话框 -->
-    <el-dialog v-model="dialogVisible" :title="current?.title" width="620px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="current?.title" width="680px">
       <template v-if="current">
         <div class="detail-meta">
           <el-tag :type="statusType(current.status)">{{ statusLabel(current.status) }}</el-tag>
+          <el-tag v-if="current.category && current.category !== 'general'" :type="categoryType(current.category)">{{ categoryLabel(current.category) }}</el-tag>
           <span class="detail-time">🕐 {{ formatTimeRange(current.gameStartTime, current.gameEndTime) }}</span>
         </div>
-        <div class="detail-score" v-if="current.status === 'FINISHED'">
+        <div v-if="current.imageUrl" class="detail-image">
+          <img :src="current.imageUrl" :alt="current.title" />
+        </div>
+        <div class="detail-score" v-if="current.status === 'FINISHED' && current.homeScore != null">
           <div class="score-box"><strong>{{ current.homeTeam }}</strong><span class="big-score">{{ current.homeScore }}</span></div>
           <span class="score-divider">:</span>
           <div class="score-box"><strong>{{ current.awayTeam }}</strong><span class="big-score">{{ current.awayScore }}</span></div>
@@ -120,14 +139,18 @@
         </div>
         <el-divider />
         <div class="detail-content">{{ current.content }}</div>
-        <div style="margin-top: 16px; text-align: right;">
-          <el-button type="primary" plain size="small" @click="goToMatchDetail(current)">📊 查看比赛详细数据</el-button>
+        <div class="detail-actions">
+          <el-button v-if="current.sourceUrl" type="success" plain size="small" @click="openSource(current.sourceUrl)">🔗 查看原文</el-button>
+          <el-button v-if="current.nbaGameId" type="primary" size="small" @click="goToMatchDetail(current)">📊 查看比赛详细数据</el-button>
+          <el-tooltip v-else content="该新闻未关联NBA比赛ID，无法查看比赛详情" placement="top">
+            <el-button type="info" plain size="small" disabled>📊 比赛数据（暂无）</el-button>
+          </el-tooltip>
         </div>
       </template>
     </el-dialog>
 
     <!-- 新增/编辑对话框（管理员） -->
-    <el-dialog v-model="formVisible" :title="formTitle" width="620px" destroy-on-close @closed="resetForm">
+    <el-dialog v-model="formVisible" :title="formTitle" width="680px" destroy-on-close @closed="resetForm">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
         <el-form-item label="标题" prop="title">
           <el-input v-model="form.title" maxlength="120" show-word-limit />
@@ -162,18 +185,42 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="NBA比赛ID">
+          <el-input v-model="form.nbaGameId" placeholder="10位NBA官方比赛ID，如 0022400001" maxlength="16" />
+        </el-form-item>
         <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="分类">
+              <el-select v-model="form.category" placeholder="选择分类" style="width:100%">
+                <el-option label="综合" value="general" />
+                <el-option label="赛事" value="game" />
+                <el-option label="交易" value="trade" />
+                <el-option label="伤病" value="injury" />
+                <el-option label="选秀" value="draft" />
+              </el-select>
+            </el-form-item>
+          </el-col>
           <el-col :span="12">
             <el-form-item label="开始时间" prop="gameStartTime">
               <el-date-picker v-model="form.gameStartTime" type="datetime" placeholder="选择开始时间" format="YYYY-MM-DD HH:mm" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%" />
             </el-form-item>
           </el-col>
+        </el-row>
+        <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="结束时间" prop="gameEndTime">
               <el-date-picker v-model="form.gameEndTime" type="datetime" placeholder="选择结束时间" format="YYYY-MM-DD HH:mm" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%" />
             </el-form-item>
           </el-col>
+          <el-col :span="12">
+            <el-form-item label="图片链接">
+              <el-input v-model="form.imageUrl" placeholder="新闻图片URL" maxlength="500" />
+            </el-form-item>
+          </el-col>
         </el-row>
+        <el-form-item label="来源链接">
+          <el-input v-model="form.sourceUrl" placeholder="新闻原文链接" maxlength="500" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="formVisible = false">取消</el-button>
@@ -212,7 +259,8 @@ const submitting = ref(false)
 const formRef = ref<FormInstance>()
 const form = reactive<GameNewsPayload>({
   title: '', summary: '', content: '', homeTeam: '', awayTeam: '',
-  homeScore: null, awayScore: null, gameStartTime: '', gameEndTime: '',
+  homeScore: null, awayScore: null, gameStartTime: '', gameEndTime: '', nbaGameId: '',
+  category: 'general', sourceUrl: '', imageUrl: '',
 })
 
 const todayStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
@@ -248,6 +296,17 @@ function statusType(s: string) {
 function statusLabel(s: string) {
   const map: Record<string, string> = { SCHEDULED: '未开始', LIVE: '进行中', FINISHED: '已结束' }
   return map[s] || s
+}
+function categoryType(c: string) {
+  const map: Record<string, string> = { game: 'primary', trade: 'success', injury: 'danger', draft: 'warning' }
+  return map[c] || 'info'
+}
+function categoryLabel(c: string) {
+  const map: Record<string, string> = { game: '赛事', trade: '交易', injury: '伤病', draft: '选秀', general: '综合' }
+  return map[c] || c
+}
+function openSource(url: string) {
+  window.open(url, '_blank')
 }
 function formatTimeSingle(t: string) {
   return new Date(t).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -299,7 +358,11 @@ function showDetail(item: GameNews) {
 
 const router = useRouter()
 function goToMatchDetail(item: GameNews) {
-  router.push({ path: '/match-detail', query: { gameId: String(item.id), homeTeam: item.homeTeam, awayTeam: item.awayTeam, homeScore: item.homeScore ?? '', awayScore: item.awayScore ?? '', status: item.status } })
+  if (!item.nbaGameId) {
+    ElMessage.warning('该比赛暂无详细数据（缺少NBA比赛ID）')
+    return
+  }
+  router.push({ path: '/match-detail', query: { gameId: item.nbaGameId, homeTeam: item.homeTeam, awayTeam: item.awayTeam, homeScore: item.homeScore ?? '', awayScore: item.awayScore ?? '', status: item.status } })
 }
 
 // --- 管理员操作 ---
@@ -322,6 +385,10 @@ function openEdit(item: GameNews) {
   form.awayScore = item.awayScore
   form.gameStartTime = item.gameStartTime
   form.gameEndTime = item.gameEndTime
+  form.nbaGameId = item.nbaGameId || ''
+  form.category = item.category || 'general'
+  form.sourceUrl = item.sourceUrl || ''
+  form.imageUrl = item.imageUrl || ''
   formVisible.value = true
 }
 
@@ -335,6 +402,10 @@ function resetForm() {
   form.awayScore = null
   form.gameStartTime = ''
   form.gameEndTime = ''
+  form.nbaGameId = ''
+  form.category = 'general'
+  form.sourceUrl = ''
+  form.imageUrl = ''
   formRef.value?.resetFields()
 }
 
@@ -397,6 +468,11 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.section-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .section-header h2 {
   margin: 0;
@@ -539,6 +615,26 @@ onMounted(() => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.game-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+.match-detail-btn {
+  border-radius: var(--radius-sm) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px;
+  transition: all var(--duration-fast) var(--ease-smooth) !important;
+}
+.match-detail-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 230, 118, 0.2);
+}
+.no-data-text {
+  color: var(--text-dim);
+  font-size: 12px;
 }
 .toolbar {
   margin-bottom: 16px;
@@ -748,5 +844,23 @@ onMounted(() => {
   line-height: 1.8;
   color: var(--text-secondary);
   white-space: pre-wrap;
+}
+.detail-image {
+  margin-bottom: 16px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.detail-image img {
+  width: 100%;
+  height: auto;
+  max-height: 300px;
+  object-fit: cover;
+  display: block;
+}
+.detail-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
 }
 </style>

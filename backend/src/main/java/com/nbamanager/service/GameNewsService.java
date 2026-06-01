@@ -86,6 +86,15 @@ public class GameNewsService {
         gameNewsRepository.deleteById(id);
     }
 
+    /** 清空所有赛事资讯 */
+    @CacheEvict(value = {"news", "todayGames"}, allEntries = true)
+    @Transactional
+    public int deleteAll() {
+        long count = gameNewsRepository.count();
+        gameNewsRepository.deleteAll();
+        return (int) count;
+    }
+
     private void apply(GameNews g, GameNewsRequest req) {
         g.setTitle(req.title());
         g.setSummary(req.summary());
@@ -98,6 +107,16 @@ public class GameNewsService {
         g.setGameEndTime(req.gameEndTime());
         if (req.status() != null && !req.status().isEmpty()) {
             g.setStatus(req.status());
+        }
+        g.setNbaGameId(req.nbaGameId());
+        if (req.category() != null) {
+            g.setCategory(req.category());
+        }
+        if (req.sourceUrl() != null) {
+            g.setSourceUrl(req.sourceUrl());
+        }
+        if (req.imageUrl() != null) {
+            g.setImageUrl(req.imageUrl());
         }
     }
 
@@ -124,7 +143,11 @@ public class GameNewsService {
                 g.getHomeTeam(), g.getAwayTeam(), g.getHomeScore(), g.getAwayScore(),
                 g.getGameStartTime(), g.getGameEndTime(),
                 status,
-                g.getCreateTime());
+                g.getCreateTime(),
+                g.getNbaGameId(),
+                g.getCategory(),
+                g.getSourceUrl(),
+                g.getImageUrl());
     }
 
     private static ApiException notFound(Long id) {

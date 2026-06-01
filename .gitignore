@@ -8,6 +8,32 @@ frontend/node_modules/
 frontend/dist/
 frontend/.npm-cache/
 
+# Environment variables (sensitive)
+.env
+.env.local
+.env.*.local
+
+# Local config with real credentials
+backend/src/main/resources/application-local.yml
+
+# Database exports
+database/
+
+# Python cache
+backend/scripts/__pycache__/
+*.pyc
+
+# Output files
+backend/scripts/output.json
+backend/scripts/translate_log.txt
+
+# Logs
+*.log
+backend/backend.log
+
+# Claude Code
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -1,46 +1,93 @@
-# NBA 数据演示系统
+# NBA Manager 数据管理系统
 
-基于 **Spring Boot 3** + **Vue 3** 的轻量演示项目：登录与 JWT、角色权限、球队/球员的增删改查与分页、看板图表（ECharts）。数据在启动时由程序写死初始化，无外部数据集、无爬虫、无复杂分析。
+基于 **Spring Boot 3** + **Vue 3** 的 NBA 数据管理演示项目。支持实时 NBA 数据同步、比赛资讯管理、球员详情展示、中英文翻译等功能。
 
 ## 功能概览
 
 | 模块 | 说明 |
 |------|------|
 | 登录 | `POST /api/auth/login`，返回 JWT |
-| 权限 | `ADMIN` 可增删改；`USER` 仅可浏览（写接口返回 403） |
-| CRUD | 球队 `Team`、球员 `Player` |
-| 分页 | Spring Data `Pageable`，前端表格分页 |
-| 图表 | 各队胜/负场柱状图、球员场均得分横向柱状图 |
+| 权限 | `ADMIN` 可增删改；`USER` 仅可浏览 |
+| 比赛资讯 | NBA 实时新闻获取、翻译、管理 |
+| 球员数据 | 球员详情、统计数据展示 |
+| 比赛详情 | 比赛结果、比分、详情页 |
+| 数据同步 | ESPN 数据源实时同步 |
+| 翻译 | MIMO API 中英文翻译 |
 
-## 演示账号（首次启动自动写入 H2）
+## 演示账号
 
 | 用户名 | 密码 | 角色 |
 |--------|------|------|
 | admin | admin123 | 管理员 |
 | user | user123 | 普通用户 |
 
+> ⚠️ 以上为默认种子密码，实际密码通过环境变量或 `application-local.yml` 配置。
+
 ## 技术栈
 
-- 后端：Spring Boot 3.2、Spring Security、JWT（jjwt）、Spring Data JPA、H2 内存库
-- 前端：Vue 3、Vite、TypeScript、Vue Router、Pinia、Element Plus、Axios、ECharts、vue-echarts
+- **后端**：Spring Boot 3.2、Spring Security、JWT (jjwt)、Spring Data JPA、MySQL 8.0、Redis
+- **前端**：Vue 3、Vite、TypeScript、Vue Router、Pinia、Element Plus、Axios
+- **数据源**：ESPN API（通过 Python 脚本同步）
+- **翻译**：MIMO API
 
 ## 运行方式
 
-### 1. 后端
+### 前置条件
 
-要求：JDK 17+、Maven 3.8+（或使用 IDE 内置 Maven）。
+- JDK 17+
+- Maven 3.8+（或 IDE 内置）
+- Node.js 18+
+- MySQL 8.0
+- Redis（可选，用于缓存）
+
+### 1. 配置敏感信息
+
+项目使用环境变量管理敏感配置。在项目根目录创建 `.env` 文件：
+
+```env
+# MIMO 翻译 API
+MIMO_API_KEY=your_mimo_api_key
+MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
+
+# NBA API 代理（可选）
+NBA_PROXY_HOST=127.0.0.1
+NBA_PROXY_PORT=7890
+
+# 管理员账号
+ADMIN_USER=admin
+ADMIN_PASS=admin123
+```
+
+在后端配置中，创建 `backend/src/main/resources/application-local.yml`（不会被提交到 Git）：
+- 复制 `application.yml` 的内容
+- 填入真实的数据库密码、Redis 密码、JWT 密钥
+
+或者通过环境变量设置：
+```bash
+export DB_USERNAME=root
+export DB_PASSWORD=your_db_password
+export REDIS_PASSWORD=your_redis_password
+export JWT_SECRET=your_jwt_secret_at_least_256_bits
+```
+
+### 2. 导入数据库
+
+```bash
+mysql -u root -p < database/nba_manager_dump.sql
+```
+
+### 3. 启动后端
 
 ```bash
 cd backend
 mvn spring-boot:run
+# 或指定 local profile
+mvn spring-boot:run -Dspring.profiles.active=local
 ```
 
-启动后 API 根地址：`http://localhost:8080`  
-H2 控制台（可选）：`http://localhost:8080/h2-console`（JDBC URL 与 `application.yml` 中一致）
+启动后 API 根地址：`http://localhost:8080`
 
-### 2. 前端
-
-要求：Node.js 18+。
+### 4. 启动前端
 
 ```bash
 cd frontend
@@ -48,52 +95,58 @@ npm install
 npm run dev
 ```
 
-浏览器访问：`http://localhost:5173`（Vite 已将 `/api` 代理到 `8080`）
+浏览器访问：`http://localhost:5173`
 
-### 3. 生产构建（前端）
+### 5. Python 脚本（数据同步/翻译）
 
 ```bash
-cd frontend
-npm run build
-```
+cd backend/scripts
+# 安装依赖
+pip install -r requirements.txt  # 如有
 
-将 `frontend/dist` 交由任意静态服务器托管；若前后端不同域，请在后端 CORS 中增加实际前端域名，或改为同域部署。
+# 刷新新闻数据
+python refresh_news.py rebuild
+
+# 翻译现有数据
+python refresh_news.py translate
+```
 
 ## 目录结构
 
 ```
 NBAManager/
-├── backend/                 # Spring Boot
-│   └── src/main/java/com/nbamanager/
-│       ├── config/          # Security、CORS、初始化数据
-│       ├── domain/          # 实体与角色枚举
-│       ├── repository/
-│       ├── service/
-│       ├── security/        # JWT、UserDetails
-│       └── web/             # REST 控制器与 DTO
-├── frontend/                # Vue 3 + Vite
+├── backend/                    # Spring Boot 后端
+│   ├── src/main/java/com/nbamanager/
+│   │   ├── config/             # Security、CORS、初始化数据
+│   │   ├── domain/             # 实体类
+│   │   ├── repository/         # JPA 仓库
+│   │   ├── service/            # 业务逻辑
+│   │   ├── security/           # JWT、UserDetails
+│   │   └── web/                # REST 控制器与 DTO
+│   └── scripts/                # Python 数据脚本
+│       ├── nba_data_fetcher.py # ESPN 数据获取
+│       ├── translator.py       # MIMO 翻译
+│       ├── refresh_news.py     # 新闻刷新
+│       └── translate_news.py   # 新闻翻译
+├── frontend/                   # Vue 3 + Vite 前端
 │   └── src/
-│       ├── api/
-│       ├── layouts/
-│       ├── router/
-│       ├── stores/
-│       ├── utils/
-│       └── views/
+│       ├── api/                # API 调用
+│       ├── views/              # 页面组件
+│       ├── stores/             # Pinia 状态管理
+│       └── router/             # 路由配置
+├── database/                   # 数据库导出（Git 忽略）
+│   └── nba_manager_dump.sql
+├── .env                        # 环境变量（Git 忽略）
 └── README.md
 ```
 
 ## 主要 API
 
 - `POST /api/auth/login` — 登录（无需 Token）
-- `GET /api/dashboard/stats` — 看板聚合数据
-- `GET/POST/PUT/DELETE /api/teams` — 球队分页与维护（写操作需管理员）
-- `GET/POST/PUT/DELETE /api/players` — 球员分页与维护（写操作需管理员）
-
-查询参数：`q` 关键词；分页：`page`（从 0 开始）、`size`、`sort`。
-
-## 说明文档（课程/答辩）
-
-可围绕以下内容撰写：需求说明（演示范围）、用例图、ER 图（用户、球队、球员）、接口列表、权限模型（JWT + 角色）、部署步骤（JDK + Maven + Node）、截图（登录、列表、图表）。
+- `GET/POST/PUT/DELETE /api/news` — 比赛资讯管理
+- `GET /api/players` — 球员列表
+- `GET /api/matches/{id}` — 比赛详情
+- `GET /api/dashboard/stats` — 看板数据
 
 ## 许可
 

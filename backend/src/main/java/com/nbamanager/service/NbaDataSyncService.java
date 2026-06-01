@@ -135,6 +135,18 @@ public class NbaDataSyncService {
             pb.directory(new File(scriptPath).getParentFile());
             // 强制Python使用UTF-8编码输出，防止Windows下GBK乱码
             pb.environment().put("PYTHONIOENCODING", "utf-8");
+            pb.environment().put("NBA_PROXY_HOST", "127.0.0.1");
+            pb.environment().put("NBA_PROXY_PORT", "7890");
+
+            // 传递翻译API配置
+            String mimoApiKey = System.getenv("MIMO_API_KEY");
+            String mimoBaseUrl = System.getenv("MIMO_BASE_URL");
+            if (mimoApiKey != null && !mimoApiKey.isEmpty()) {
+                pb.environment().put("MIMO_API_KEY", mimoApiKey);
+            }
+            if (mimoBaseUrl != null && !mimoBaseUrl.isEmpty()) {
+                pb.environment().put("MIMO_BASE_URL", mimoBaseUrl);
+            }
 
             // 执行脚本
             Process process = pb.start();
@@ -255,6 +267,7 @@ public class NbaDataSyncService {
 
         for (int i = 0; i < players.length(); i++) {
             JSONObject playerData = players.getJSONObject(i);
+            long nbaPlayerId = playerData.optLong("nbaPlayerId", 0);
             String name = playerData.getString("name");
             String teamName = playerData.getString("team");
             String position = playerData.getString("position");
@@ -283,10 +296,17 @@ public class NbaDataSyncService {
                 continue;
             }
 
-            // 查找现有球员
-            Player existingPlayer = findPlayerByNameAndTeam(name, team);
+            // 查找现有球员 - 优先使用nbaPlayerId，回退到name+team
+            Player existingPlayer = null;
+            if (nbaPlayerId > 0) {
+                existingPlayer = playerRepository.findByNbaPlayerId(nbaPlayerId);
+            }
+            if (existingPlayer == null) {
+                existingPlayer = findPlayerByNameAndTeam(name, team);
+            }
             if (existingPlayer != null) {
                 // 更新现有球员
+                existingPlayer.setNbaPlayerId(nbaPlayerId > 0 ? nbaPlayerId : existingPlayer.getNbaPlayerId());
                 existingPlayer.setName(name);  // 更新为中文名
                 existingPlayer.setPosition(position);
                 existingPlayer.setPointsPerGame(ppg);
@@ -311,6 +331,7 @@ public class NbaDataSyncService {
             } else {
                 // 添加新球员
                 Player newPlayer = new Player();
+                newPlayer.setNbaPlayerId(nbaPlayerId > 0 ? nbaPlayerId : null);
                 newPlayer.setName(name);
                 newPlayer.setTeam(team);
                 newPlayer.setPosition(position);

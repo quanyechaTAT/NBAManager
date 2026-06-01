@@ -15,4 +15,8 @@ public record GameNewsRequest(
         Integer awayScore,
         @NotNull LocalDateTime gameStartTime,
         @NotNull LocalDateTime gameEndTime,
-        String status) {}
+        String status,
+        String nbaGameId,
+        @Size(max = 20) String category,
+        @Size(max = 500) String sourceUrl,
+        @Size(max = 500) String imageUrl) {}
