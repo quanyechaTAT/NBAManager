@@ -69,6 +69,10 @@ export interface GameNews {
   gameEndTime: string
   status: 'SCHEDULED' | 'LIVE' | 'FINISHED'
   createTime: string
+  nbaGameId: string | null
+  category: string
+  sourceUrl: string | null
+  imageUrl: string | null
 }
 
 export interface MatchRecord {

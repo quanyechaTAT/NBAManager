@@ -13,6 +13,7 @@ import java.io.File;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,9 @@ public class MatchDetailService {
             return new BoxScoreDto(gameId, "", "", List.of(), List.of(), List.of());
         }
 
+        // 翻译未翻译的球员名
+        translatePlayerNames(records);
+
         // 根据 teamId 分组，第一支队伍为主队，第二支为客队
         Map<Long, List<GameBoxScore>> grouped = records.stream()
                 .collect(Collectors.groupingBy(GameBoxScore::getTeamId, LinkedHashMap::new, Collectors.toList()));
@@ -69,6 +73,110 @@ public class MatchDetailService {
         List<QuarterScoreDto> quarterScores = getQuarterScores(gameId);
 
         return new BoxScoreDto(gameId, homeTeam, awayTeam, homePlayers, awayPlayers, quarterScores);
+    }
+
+    /**
+     * 翻译未翻译的球员名（包含大量英文字母的视为未翻译）
+     */
+    private void translatePlayerNames(List<GameBoxScore> records) {
+        // 收集需要翻译的球员名
+        List<String> toTranslate = new ArrayList<>();
+        for (GameBoxScore r : records) {
+            String name = r.getPlayerName();
+            if (name != null && !name.isEmpty() && needsTranslation(name)) {
+                toTranslate.add(name);
+            }
+        }
+
+        if (toTranslate.isEmpty()) {
+            return;
+        }
+
+        try {
+            // 调用Python脚本批量翻译
+            Map<String, String> nameMap = translateNamesViaPython(toTranslate);
+            if (nameMap.isEmpty()) {
+                return;
+            }
+
+            // 更新记录
+            for (GameBoxScore r : records) {
+                String cn = nameMap.get(r.getPlayerName());
+                if (cn != null && !cn.isEmpty()) {
+                    r.setPlayerName(cn);
+                    gameBoxScoreRepository.save(r);
+                }
+            }
+            log.info("翻译了 {} 个球员名", nameMap.size());
+        } catch (Exception e) {
+            log.warn("翻译球员名失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 判断文本是否需要翻译（含有大量英文字母）
+     */
+    private boolean needsTranslation(String text) {
+        if (text == null || text.isEmpty()) return false;
+        int alphaCount = 0;
+        for (char c : text.toCharArray()) {
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+                alphaCount++;
+            }
+        }
+        return alphaCount > text.length() * 0.5;
+    }
+
+    /**
+     * 调用Python脚本批量翻译球员名
+     */
+    private Map<String, String> translateNamesViaPython(List<String> names) throws Exception {
+        String scriptPath = findScriptPath().replace("nba_data_fetcher.py", "translate_names.py");
+        File scriptFile = new File(scriptPath);
+        if (!scriptFile.exists()) {
+            log.warn("翻译脚本不存在: {}", scriptPath);
+            return Map.of();
+        }
+
+        List<String> cmd = new ArrayList<>();
+        cmd.add("python");
+        cmd.add(scriptPath);
+        cmd.addAll(names);
+
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.redirectErrorStream(false);
+        pb.directory(scriptFile.getParentFile());
+        pb.environment().put("PYTHONIOENCODING", "utf-8");
+
+        Process process = pb.start();
+
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line);
+            }
+        }
+
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            log.warn("翻译脚本执行失败, exitCode={}", exitCode);
+            return Map.of();
+        }
+
+        String jsonStr = output.toString().trim();
+        if (jsonStr.isEmpty() || jsonStr.equals("{}")) {
+            return Map.of();
+        }
+
+        // 解析JSON结果
+        JSONObject json = new JSONObject(jsonStr);
+        Map<String, String> result = new HashMap<>();
+        for (String key : json.keySet()) {
+            result.put(key, json.getString(key));
+        }
+        return result;
     }
 
     @Cacheable(value = "playByPlay", key = "#gameId + ':' + #period")
@@ -126,6 +234,18 @@ public class MatchDetailService {
             pb.redirectErrorStream(false);
             pb.directory(new File(scriptPath).getParentFile());
             pb.environment().put("PYTHONIOENCODING", "utf-8");
+            pb.environment().put("NBA_PROXY_HOST", "127.0.0.1");
+            pb.environment().put("NBA_PROXY_PORT", "7890");
+
+            // 传递翻译API配置
+            String mimoApiKey = System.getenv("MIMO_API_KEY");
+            String mimoBaseUrl = System.getenv("MIMO_BASE_URL");
+            if (mimoApiKey != null && !mimoApiKey.isEmpty()) {
+                pb.environment().put("MIMO_API_KEY", mimoApiKey);
+            }
+            if (mimoBaseUrl != null && !mimoBaseUrl.isEmpty()) {
+                pb.environment().put("MIMO_BASE_URL", mimoBaseUrl);
+            }
 
             Process process = pb.start();
 

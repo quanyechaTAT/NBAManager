@@ -68,4 +68,12 @@ public class GameNewsController {
     public void delete(@PathVariable Long id) {
         gameNewsService.delete(id);
     }
+
+    /** 清空所有赛事资讯（仅管理员） */
+    @DeleteMapping("/all")
+    @PreAuthorize("hasRole('ADMIN')")
+    public java.util.Map<String, Object> deleteAll() {
+        int deleted = gameNewsService.deleteAll();
+        return java.util.Map.of("deleted", deleted);
+    }
 }

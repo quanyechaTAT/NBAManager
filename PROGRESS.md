@@ -1,6 +1,6 @@
 # NBA Manager 六大功能开发进度
 
-> 最后更新：2026-05-31
+> 最后更新：2026-06-01
 > 当前分支：main
 
 ## 总体进度
@@ -11,6 +11,7 @@
 | 阶段一 | 功能2：扩展球员数据模型（15+字段） | ✅ 完成 |
 | 阶段一 | 功能3：新增比赛详情页 | ✅ 完成 |
 | 阶段一 | 功能4：新增球员详情页 | ✅ 完成 |
+| 阶段一 | 功能4.5：新闻中文翻译 + 赛事资讯优化 | ✅ 完成 |
 | 阶段二 | 功能5：虎扑级社区功能 | ⏳ 待实现 |
 | 阶段二 | 功能6：个性化关注 + 推送通知 | ⏳ 待实现 |
 
@@ -87,6 +88,33 @@
 **前端**：
 - `PlayerDetailView.vue`：球员头部卡片、关键统计卡片、数据雷达图（ECharts RadarChart）、生涯趋势图（ECharts LineChart）、比赛日志表格
 - `PlayerListView.vue`：球员姓名添加点击跳转
+
+### 功能4.5：新闻中文翻译 + 赛事资讯优化
+
+**翻译优化** (`backend/scripts/translator.py`)：
+- 新增批量翻译功能 `translate_batch()`：多条文本合并为单次 API 调用
+- 内存缓存机制：避免重复翻译相同文本
+- API 调用限流：防止触发速率限制
+- 优化系统提示词：更专业的 NBA 新闻翻译
+
+**本地映射增强** (`backend/scripts/nba_data_fetcher.py`)：
+- 新增 `NBA_TERM_MAP`：50+ 常见 NBA 术语中英文映射（三双、绝杀、加时赛等）
+- 扩展 `PLAYER_CN_MAP`：增加常用简称映射（如 Curry → 库里、Durant → 杜兰特）
+- 优化 `translate_with_mapping()`：球员名 → 球队名 → NBA 术语三级翻译
+- 新闻获取改为批量翻译：`fetch_nba_news()` 先本地映射，再批量 API 翻译
+
+**赛事资讯与比赛数据关联** (`NbaLiveSyncService.java`)：
+- 今日赛事同步创建 `GameNews` 记录（包括 SCHEDULED 比赛）
+- 比赛进行中/已结束时实时更新标题为比分格式
+- 新增 `backfillNbaGameId()`：自动从 MatchRecord 补充新闻缺失的 nbaGameId
+- ESPN 新闻已存在时补充缺失的 nbaGameId
+
+**前端优化** (`NewsView.vue`)：
+- 今日赛事卡片：LIVE 状态实时显示比分
+- 新增「比赛详细数据」按钮（今日卡片 + 列表 + 详情弹窗三处入口）
+- 列表新增「比赛数据」列，有 nbaGameId 的新闻可直接跳转比赛详情
+- 详情弹窗：无 nbaGameId 时显示禁用按钮和提示
+- 新增今日赛事刷新按钮
 
 ---
 

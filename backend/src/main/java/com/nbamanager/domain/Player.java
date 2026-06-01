@@ -19,7 +19,8 @@ import lombok.Setter;
         @Index(name = "idx_player_name", columnList = "name"),
         @Index(name = "idx_player_team", columnList = "team_id"),
         @Index(name = "idx_player_position", columnList = "position"),
-        @Index(name = "idx_player_team_position", columnList = "team_id, position")
+        @Index(name = "idx_player_team_position", columnList = "team_id, position"),
+        @Index(name = "idx_player_nba_id", columnList = "nba_player_id")
 })
 @Getter
 @Setter
@@ -29,6 +30,9 @@ public class Player {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "nba_player_id")
+    private Long nbaPlayerId;
 
     @Column(nullable = false, length = 80)
     private String name;

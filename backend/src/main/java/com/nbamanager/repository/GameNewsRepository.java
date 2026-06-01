@@ -21,4 +21,7 @@ public interface GameNewsRepository extends JpaRepository<GameNews, Long> {
     /** 查询今日赛事（比赛开始时间在今天范围内） */
     @Query("SELECT g FROM GameNews g WHERE g.gameStartTime >= :start AND g.gameStartTime < :end ORDER BY g.gameStartTime ASC")
     List<GameNews> findTodayGames(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+    /** 统计总数 */
+    long count();
 }

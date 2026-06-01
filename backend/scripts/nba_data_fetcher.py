@@ -3,25 +3,54 @@
 """
 NBA数据获取脚本
 从nba_api获取真实的NBA数据（stats.nba.com + cdn.nba.com）
+支持使用mimo-v2.5模型进行智能翻译
 """
 
 import json
+import os
 import sys
 import time
+import urllib.request
 from datetime import datetime, timedelta
 
 # 确保stdout使用UTF-8编码（Windows兼容）
 if sys.platform == 'win32':
     import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    try:
+        if hasattr(sys.stdout, 'buffer') and not isinstance(sys.stdout, io.TextIOWrapper):
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        if hasattr(sys.stderr, 'buffer') and not isinstance(sys.stderr, io.TextIOWrapper):
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    except (AttributeError, ValueError):
+        pass
+
+# 导入翻译模块
+try:
+    from translator import translate_text, translate_news_article
+    HAS_TRANSLATOR = True
+except ImportError:
+    HAS_TRANSLATOR = False
+    print("警告: translator模块未找到，将使用本地映射翻译", file=sys.stderr)
+
+# 代理配置
+PROXY_HOST = os.environ.get('NBA_PROXY_HOST', '127.0.0.1')
+PROXY_PORT = os.environ.get('NBA_PROXY_PORT', '7890')
+
+# 设置全局代理（仅用于NBA API）
+proxy_handler = urllib.request.ProxyHandler({
+    'https': f'http://{PROXY_HOST}:{PROXY_PORT}',
+    'http': f'http://{PROXY_HOST}:{PROXY_PORT}',
+})
+proxy_opener = urllib.request.build_opener(proxy_handler)
+urllib.request.install_opener(proxy_opener)
 
 try:
     from nba_api.stats.endpoints import (
         LeagueStandingsV3,
         LeagueDashPlayerStats,
         ScoreboardV2,
-        BoxScoreTraditionalV2,
+        ScoreboardV3,
+        BoxScoreTraditionalV3,
         PlayByPlayV2,
         PlayerCareerStats,
         PlayerGameLog,
@@ -74,6 +103,19 @@ POSITION_MAP = {
     'G': '控卫', 'F': '大前锋',
 }
 
+# 球队简称到中文名映射（用于新闻翻译）
+TEAM_SHORT_MAP = {
+    'Knicks': '尼克斯', 'Spurs': '马刺', 'Thunder': '雷霆', 'Lakers': '湖人',
+    'Celtics': '凯尔特人', 'Warriors': '勇士', 'Nuggets': '掘金', 'Heat': '热火',
+    'Bucks': '雄鹿', '76ers': '76人', 'Sixers': '76人', 'Suns': '太阳',
+    'Mavericks': '独行侠', 'Mavs': '独行侠', 'Clippers': '快船', 'Kings': '国王',
+    'Timberwolves': '森林狼', 'Wolves': '森林狼', 'Pelicans': '鹈鹕', 'Grizzlies': '灰熊',
+    'Rockets': '火箭', 'Jazz': '爵士', 'Blazers': '开拓者', 'Trail Blazers': '开拓者',
+    'Hawks': '老鹰', 'Cavaliers': '骑士', 'Cavs': '骑士', 'Pacers': '步行者',
+    'Magic': '魔术', 'Pistons': '活塞', 'Hornets': '黄蜂', 'Raptors': '猛龙',
+    'Bulls': '公牛', 'Wizards': '奇才', 'Nets': '篮网',
+}
+
 # 球员英文名 -> 中文名 映射（覆盖当前NBA主要球员）
 PLAYER_CN_MAP = {
     # 湖人
@@ -84,7 +126,8 @@ PLAYER_CN_MAP = {
     'Jaxson Hayes': '杰克森·海耶斯', 'Gabe Vincent': '加布·文森特',
     'Dorian Finney-Smith': '多里安·芬尼-史密斯', 'Shake Milton': '谢克·米尔顿',
     # 勇士
-    'Stephen Curry': '斯蒂芬·库里', 'Jimmy Butler': '吉米·巴特勒',
+    'Stephen Curry': '斯蒂芬·库里', 'Curry': '库里',
+    'Jimmy Butler': '吉米·巴特勒', 'Butler': '巴特勒',
     'Brandin Podziemski': '布兰丁·波杰姆斯基', 'Jonathan Kuminga': '乔纳森·库明加',
     'De\'Anthony Melton': '德安东尼·梅尔顿', 'Gary Payton II': '加里·佩顿二世',
     'Buddy Hield': '巴迪·希尔德', 'Quinten Post': '昆顿·波斯特',
@@ -92,53 +135,63 @@ PLAYER_CN_MAP = {
     'Gui Santos': '吉·桑托斯', 'Kevon Looney': '凯文·卢尼',
     'Moses Moody': '摩西·穆迪',
     # 凯尔特人
-    'Jayson Tatum': '杰森·塔图姆', 'Jaylen Brown': '杰伦·布朗',
+    'Jayson Tatum': '杰森·塔图姆', 'Tatum': '塔图姆',
+    'Jaylen Brown': '杰伦·布朗', 'Brown': '布朗',
     'Kristaps Porzingis': '克里斯塔普斯·波尔津吉斯', 'Derrick White': '德里克·怀特',
     'Jrue Holiday': '朱·霍勒迪', 'Payton Pritchard': '佩顿·普里查德',
     'Al Horford': '艾尔·霍福德', 'Sam Hauser': '萨姆·豪瑟',
     'Luke Kornet': '卢克·科内特',
     # 雄鹿
-    'Giannis Antetokounmpo': '扬尼斯·阿德托昆博', 'Damian Lillard': '达米安·利拉德',
+    'Giannis Antetokounmpo': '扬尼斯·阿德托昆博', 'Giannis': '字母哥',
+    'Damian Lillard': '达米安·利拉德', 'Lillard': '利拉德',
     'Khris Middleton': '克里斯·米德尔顿', 'Brook Lopez': '布鲁克·洛佩兹',
     'Bobby Portis': '博比·波蒂斯',
     # 掘金
-    'Nikola Jokic': '尼古拉·约基奇', 'Nikola Jokić': '尼古拉·约基奇', 'Jamal Murray': '贾马尔·穆雷',
+    'Nikola Jokic': '尼古拉·约基奇', 'Nikola Jokić': '尼古拉·约基奇', 'Jokic': '约基奇',
+    'Jamal Murray': '贾马尔·穆雷', 'Murray': '穆雷',
     'Michael Porter Jr.': '迈克尔·波特', 'Aaron Gordon': '阿隆·戈登',
     'Kentavious Caldwell-Pope': '肯塔维厄斯·考德威尔-波普',
     # 太阳
-    'Kevin Durant': '凯文·杜兰特', 'Devin Booker': '德文·布克',
+    'Kevin Durant': '凯文·杜兰特', 'Durant': '杜兰特',
+    'Devin Booker': '德文·布克', 'Booker': '布克',
     'Bradley Beal': '布拉德利·比尔', 'Jusuf Nurkic': '尤素夫·努尔基奇',
     # 雷霆
-    'Shai Gilgeous-Alexander': '谢伊·吉尔杰斯-亚历山大',
+    'Shai Gilgeous-Alexander': '谢伊·吉尔杰斯-亚历山大', 'SGA': 'SGA',
     'Chet Holmgren': '切特·霍姆格伦', 'Jalen Williams': '杰伦·威廉姆斯',
     'Lu Dort': '卢·多尔特', 'Isaiah Joe': '以赛亚·乔',
     # 马刺
-    'Victor Wembanyama': '维克托·文班亚马', 'Devin Vassell': '德文·瓦塞尔',
-    'Keldon Johnson': '凯尔登·约翰逊', 'Jeremy Sochan': '杰里米·索汉',
-    'Chris Paul': '克里斯·保罗',
+    'Victor Wembanyama': '维克托·文班亚马', 'Wembanyama': '文班亚马',
+    'Devin Vassell': '德文·瓦塞尔', 'Keldon Johnson': '凯尔登·约翰逊',
+    'Jeremy Sochan': '杰里米·索汉', 'Chris Paul': '克里斯·保罗',
     # 火箭
-    'Alperen Sengun': '阿尔佩伦·申京', 'Jalen Green': '杰伦·格林',
-    'Amen Thompson': '阿门·汤普森', 'Fred VanVleet': '弗雷德·范弗利特',
-    'Dillon Brooks': '狄龙·布鲁克斯',
+    'Alperen Sengun': '阿尔佩伦·申京', 'Sengun': '申京',
+    'Jalen Green': '杰伦·格林', 'Amen Thompson': '阿门·汤普森',
+    'Fred VanVleet': '弗雷德·范弗利特', 'Dillon Brooks': '狄龙·布鲁克斯',
     # 尼克斯
-    'Jalen Brunson': '杰伦·布伦森', 'Julius Randle': '朱利叶斯·兰德尔',
-    'OG Anunoby': 'OG·阿奴诺比', 'Donte DiVincenzo': '唐特·迪温琴佐',
-    'Mikal Bridges': '米卡尔·布里奇斯', 'Karl-Anthony Towns': '卡尔-安东尼·唐斯',
+    'Jalen Brunson': '杰伦·布伦森', 'Brunson': '布伦森',
+    'Julius Randle': '朱利叶斯·兰德尔', 'OG Anunoby': 'OG·阿奴诺比',
+    'Donte DiVincenzo': '唐特·迪温琴佐', 'Mikal Bridges': '米卡尔·布里奇斯',
+    'Karl-Anthony Towns': '卡尔-安东尼·唐斯', 'Towns': '唐斯',
     # 骑士
-    'Donovan Mitchell': '多诺万·米切尔', 'Darius Garland': '达里厄斯·加兰',
-    'Evan Mobley': '埃文·莫布利', 'Jarrett Allen': '贾勒特·阿伦',
+    'Donovan Mitchell': '多诺万·米切尔', 'Mitchell': '米切尔',
+    'Darius Garland': '达里厄斯·加兰', 'Evan Mobley': '埃文·莫布利',
+    'Jarrett Allen': '贾勒特·阿伦',
     # 森林狼
-    'Anthony Edwards': '安东尼·爱德华兹', 'Rudy Gobert': '鲁迪·戈贝尔',
-    'Jaden McDaniels': '杰登·麦克丹尼尔斯', 'Naz Reid': '纳兹·里德',
+    'Anthony Edwards': '安东尼·爱德华兹', 'Edwards': '爱德华兹',
+    'Rudy Gobert': '鲁迪·戈贝尔', 'Jaden McDaniels': '杰登·麦克丹尼尔斯',
+    'Naz Reid': '纳兹·里德',
     # 活塞
-    'Cade Cunningham': '凯德·坎宁安', 'Jaden Ivey': '杰登·艾维',
-    'Jalen Duren': '杰伦·杜伦', 'Tobias Harris': '托拜亚斯·哈里斯',
+    'Cade Cunningham': '凯德·坎宁安', 'Cunningham': '坎宁安',
+    'Jaden Ivey': '杰登·艾维', 'Jalen Duren': '杰伦·杜伦',
+    'Tobias Harris': '托拜亚斯·哈里斯',
     # 独行侠
-    'Kyrie Irving': '凯里·欧文', 'P.J. Washington': 'PJ·华盛顿',
-    'Daniel Gafford': '丹尼尔·加福德', 'Dereck Lively': '德里克·莱夫利',
+    'Kyrie Irving': '凯里·欧文', 'Irving': '欧文',
+    'P.J. Washington': 'PJ·华盛顿', 'Daniel Gafford': '丹尼尔·加福德',
+    'Dereck Lively': '德里克·莱夫利',
     # 76人
-    'Joel Embiid': '乔尔·恩比德', 'Tyrese Maxey': '泰瑞斯·马克西',
-    'Paul George': '保罗·乔治', 'Caleb Martin': '凯莱布·马丁',
+    'Joel Embiid': '乔尔·恩比德', 'Embiid': '恩比德',
+    'Tyrese Maxey': '泰瑞斯·马克西', 'Paul George': '保罗·乔治',
+    'Caleb Martin': '凯莱布·马丁',
     # 老鹰
     'Trae Young': '特雷·杨', 'Dejounte Murray': '德章泰·穆雷',
     'Jalen Johnson': '杰伦·约翰逊', 'Clint Capela': '克林特·卡佩拉',
@@ -146,38 +199,47 @@ PLAYER_CN_MAP = {
     'Pascal Siakam': '帕斯卡尔·西亚卡姆', 'Scottie Barnes': '斯科蒂·巴恩斯',
     'RJ Barrett': 'RJ·巴雷特', 'Immanuel Quickley': '伊曼纽尔·奎克利',
     # 热火
-    'Bam Adebayo': '巴姆·阿德巴约', 'Jimmy Butler': '吉米·巴特勒',
-    'Tyler Herro': '泰勒·希罗', 'Terry Rozier': '特里·罗齐尔',
+    'Bam Adebayo': '巴姆·阿德巴约', 'Tyler Herro': '泰勒·希罗',
+    'Terry Rozier': '特里·罗齐尔',
     # 快船
-    'Kawhi Leonard': '科怀·伦纳德', 'James Harden': '詹姆斯·哈登',
+    'Kawhi Leonard': '科怀·伦纳德', 'Leonard': '伦纳德',
+    'James Harden': '詹姆斯·哈登', 'Harden': '哈登',
     'Norman Powell': '诺曼·鲍威尔', 'Ivica Zubac': '伊维察·祖巴茨',
     # 国王
-    'De\'Aaron Fox': '达龙·福克斯', 'Domantas Sabonis': '多曼塔斯·萨博尼斯',
-    'DeMar DeRozan': '德玛尔·德罗赞', 'Keegan Murray': '基根·穆雷',
+    'De\'Aaron Fox': '达龙·福克斯', 'Fox': '福克斯',
+    'Domantas Sabonis': '多曼塔斯·萨博尼斯', 'Sabonis': '萨博尼斯',
+    'DeMar DeRozan': '德玛尔·德罗赞', 'DeRozan': '德罗赞',
+    'Keegan Murray': '基根·穆雷',
     # 鹈鹕
-    'Zion Williamson': '锡安·威廉姆森', 'Brandon Ingram': '布兰登·英格拉姆',
-    'CJ McCollum': 'CJ·麦科勒姆', 'Herbert Jones': '赫伯特·琼斯',
+    'Zion Williamson': '锡安·威廉姆森', 'Zion': '锡安',
+    'Brandon Ingram': '布兰登·英格拉姆', 'CJ McCollum': 'CJ·麦科勒姆',
+    'Herbert Jones': '赫伯特·琼斯',
     # 魔术
-    'Paolo Banchero': '保罗·班切罗', 'Franz Wagner': '弗朗茨·瓦格纳',
-    'Jalen Suggs': '杰伦·萨格斯', 'Wendell Carter Jr.': '温德尔·卡特',
+    'Paolo Banchero': '保罗·班切罗', 'Banchero': '班切罗',
+    'Franz Wagner': '弗朗茨·瓦格纳', 'Jalen Suggs': '杰伦·萨格斯',
+    'Wendell Carter Jr.': '温德尔·卡特',
     # 步行者
-    'Tyrese Haliburton': '泰瑞斯·哈利伯顿', 'Andrew Nembhard': '安德鲁·内姆哈德',
-    'Myles Turner': '迈尔斯·特纳', 'Bennedict Mathurin': '本内迪克特·马图林',
+    'Tyrese Haliburton': '泰瑞斯·哈利伯顿', 'Haliburton': '哈利伯顿',
+    'Andrew Nembhard': '安德鲁·内姆哈德', 'Myles Turner': '迈尔斯·特纳',
+    'Bennedict Mathurin': '本内迪克特·马图林',
     # 公牛
-    'Zach LaVine': '扎克·拉文', 'Nikola Vucevic': '尼古拉·武切维奇',
+    'Zach LaVine': '扎克·拉文', 'LaVine': '拉文',
+    'Nikola Vucevic': '尼古拉·武切维奇', 'Nikola Vučević': '尼古拉·武切维奇',
     'Coby White': '科比·怀特', 'Ayo Dosunmu': '阿约·多苏穆',
     # 灰熊
-    'Ja Morant': '贾·莫兰特', 'Desmond Bane': '德斯蒙德·贝恩',
-    'Jaren Jackson Jr.': '小贾伦·杰克逊', 'Marcus Smart': '马库斯·斯马特',
+    'Ja Morant': '贾·莫兰特', 'Morant': '莫兰特',
+    'Desmond Bane': '德斯蒙德·贝恩', 'Jaren Jackson Jr.': '小贾伦·杰克逊',
+    'Marcus Smart': '马库斯·斯马特',
     # 开拓者
     'Anfernee Simons': '安芬尼·西蒙斯', 'Jerami Grant': '杰拉米·格兰特',
     'Deandre Ayton': '德安德烈·艾顿', 'Shaedon Sharpe': '谢登·夏普',
     # 爵士
-    'Lauri Markkanen': '劳里·马尔卡宁', 'Collin Sexton': '科林·塞克斯顿',
-    'Jordan Clarkson': '乔丹·克拉克森', 'John Collins': '约翰·柯林斯',
+    'Lauri Markkanen': '劳里·马尔卡宁', 'Markkanen': '马尔卡宁',
+    'Collin Sexton': '科林·塞克斯顿', 'Jordan Clarkson': '乔丹·克拉克森',
+    'John Collins': '约翰·柯林斯',
     # 篮网
     'Cameron Thomas': '卡梅隆·托马斯', 'Dennis Schroder': '丹尼斯·施罗德',
-    'Nic Claxton': '尼古拉斯·克拉克斯顿', 'Dorian Finney-Smith': '多里安·芬尼-史密斯',
+    'Nic Claxton': '尼古拉斯·克拉克斯顿',
     # 黄蜂
     'LaMelo Ball': '拉梅洛·鲍尔', 'Miles Bridges': '迈尔斯·布里奇斯',
     'Brandon Miller': '布兰登·米勒', 'Mark Williams': '马克·威廉姆斯',
@@ -186,19 +248,50 @@ PLAYER_CN_MAP = {
     'Deni Avdija': '德尼·阿夫迪亚', 'Corey Kispert': '科里·基斯珀特',
     'Alex Sarr': '亚历克斯·萨尔',
     # 其他球员
-    'Nikola Vučević': '尼古拉·武切维奇', 'Nikola Vucevic': '尼古拉·武切维奇',
-    'Andrew Wiggins': '安德鲁·威金斯', 'Anthony Black': '安东尼·布莱克',
-    'Anthony Davis': '安东尼·戴维斯', 'Cooper Flagg': '库珀·弗拉格',
-    'Dariq Whitehead': '达里克·怀特黑德', 'Grayson Allen': '格雷森·阿伦',
-    'Jabari Smith Jr.': '贾巴里·史密斯', 'Jaime Jaquez Jr.': '海梅·哈克斯',
-    'Jimmy Butler III': '吉米·巴特勒', 'Josh Giddey': '约什·吉迪',
-    'Kevin Porter Jr.': '小凯文·波特', 'Keyonte George': '基扬特·乔治',
-    'Kon Knueppel': '康·克内佩尔', 'Matas Buzelis': '马塔斯·布泽利斯',
-    'Naji Marshall': '纳吉·马歇尔', 'Nickeil Alexander-Walker': '尼基尔·亚历山大-沃克',
-    'Onyeka Okongwu': '奥涅卡·奥孔武', 'Russell Westbrook': '拉塞尔·威斯布鲁克',
-    'Ryan Rollins': '瑞安·罗林斯', 'Saddiq Bey': '萨迪克·贝',
-    'Stephon Castle': '斯蒂芬·卡斯尔', 'Trey Murphy III': '特雷·墨菲',
-    'Ty Jerome': '泰·杰罗姆', 'VJ Edgecombe': 'VJ·埃奇科姆',
+    'Andrew Wiggins': '安德鲁·威金斯', 'Anthony Davis': '安东尼·戴维斯',
+    'Russell Westbrook': '拉塞尔·威斯布鲁克',
+    # 马刺补充
+    'Julian Champagnie': '朱利安·尚帕尼', 'Dylan Harper': '迪伦·哈珀',
+    'Harrison Barnes': '哈里森·巴恩斯', 'Carter Bryant': '卡特·布莱恩特',
+    'Stephon Castle': '斯蒂芬·卡斯尔',
+    'Bismack Biyombo': '比斯马克·比永博', 'Jordan McLaughlin': '乔丹·麦克劳克林',
+    'Kelly Olynyk': '凯利·奥利尼克', 'Mason Plumlee': '梅森·普拉姆利',
+    'Lindy Waters III': '林迪·沃特斯三世',
+    # 雷霆补充
+    'Luguentz Dort': '卢根茨·多尔特', 'Isaiah Hartenstein': '以赛亚·哈滕斯坦因',
+    'Cason Wallace': '卡森·华莱士', 'Alex Caruso': '亚历克斯·卡鲁索',
+    'Jared McCain': '贾里德·麦凯恩', 'Jaylin Williams': '杰林·威廉姆斯',
+    'Kenrich Williams': '肯里奇·威廉姆斯', 'Nikola Topić': '尼古拉·托皮奇',
+    'Aaron Wiggins': '阿隆·威金斯',
+}
+
+# 常见NBA术语英文->中文映射
+NBA_TERM_MAP = {
+    'triple-double': '三双', 'double-double': '两双',
+    'buzzer-beater': '压哨球', 'game-winner': '绝杀',
+    'dunk': '扣篮', 'slam dunk': '暴扣',
+    'three-pointer': '三分球', '3-pointer': '三分球',
+    'free throw': '罚球', 'field goal': '投篮',
+    'rebound': '篮板', 'assist': '助攻',
+    'steal': '抢断', 'block': '盖帽',
+    'turnover': '失误', 'foul': '犯规',
+    'overtime': '加时赛', 'OT': '加时',
+    'MVP': '最有价值球员', 'Finals': '总决赛',
+    'playoffs': '季后赛', 'regular season': '常规赛',
+    'draft': '选秀', 'rookie': '新秀',
+    'trade': '交易', 'sign': '签约',
+    'contract': '合同', 'injury': '伤病',
+    'out': '缺阵', 'questionable': '出战存疑',
+    'probable': '大概率出战', 'day-to-day': '每日观察',
+    'season-high': '赛季新高', 'career-high': '生涯新高',
+    'win streak': '连胜', 'losing streak': '连败',
+    'home court': '主场优势', 'road game': '客场',
+    'recap': '回顾', 'preview': '前瞻',
+    'highlights': '精彩集锦', 'stat line': '数据线',
+    'points': '分', 'rebounds': '篮板', 'assists': '助攻',
+    'leads': '领衔', 'scores': '砍下',
+    'defeats': '击败', 'beats': '击败',
+    'top scorer': '得分王', 'head coach': '主教练',
 }
 
 # 球员英文名 -> 球衣号码 映射
@@ -276,12 +369,7 @@ PLAYER_JERSEY_MAP = {
     # 奇才
     'Kyle Kuzma': 33, 'Jordan Poole': 13, 'Alex Sarr': 20,
     # 其他球员
-    'Andrew Wiggins': 22, 'Anthony Black': 0, 'Anthony Davis': 3,
-    'Cooper Flagg': 0, 'Grayson Allen': 8, 'Jabari Smith Jr.': 10,
-    'Jaime Jaquez Jr.': 11, 'Josh Giddey': 3, 'Kevin Porter Jr.': 3,
-    'Keyonte George': 3, 'Naji Marshall': 0, 'Nickeil Alexander-Walker': 6,
-    'Onyeka Okongwu': 17, 'Russell Westbrook': 4, 'Saddiq Bey': 41,
-    'Stephon Castle': 0, 'Trey Murphy III': 25, 'Ty Jerome': 2,
+    'Andrew Wiggins': 22, 'Anthony Davis': 3, 'Russell Westbrook': 4,
 }
 
 # nba_api team id -> 中文名
@@ -326,6 +414,56 @@ def _get_current_season():
         return f"{now.year}-{str(now.year + 1)[-2:]}"
     else:
         return f"{now.year - 1}-{str(now.year)[-2:]}"
+
+
+def translate_text_safe(text):
+    """安全翻译文本，失败时返回原文"""
+    if not text or not text.strip():
+        return text
+    if HAS_TRANSLATOR:
+        try:
+            return translate_text(text)
+        except Exception as e:
+            print(f"翻译失败: {e}", file=sys.stderr)
+            return text
+    return text
+
+
+def translate_with_mapping(text):
+    """使用本地映射表翻译文本（球员名 + 球队名 + NBA术语）"""
+    import re
+    if not text:
+        return text
+
+    # 1. 先翻译球员名（更长的先匹配，避免短名误匹配）
+    sorted_players = sorted(PLAYER_CN_MAP.items(), key=lambda x: len(x[0]), reverse=True)
+    for en_name, cn_name in sorted_players:
+        if en_name in text:
+            text = text.replace(en_name, cn_name)
+
+    # 2. 再翻译球队名（使用单词边界匹配）
+    for en_name, cn_name in TEAM_SHORT_MAP.items():
+        pattern = r'\b' + re.escape(en_name) + r'\b'
+        text = re.sub(pattern, cn_name, text)
+
+    # 3. 翻译NBA术语（按长度降序匹配）
+    sorted_terms = sorted(NBA_TERM_MAP.items(), key=lambda x: len(x[0]), reverse=True)
+    for en_term, cn_term in sorted_terms:
+        if en_term.lower() in text.lower():
+            # 保持大小写不敏感匹配
+            pattern = r'\b' + re.escape(en_term) + r'\b'
+            text = re.sub(pattern, cn_term, text, flags=re.IGNORECASE)
+
+    return text
+
+
+def needs_translation(text):
+    """检查文本是否需要翻译（是否含有大量英文）"""
+    import string
+    if not text:
+        return False
+    alpha_chars = [c for c in text if c in string.ascii_letters]
+    return len(alpha_chars) > len(text) * 0.3
 
 
 def fetch_team_standings():
@@ -437,14 +575,19 @@ def fetch_player_stats():
 
         # 高级数据
         adv = adv_map.get(player_id, {})
-        per = _safe_float(adv.get('E_OFF_RATING'), 110.0)  # 进攻效率 (每100回合得分)
+        per = _safe_float(adv.get('E_OFF_RATING'), 110.0)
         ts_pct = _safe_float(adv.get('TS_PCT'), fg_pct)
-        usg_pct = _safe_float(adv.get('USG_PCT')) * 100  # 转为百分比
+        usg_pct = _safe_float(adv.get('USG_PCT')) * 100
         if usg_pct < 1.0:
-            usg_pct = 20.0  # 默认值
+            usg_pct = 20.0
+
+        # 球员名翻译
+        en_name = data.get('PLAYER_NAME', '')
+        cn_name = PLAYER_CN_MAP.get(en_name, en_name)
 
         result.append({
-            'name': PLAYER_CN_MAP.get(data.get('PLAYER_NAME', ''), data.get('PLAYER_NAME', '')),
+            'nbaPlayerId': player_id,
+            'name': cn_name,
             'team': cn_team,
             'position': position,
             'ppg': round(ppg, 1),
@@ -461,7 +604,7 @@ def fetch_player_stats():
             'per': round(per, 1),
             'tsPct': round(ts_pct, 3),
             'usgPct': round(usg_pct, 1),
-            'jersey': PLAYER_JERSEY_MAP.get(data.get('PLAYER_NAME', ''), 0),
+            'jersey': PLAYER_JERSEY_MAP.get(en_name, 0),
         })
 
     # 按得分排序，取前100名
@@ -530,123 +673,131 @@ def fetch_recent_games():
         date_str = date.strftime('%m/%d/%Y')
 
         try:
-            sb = ScoreboardV2(game_date=date_str, timeout=30)
+            sb = ScoreboardV3(game_date=date_str, timeout=30)
             data = sb.get_dict()
             time.sleep(1.0)
         except Exception as e:
             print(f"获取{date_str}比赛数据失败: {e}", file=sys.stderr)
             continue
 
-        # 解析比赛数据
-        result_sets = data.get('resultSets', [])
-        game_header = None
-        line_score = None
+        # 解析比赛数据 (ScoreboardV3 格式)
+        scoreboard = data.get('scoreboard', {})
+        games_list = scoreboard.get('games', [])
 
-        for rs in result_sets:
-            if rs.get('name') == 'GameHeader':
-                game_header = rs
-            elif rs.get('name') == 'LineScore':
-                line_score = rs
+        for game in games_list:
+            game_id = game.get('gameId', '')
+            home_team = game.get('homeTeam', {})
+            away_team = game.get('awayTeam', {})
 
-        if not game_header or not line_score:
-            continue
+            home_id = _safe_int(home_team.get('teamId'))
+            away_id = _safe_int(away_team.get('teamId'))
+            home_score = _safe_int(home_team.get('score'))
+            away_score = _safe_int(away_team.get('score'))
 
-        # 构建球队得分索引
-        score_map = {}
-        ls_headers = line_score['headers']
-        for row in line_score['rowSet']:
-            sd = dict(zip(ls_headers, row))
-            game_id = sd.get('GAME_ID')
-            team_id = _safe_int(sd.get('TEAM_ID'))
-            score = _safe_int(sd.get('PTS'))
-            score_map[(game_id, team_id)] = {
-                'team': TEAM_ID_TO_CN.get(team_id, sd.get('TEAM_ABBREVIATION', '')),
-                'score': score,
-            }
+            home_cn = TEAM_ID_TO_CN.get(home_id, home_team.get('teamTricode', ''))
+            away_cn = TEAM_ID_TO_CN.get(away_id, away_team.get('teamTricode', ''))
 
-        gh_headers = game_header['headers']
-        for row in game_header['rowSet']:
-            gd = dict(zip(gh_headers, row))
-            game_id = gd.get('GAME_ID')
-            home_id = _safe_int(gd.get('HOME_TEAM_ID'))
-            away_id = _safe_int(gd.get('VISITOR_TEAM_ID'))
+            game_status = game.get('gameStatus', 0)
+            status = 'FINISHED' if game_status == 3 else 'LIVE' if game_status == 2 else 'SCHEDULED'
 
-            home_info = score_map.get((game_id, home_id), {})
-            away_info = score_map.get((game_id, away_id), {})
-
-            if home_info and away_info:
-                games.append({
-                    'homeTeam': home_info.get('team', ''),
-                    'awayTeam': away_info.get('team', ''),
-                    'homeScore': home_info.get('score', 0),
-                    'awayScore': away_info.get('score', 0),
-                    'date': date.strftime('%Y-%m-%d'),
-                    'status': 'FINISHED',
-                    'gameId': game_id,
-                })
+            games.append({
+                'homeTeam': home_cn,
+                'awayTeam': away_cn,
+                'homeScore': home_score,
+                'awayScore': away_score,
+                'date': date.strftime('%Y-%m-%d'),
+                'status': status,
+                'gameId': game_id,
+            })
 
     print(f"获取到 {len(games)} 场比赛记录", file=sys.stderr)
     return games
 
 
 def fetch_boxscore(game_id):
-    """获取指定比赛的Box Score"""
+    """获取指定比赛的Box Score（使用V3 API）"""
     _init_team_map()
     print(f"正在获取比赛 {game_id} 的Box Score...", file=sys.stderr)
 
     try:
-        box = BoxScoreTraditionalV2(game_id=game_id, timeout=30)
+        box = BoxScoreTraditionalV3(game_id=game_id, timeout=30)
         data = box.get_dict()
         time.sleep(0.5)
     except Exception as e:
         print(f"获取Box Score失败: {e}", file=sys.stderr)
         return None
 
-    result_sets = data.get('resultSets', [])
     player_stats = []
     team_stats = []
+    unmapped_names = []  # 收集未映射的球员名
 
-    for rs in result_sets:
-        headers = rs['headers']
-        for row in rs.get('rowSet', []):
-            d = dict(zip(headers, row))
+    # V3 格式：boxScoreTraditional.homeTeam / awayTeam
+    bs = data.get('boxScoreTraditional', {})
 
-            if rs['name'] == 'PlayerStats':
-                team_id = _safe_int(d.get('TEAM_ID'))
-                en_name = d.get('PLAYER_NAME', '')
-                player_stats.append({
-                    'playerId': _safe_int(d.get('PLAYER_ID')),
-                    'playerName': PLAYER_CN_MAP.get(en_name, en_name),
-                    'teamId': team_id,
-                    'teamName': TEAM_ID_TO_CN.get(team_id, d.get('TEAM_ABBREVIATION', '')),
-                    'minutes': d.get('MIN', ''),
-                    'points': _safe_int(d.get('PTS')),
-                    'rebounds': _safe_int(d.get('REB')),
-                    'assists': _safe_int(d.get('AST')),
-                    'steals': _safe_int(d.get('STL')),
-                    'blocks': _safe_int(d.get('BLK')),
-                    'turnovers': _safe_int(d.get('TO')),
-                    'fgMade': _safe_int(d.get('FGM')),
-                    'fgAttempted': _safe_int(d.get('FGA')),
-                    'fgPct': _safe_float(d.get('FG_PCT')),
-                    'threeMade': _safe_int(d.get('FG3M')),
-                    'threeAttempted': _safe_int(d.get('FG3A')),
-                    'threePct': _safe_float(d.get('FG3_PCT')),
-                    'ftMade': _safe_int(d.get('FTM')),
-                    'ftAttempted': _safe_int(d.get('FTA')),
-                    'ftPct': _safe_float(d.get('FT_PCT')),
-                    'plusMinus': _safe_int(d.get('PLUS_MINUS')),
-                    'starter': d.get('START_POSITION', '') != '',
-                })
-            elif rs['name'] == 'TeamStats':
-                team_id = _safe_int(d.get('TEAM_ID'))
-                team_stats.append({
-                    'teamId': team_id,
-                    'teamName': TEAM_ID_TO_CN.get(team_id, ''),
-                    'points': _safe_int(d.get('PTS')),
-                    'rebounds': _safe_int(d.get('REB')),
-                    'assists': _safe_int(d.get('AST')),
-                })
+    for side in ['homeTeam', 'awayTeam']:
+        team_data = bs.get(side, {})
+        team_id = _safe_int(team_data.get('teamId'))
+        team_tricode = team_data.get('teamTricode', '')
+        team_cn = TEAM_ID_TO_CN.get(team_id, team_tricode)
+
+        # 球队统计
+        team_stat = team_data.get('statistics', {})
+        if team_stat:
+            team_stats.append({
+                'teamId': team_id,
+                'teamName': team_cn,
+                'points': _safe_int(team_stat.get('points')),
+                'rebounds': _safe_int(team_stat.get('reboundsTotal')),
+                'assists': _safe_int(team_stat.get('assists')),
+            })
+
+        # 球员统计
+        players = team_data.get('players', [])
+        for p in players:
+            en_name = f"{p.get('firstName', '')} {p.get('familyName', '')}".strip()
+            cn_name = PLAYER_CN_MAP.get(en_name, '')
+            if not cn_name:
+                cn_name = en_name
+                if en_name:
+                    unmapped_names.append(en_name)
+            stat = p.get('statistics', {})
+            player_stats.append({
+                'playerId': _safe_int(p.get('personId')),
+                'playerName': cn_name,
+                'teamId': team_id,
+                'teamName': team_cn,
+                'minutes': stat.get('minutes', ''),
+                'points': _safe_int(stat.get('points')),
+                'rebounds': _safe_int(stat.get('reboundsTotal')),
+                'assists': _safe_int(stat.get('assists')),
+                'steals': _safe_int(stat.get('steals')),
+                'blocks': _safe_int(stat.get('blocks')),
+                'turnovers': _safe_int(stat.get('turnovers')),
+                'fgMade': _safe_int(stat.get('fieldGoalsMade')),
+                'fgAttempted': _safe_int(stat.get('fieldGoalsAttempted')),
+                'fgPct': _safe_float(stat.get('fieldGoalsPercentage')),
+                'threeMade': _safe_int(stat.get('threePointersMade')),
+                'threeAttempted': _safe_int(stat.get('threePointersAttempted')),
+                'threePct': _safe_float(stat.get('threePointersPercentage')),
+                'ftMade': _safe_int(stat.get('freeThrowsMade')),
+                'ftAttempted': _safe_int(stat.get('freeThrowsAttempted')),
+                'ftPct': _safe_float(stat.get('freeThrowsPercentage')),
+                'plusMinus': _safe_int(stat.get('plusMinusPoints')),
+                'starter': p.get('starter', '') == '1',
+            })
+
+    # 批量翻译未映射的球员名
+    if unmapped_names and HAS_TRANSLATOR:
+        try:
+            from translator import translate_batch
+            translated = translate_batch(unmapped_names)
+            name_map = dict(zip(unmapped_names, translated))
+            for ps in player_stats:
+                if ps['playerName'] in name_map:
+                    ps['playerName'] = name_map[ps['playerName']]
+            print(f"翻译了 {len(unmapped_names)} 个球员名", file=sys.stderr)
+        except Exception as e:
+            print(f"球员名翻译失败: {e}", file=sys.stderr)
 
     print(f"获取到 {len(player_stats)} 名球员的Box Score", file=sys.stderr)
     return {'players': player_stats, 'teams': team_stats}
@@ -777,6 +928,174 @@ def fetch_player_gamelog(player_id, season=None):
     return result
 
 
+def fetch_nba_news(limit=20):
+    """从ESPN API获取NBA新闻，先用本地映射翻译，再用批量API翻译剩余英文"""
+    print(f"正在从ESPN获取NBA新闻 (limit={limit})...", file=sys.stderr)
+
+    url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/news?limit={limit}"
+
+    try:
+        req = urllib.request.Request(url, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+        })
+
+        no_proxy_opener = urllib.request.build_opener()
+        response = no_proxy_opener.open(req, timeout=15)
+        data = json.loads(response.read().decode('utf-8'))
+    except Exception as e:
+        print(f"获取ESPN新闻失败: {e}", file=sys.stderr)
+        return []
+
+    articles = data.get('articles', [])
+    if not articles:
+        return []
+
+    # ====== 第一步：解析所有文章，提取信息，用本地映射翻译 ======
+    parsed_articles = []
+    headlines_to_translate = []
+    descriptions_to_translate = []
+    contents_to_translate = []
+    translate_indices = []  # 需要API翻译的文章索引
+
+    for idx, article in enumerate(articles):
+        headline = article.get('headline', '')
+        description = article.get('description', '')
+        published = article.get('published', '')
+        source_url = article.get('links', {}).get('web', {}).get('href', '')
+
+        # 获取图片
+        images = article.get('images', [])
+        image_url = images[0].get('url', '') if images else ''
+
+        # 尝试从URL中提取gameId
+        nba_game_id = ''
+        if 'gameId=' in source_url:
+            import re
+            game_match = re.search(r'gameId=(\d+)', source_url)
+            if game_match:
+                nba_game_id = game_match.group(1)
+        elif '/events/' in source_url:
+            import re
+            event_match = re.search(r'/events/(\d+)', source_url)
+            if event_match:
+                nba_game_id = event_match.group(1)
+
+        # 从标题和描述中提取球队名
+        home_team = ''
+        away_team = ''
+        content = description or headline
+
+        for en_name, cn_name in TEAM_NAME_MAP.items():
+            if en_name.lower() in headline.lower() or en_name.lower() in description.lower():
+                if not home_team:
+                    home_team = cn_name
+                elif not away_team and cn_name != home_team:
+                    away_team = cn_name
+
+        if not home_team:
+            for short_name, cn_name in TEAM_SHORT_MAP.items():
+                if short_name.lower() in headline.lower():
+                    home_team = cn_name
+                    break
+
+        # 本地映射翻译
+        headline = translate_with_mapping(headline)
+        content = translate_with_mapping(content)
+        if description:
+            description = translate_with_mapping(description)
+
+        # 确定新闻分类
+        category = 'general'
+        headline_lower = headline.lower()
+        if any(word in headline_lower for word in ['trade', 'sign', 'deal', 'contract', '交易', '签约']):
+            category = 'trade'
+        elif any(word in headline_lower for word in ['injury', 'hurt', 'out', 'doubtful', '伤病', '受伤']):
+            category = 'injury'
+        elif any(word in headline_lower for word in ['score', 'win', 'loss', 'beat', 'game', 'finals', 'recap', '得分', '胜利', '决赛']):
+            category = 'game'
+        elif any(word in headline_lower for word in ['draft', 'pick', 'rookie', '选秀', '新秀']):
+            category = 'draft'
+
+        parsed = {
+            'headline': headline,
+            'description': description,
+            'content': content,
+            'imageUrl': image_url,
+            'sourceUrl': source_url,
+            'published': published,
+            'category': category,
+            'homeTeam': home_team,
+            'awayTeam': away_team,
+            'nbaGameId': nba_game_id,
+        }
+        parsed_articles.append(parsed)
+
+        # 收集需要API翻译的字段
+        if HAS_TRANSLATOR:
+            needs_api = False
+            if needs_translation(headline):
+                needs_api = True
+            if needs_translation(content):
+                needs_api = True
+            if description and needs_translation(description):
+                needs_api = True
+
+            if needs_api:
+                translate_indices.append(idx)
+                headlines_to_translate.append(headline)
+                contents_to_translate.append(content)
+                descriptions_to_translate.append(description)
+
+    # ====== 第二步：批量API翻译 ======
+    if HAS_TRANSLATOR and translate_indices:
+        print(f"需要API翻译的文章: {len(translate_indices)} 条", file=sys.stderr)
+
+        try:
+            from translator import translate_batch
+
+            # 批量翻译标题
+            if headlines_to_translate:
+                translated_headlines = translate_batch(headlines_to_translate)
+                for i, idx in enumerate(translate_indices):
+                    parsed_articles[idx]['headline'] = translated_headlines[i]
+
+            # 批量翻译内容
+            if contents_to_translate:
+                translated_contents = translate_batch(contents_to_translate)
+                for i, idx in enumerate(translate_indices):
+                    parsed_articles[idx]['content'] = translated_contents[i]
+
+            # 批量翻译描述
+            if descriptions_to_translate:
+                # 过滤空描述
+                valid_descs = [(i, d) for i, d in enumerate(descriptions_to_translate) if d and d.strip()]
+                if valid_descs:
+                    desc_indices = [vd[0] for vd in valid_descs]
+                    desc_texts = [vd[1] for vd in valid_descs]
+                    translated_descs = translate_batch(desc_texts)
+                    for i, desc_idx in enumerate(desc_indices):
+                        orig_idx = translate_indices[desc_idx]
+                        parsed_articles[orig_idx]['description'] = translated_descs[i]
+
+            print(f"批量翻译完成", file=sys.stderr)
+
+        except Exception as e:
+            print(f"批量翻译失败，回退到逐条翻译: {e}", file=sys.stderr)
+            # 回退到逐条翻译
+            for idx in translate_indices:
+                parsed = parsed_articles[idx]
+                if needs_translation(parsed['headline']):
+                    parsed['headline'] = translate_text_safe(parsed['headline'])
+                if needs_translation(parsed['content']):
+                    parsed['content'] = translate_text_safe(parsed['content'])
+                if parsed['description'] and needs_translation(parsed['description']):
+                    parsed['description'] = translate_text_safe(parsed['description'])
+
+    print(f"获取到 {len(parsed_articles)} 条新闻", file=sys.stderr)
+    return parsed_articles
+
+
 def main():
     """主函数"""
     if not HAS_NBA_API:
@@ -802,6 +1121,10 @@ def main():
 
     if action == 'today':
         result['todayGames'] = fetch_today_games()
+
+    if action == 'news':
+        limit = int(sys.argv[2]) if len(sys.argv) > 2 else 20
+        result['news'] = fetch_nba_news(limit)
 
     if action == 'boxscore' and len(sys.argv) > 2:
         result['boxscore'] = fetch_boxscore(sys.argv[2])

@@ -69,4 +69,20 @@ public class GameNews {
     /** 比赛状态：SCHEDULED / LIVE / FINISHED */
     @Column(nullable = false, length = 16)
     private String status = "SCHEDULED";
+
+    /** NBA官方比赛ID（10位数字，如 0022400001） */
+    @Column(length = 16)
+    private String nbaGameId;
+
+    /** 新闻分类：game/trade/injury/draft/general */
+    @Column(length = 20)
+    private String category = "general";
+
+    /** 新闻来源链接 */
+    @Column(length = 500)
+    private String sourceUrl;
+
+    /** 新闻图片链接 */
+    @Column(length = 500)
+    private String imageUrl;
 }

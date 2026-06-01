@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface PlayerRepository extends JpaRepository<Player, Long> {
 
+    Player findByNbaPlayerId(Long nbaPlayerId);
+
     Page<Player> findByNameContainingIgnoreCase(String name, Pageable pageable);
 
     Page<Player> findByTeamId(Long teamId, Pageable pageable);

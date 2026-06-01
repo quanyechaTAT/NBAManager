@@ -119,6 +119,18 @@ public class PlayerDetailService {
             pb.redirectErrorStream(false);
             pb.directory(new File(scriptPath).getParentFile());
             pb.environment().put("PYTHONIOENCODING", "utf-8");
+            pb.environment().put("NBA_PROXY_HOST", "127.0.0.1");
+            pb.environment().put("NBA_PROXY_PORT", "7890");
+
+            // 传递翻译API配置
+            String mimoApiKey = System.getenv("MIMO_API_KEY");
+            String mimoBaseUrl = System.getenv("MIMO_BASE_URL");
+            if (mimoApiKey != null && !mimoApiKey.isEmpty()) {
+                pb.environment().put("MIMO_API_KEY", mimoApiKey);
+            }
+            if (mimoBaseUrl != null && !mimoBaseUrl.isEmpty()) {
+                pb.environment().put("MIMO_BASE_URL", mimoBaseUrl);
+            }
 
             Process process = pb.start();
 

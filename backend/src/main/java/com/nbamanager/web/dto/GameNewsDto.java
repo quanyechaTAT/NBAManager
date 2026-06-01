@@ -14,4 +14,8 @@ public record GameNewsDto(
         LocalDateTime gameStartTime,
         LocalDateTime gameEndTime,
         String status,
-        LocalDateTime createTime) {}
+        LocalDateTime createTime,
+        String nbaGameId,
+        String category,
+        String sourceUrl,
+        String imageUrl) {}

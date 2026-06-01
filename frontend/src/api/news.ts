@@ -11,6 +11,10 @@ export interface GameNewsPayload {
   awayScore: number | null
   gameStartTime: string
   gameEndTime: string
+  nbaGameId?: string | null
+  category?: string
+  sourceUrl?: string | null
+  imageUrl?: string | null
 }
 
 /** 分页获取赛事资讯 */
