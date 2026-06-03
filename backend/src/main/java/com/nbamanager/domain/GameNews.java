@@ -15,7 +15,8 @@ import lombok.Setter;
 @Entity
 @Table(name = "game_news", indexes = {
         @Index(name = "idx_news_game_start_time", columnList = "gameStartTime"),
-        @Index(name = "idx_news_title", columnList = "title")
+        @Index(name = "idx_news_title", columnList = "title"),
+        @Index(name = "idx_news_source_url", columnList = "sourceUrl")
 })
 @Getter
 @Setter
@@ -85,4 +86,12 @@ public class GameNews {
     /** 新闻图片链接 */
     @Column(length = 500)
     private String imageUrl;
+
+    /** 浏览量 */
+    @Column(nullable = false)
+    private Integer viewCount = 0;
+
+    /** 收藏量 */
+    @Column(nullable = false)
+    private Integer favoriteCount = 0;
 }

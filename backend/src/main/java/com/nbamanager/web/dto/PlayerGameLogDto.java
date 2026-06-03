@@ -4,6 +4,7 @@ public record PlayerGameLogDto(
         String gameId,
         String matchDate,
         String opponent,
+        boolean isHome,
         String minutes,
         Integer points,
         Integer rebounds,

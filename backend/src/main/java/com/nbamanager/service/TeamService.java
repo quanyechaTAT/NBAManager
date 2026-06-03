@@ -69,7 +69,7 @@ public class TeamService {
         teamRepository.deleteById(id);
     }
 
-    /** 东西部分区排名（按净胜场排序，含胜场差） */
+    /** 东西部分区排名（按胜率排序，含胜场差） */
     @Cacheable(value = "rankings", key = "'all'")
     @Transactional(readOnly = true)
     public Map<String, List<TeamRankDto>> getConferenceRankings() {
@@ -80,9 +80,14 @@ public class TeamService {
         Map<String, List<TeamRankDto>> result = new java.util.LinkedHashMap<>();
         for (String conf : List.of("东部", "西部")) {
             List<Team> confTeams = grouped.getOrDefault(conf, List.of());
-            // 按净胜场（wins - losses）降序排列
+            // 按胜率降序排列（胜率相同时按净胜场排序）
             List<Team> sorted = confTeams.stream()
-                    .sorted(Comparator.comparingInt((Team t) -> t.getWins() - t.getLosses()).reversed())
+                    .sorted(Comparator
+                            .comparingDouble((Team t) -> {
+                                int total = t.getWins() + t.getLosses();
+                                return total == 0 ? 0.0 : (double) t.getWins() / total;
+                            }).reversed()
+                            .thenComparing(Comparator.comparingInt((Team t) -> t.getWins() - t.getLosses()).reversed()))
                     .collect(Collectors.toList());
             if (sorted.isEmpty()) {
                 result.put(conf, List.of());
@@ -107,10 +112,11 @@ public class TeamService {
         t.setConference(req.conference());
         t.setWins(req.wins());
         t.setLosses(req.losses());
+        if (req.logoUrl() != null) t.setLogoUrl(req.logoUrl());
     }
 
     private TeamDto toDto(Team t) {
-        return new TeamDto(t.getId(), t.getName(), t.getCity(), t.getConference(), t.getWins(), t.getLosses());
+        return new TeamDto(t.getId(), t.getName(), t.getCity(), t.getConference(), t.getWins(), t.getLosses(), t.getLogoUrl());
     }
 
     private static ApiException notFound(Long id) {

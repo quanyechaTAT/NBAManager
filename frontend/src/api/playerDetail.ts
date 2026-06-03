@@ -3,11 +3,12 @@ import type { PageResponse } from '@/api/types'
 
 export interface PlayerDetail {
   id: number
+  nbaPlayerId: number | null
   name: string
   teamId: number
   teamName: string
   position: string
-  jerseyNumber: number
+  jerseyNumber: string
   height: string
   weight: number
   country: string
@@ -31,6 +32,7 @@ export interface PlayerGameLogItem {
   gameId: string
   matchDate: string
   opponent: string
+  isHome: boolean
   minutes: string
   points: number
   rebounds: number

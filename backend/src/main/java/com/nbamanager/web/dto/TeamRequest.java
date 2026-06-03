@@ -9,4 +9,5 @@ public record TeamRequest(
         @NotBlank String city,
         @NotBlank String conference,
         @NotNull @Min(0) Integer wins,
-        @NotNull @Min(0) Integer losses) {}
+        @NotNull @Min(0) Integer losses,
+        String logoUrl) {}

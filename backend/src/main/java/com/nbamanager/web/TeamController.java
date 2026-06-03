@@ -32,7 +32,7 @@ public class TeamController {
     @GetMapping
     public PageResponse<TeamDto> list(
             @RequestParam(required = false) String q,
-            @PageableDefault(size = 10, sort = "name") Pageable pageable) {
+            @PageableDefault(size = 10, sort = "wins", direction = org.springframework.data.domain.Sort.Direction.DESC) Pageable pageable) {
         return PageResponse.from(teamService.list(q, pageable));
     }
 

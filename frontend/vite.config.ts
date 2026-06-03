@@ -17,4 +17,14 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'echarts': ['echarts', 'vue-echarts'],
+          'element-plus': ['element-plus'],
+        }
+      }
+    }
+  }
 })

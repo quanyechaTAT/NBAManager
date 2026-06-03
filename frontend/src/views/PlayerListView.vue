@@ -33,20 +33,23 @@
       <el-button type="primary" plain @click="load">查询</el-button>
       <el-button @click="resetFilters">重置</el-button>
     </div>
-    <el-table :data="rows" border stripe v-loading="loading">
-      <el-table-column label="姓名" min-width="120">
+    <el-table :data="rows" border stripe v-loading="loading" @sort-change="onSortChange">
+      <el-table-column label="姓名" min-width="160">
         <template #default="{ row }">
-          <span class="player-name-link" @click="goToPlayerDetail(row)">{{ row.name }}</span>
+          <div class="player-cell" @click="goToPlayerDetail(row)">
+            <img v-if="row.nbaPlayerId" :src="`https://cdn.nba.com/headshots/nba/latest/260x190/${row.nbaPlayerId}.png`" class="player-thumb" @error="onThumbError" @click.stop="openHeadshotPreview(row)" />
+            <span class="player-name-link">{{ row.name }}</span>
+          </div>
         </template>
       </el-table-column>
       <el-table-column prop="teamName" label="球队" width="100" />
       <el-table-column prop="position" label="位置" width="70" />
       <el-table-column prop="jerseyNumber" label="球衣" width="60" align="center" />
-      <el-table-column prop="pointsPerGame" label="得分" width="70" align="center" sortable />
-      <el-table-column prop="reboundsPerGame" label="篮板" width="70" align="center" sortable />
-      <el-table-column prop="assistsPerGame" label="助攻" width="70" align="center" sortable />
-      <el-table-column prop="stealsPerGame" label="抢断" width="65" align="center" sortable />
-      <el-table-column prop="blocksPerGame" label="盖帽" width="65" align="center" sortable />
+      <el-table-column prop="pointsPerGame" label="得分" width="70" align="center" sortable="custom" />
+      <el-table-column prop="reboundsPerGame" label="篮板" width="70" align="center" sortable="custom" />
+      <el-table-column prop="assistsPerGame" label="助攻" width="70" align="center" sortable="custom" />
+      <el-table-column prop="stealsPerGame" label="抢断" width="65" align="center" sortable="custom" />
+      <el-table-column prop="blocksPerGame" label="盖帽" width="65" align="center" sortable="custom" />
       <el-table-column label="命中率" width="90" align="center">
         <template #default="{ row }">
           {{ (row.fieldGoalPct * 100).toFixed(1) }}%
@@ -57,7 +60,7 @@
           {{ (row.threePointPct * 100).toFixed(1) }}%
         </template>
       </el-table-column>
-      <el-table-column prop="efficiency" label="效率" width="65" align="center" sortable />
+      <el-table-column prop="efficiency" label="效率" width="65" align="center" sortable="custom" />
       <el-table-column v-if="auth.isAdmin" label="操作" width="160" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -100,7 +103,7 @@
         </div>
         <div class="form-row">
           <el-form-item label="球衣号码" class="form-item-half">
-            <el-input-number v-model="form.jerseyNumber" :min="0" :max="99" style="width: 100%" />
+            <el-input v-model="form.jerseyNumber" maxlength="3" placeholder="如 23 或 00" style="width: 100%" />
           </el-form-item>
           <el-form-item label="国籍" class="form-item-half">
             <el-input v-model="form.country" />
@@ -176,9 +179,27 @@
         <el-button type="primary" :loading="saving" @click="save">保存</el-button>
       </template>
     </el-dialog>
+
   </el-card>
   </div>
   </div>
+
+  <!-- 头像放大预览 - 使用 Teleport 移到 body 层级 -->
+  <Teleport to="body">
+    <Transition name="headshot-fade">
+      <div v-if="showHeadshotPreview" class="headshot-overlay" @click.self="showHeadshotPreview = false">
+        <div class="headshot-dialog">
+          <div class="headshot-dialog-header">
+            <span class="headshot-dialog-title">{{ previewPlayerName }}</span>
+            <button class="headshot-dialog-close" @click="showHeadshotPreview = false">✕</button>
+          </div>
+          <div class="headshot-dialog-body">
+            <img :src="previewHeadshotUrl" :alt="previewPlayerName" class="headshot-preview-img" @error="onThumbError" />
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -205,6 +226,11 @@ const size = ref(10)
 const keyword = ref('')
 const filterTeamId = ref<number | undefined>(undefined)
 const filterPosition = ref<string | undefined>(undefined)
+const sortField = ref<string | undefined>(undefined)
+const sortOrder = ref<string | undefined>(undefined)
+const showHeadshotPreview = ref(false)
+const previewHeadshotUrl = ref('')
+const previewPlayerName = ref('')
 const positionOptions = ['控卫', '分卫', '小前锋', '大前锋', '中锋']
 
 const dialogVisible = ref(false)
@@ -227,7 +253,7 @@ const form = reactive({
   efficiency: 15.0,
   trueShootingPct: 0.570,
   usagePct: 20.0,
-  jerseyNumber: 0,
+  jerseyNumber: '',
   height: '6-6',
   weight: 210,
   country: '美国',
@@ -251,13 +277,17 @@ async function loadTeams() {
 async function load() {
   loading.value = true
   try {
-    const { data } = await fetchPlayers({
+    const params: Record<string, unknown> = {
       q: keyword.value || undefined,
       teamId: filterTeamId.value || undefined,
       position: filterPosition.value || undefined,
       page: page.value - 1,
       size: size.value,
-    })
+    }
+    if (sortField.value && sortOrder.value) {
+      params.sort = `${sortField.value},${sortOrder.value}`
+    }
+    const { data } = await fetchPlayers(params as { q?: string; teamId?: number; position?: string; page: number; size: number; sort?: string })
     rows.value = data.content
     total.value = data.totalElements
   } catch {
@@ -265,6 +295,32 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+function onThumbError(e: Event) {
+  const img = e.target as HTMLImageElement
+  const src = img.src
+  if (src.includes('cdn.nba.com')) {
+    // 尝试备用CDN
+    const match = src.match(/\/(\d+)\.png/)
+    if (match) {
+      img.src = `https://ak-static.cms.nba.com/wp-content/uploads/headshots/nba/latest/260x190/${match[1]}.png`
+      return
+    }
+  }
+  // 显示占位符而不是隐藏
+  img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzYiIGhlaWdodD0iMzYiIHZpZXdCb3g9IjAgMCAzNiAzNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxOCIgY3k9IjE4IiByPSIxOCIgZmlsbD0iIzJBMkQzNSIvPjx0ZXh0IHg9IjE4IiB5PSIyMiIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjEyIiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5OPC90ZXh0Pjwvc3ZnPg=='
+}
+
+function onSortChange({ prop, order }: { prop: string; order: 'ascending' | 'descending' | null }) {
+  if (!prop || !order) {
+    sortField.value = undefined
+    sortOrder.value = undefined
+  } else {
+    sortField.value = prop
+    sortOrder.value = order === 'ascending' ? 'asc' : 'desc'
+  }
+  load()
 }
 
 function onFilterChange() {
@@ -298,7 +354,7 @@ function openCreate() {
   form.efficiency = 15.0
   form.trueShootingPct = 0.570
   form.usagePct = 20.0
-  form.jerseyNumber = 0
+  form.jerseyNumber = ''
   form.height = '6-6'
   form.weight = 210
   form.country = '美国'
@@ -450,6 +506,14 @@ function goToPlayerDetail(row: Player) {
   router.push({ path: '/players/detail', query: { id: String(row.id) } })
 }
 
+function openHeadshotPreview(row: Player) {
+  if (!row.nbaPlayerId) return
+  // 使用多个CDN源，优先使用可靠的
+  previewHeadshotUrl.value = `https://ak-static.cms.nba.com/wp-content/uploads/headshots/nba/latest/260x190/${row.nbaPlayerId}.png`
+  previewPlayerName.value = row.name
+  showHeadshotPreview.value = true
+}
+
 onMounted(async () => {
   await loadTeams()
   await load()
@@ -462,7 +526,11 @@ onMounted(async () => {
   position: relative;
   border-radius: var(--radius-lg);
   padding: 0;
+  animation: pageFadeIn 0.4s var(--ease-smooth) forwards;
+  opacity: 0;
+  transform: translateY(12px);
 }
+@keyframes pageFadeIn { to { opacity: 1; transform: translateY(0); } }
 .head-actions {
   display: flex;
   gap: 12px;
@@ -508,15 +576,49 @@ onMounted(async () => {
   color: var(--text-muted);
   font-size: 13px;
 }
+.player-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.player-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--bg-hover);
+  flex-shrink: 0;
+  border: 2px solid var(--border-light);
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+.player-cell:hover .player-thumb {
+  transform: scale(1.1);
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
 .player-name-link {
   color: var(--accent);
   cursor: pointer;
   font-weight: 500;
-  transition: color var(--duration-fast) var(--ease-smooth);
+  transition: all var(--duration-fast) var(--ease-smooth);
+  position: relative;
+}
+.player-name-link::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: var(--accent);
+  transition: width var(--duration-normal) var(--ease-smooth);
 }
 .player-name-link:hover {
   color: var(--accent-light);
-  text-decoration: underline;
+}
+.player-name-link:hover::after {
+  width: 100%;
 }
 .pager {
   margin-top: 16px;
@@ -532,6 +634,17 @@ onMounted(async () => {
   transition: all var(--duration-normal) var(--ease-smooth);
   position: relative;
   z-index: 1;
+  overflow: hidden;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--purple), var(--accent), var(--cyan));
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 .form-row {
   display: flex;
@@ -600,5 +713,99 @@ onMounted(async () => {
 }
 :deep(.el-divider) {
   border-color: var(--border-light) !important;
+}
+
+.headshot-preview-img {
+  max-width: 500px;
+  max-height: 600px;
+  object-fit: contain;
+  border-radius: var(--radius-lg);
+}
+
+/* 头像预览弹窗 - 全屏遮罩 */
+.headshot-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.headshot-dialog {
+  background: var(--bg-card);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 32px 100px rgba(0, 0, 0, 0.8), 0 0 2px rgba(0, 255, 136, 0.2);
+  overflow: hidden;
+  transform: scale(0.95);
+  animation: headshotZoomIn 0.3s var(--ease-spring) forwards;
+}
+
+@keyframes headshotZoomIn {
+  to {
+    transform: scale(1);
+  }
+}
+
+.headshot-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-light);
+  background: linear-gradient(135deg, var(--accent-lighter), transparent);
+}
+
+.headshot-dialog-title {
+  font-family: var(--font-heading);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.5px;
+}
+
+.headshot-dialog-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-light);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+
+.headshot-dialog-close:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  transform: rotate(90deg);
+}
+
+.headshot-dialog-body {
+  padding: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* 弹窗过渡动画 */
+.headshot-fade-enter-active {
+  transition: opacity 0.25s var(--ease-smooth);
+}
+.headshot-fade-leave-active {
+  transition: opacity 0.2s var(--ease-smooth);
+}
+.headshot-fade-enter-from,
+.headshot-fade-leave-to {
+  opacity: 0;
 }
 </style>

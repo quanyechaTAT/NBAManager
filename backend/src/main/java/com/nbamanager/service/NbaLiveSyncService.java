@@ -18,6 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import jakarta.annotation.PostConstruct;
 
 /**
  * NBA实时数据同步服务
@@ -32,6 +34,20 @@ public class NbaLiveSyncService {
     private final NbaDataSyncService nbaDataSyncService;
     private final GameNewsRepository gameNewsRepository;
     private final MatchRecordRepository matchRecordRepository;
+    private final GameNewsService gameNewsService;
+    private final PostService postService;
+
+    /**
+     * 启动时清理重复新闻
+     */
+    @PostConstruct
+    public void init() {
+        try {
+            cleanDuplicateNews();
+        } catch (Exception e) {
+            log.warn("启动时清理重复新闻失败: {}", e.getMessage());
+        }
+    }
 
     /**
      * 每日凌晨3点执行全量数据同步
@@ -49,6 +65,9 @@ public class NbaLiveSyncService {
     @Scheduled(fixedRate = 3600000) // 1小时
     public void syncNbaNews() {
         try {
+            // 先清理已存在的英文/中文重复新闻
+            cleanDuplicateNews();
+
             JSONObject data = fetchNewsData();
             if (data == null || !data.has("news")) {
                 return;
@@ -69,9 +88,82 @@ public class NbaLiveSyncService {
                 log.info("NBA新闻同步完成: 新增{}条新闻", added);
             }
 
+            // 清理超出100条的旧资讯
+            int cleanedNews = gameNewsService.cleanupOldNews(100);
+            if (cleanedNews > 0) {
+                log.info("清理旧资讯: 删除{}条", cleanedNews);
+            }
+
+            // 清理超出100条的旧帖子
+            int cleanedPosts = postService.cleanupOldPosts(100);
+            if (cleanedPosts > 0) {
+                log.info("清理旧帖子: 删除{}条", cleanedPosts);
+            }
+
         } catch (Exception e) {
             log.warn("NBA新闻同步失败: {}", e.getMessage());
         }
+    }
+
+    /**
+     * 清理重复新闻：同一sourceUrl只保留翻译质量最好的一条
+     */
+    private void cleanDuplicateNews() {
+        List<GameNews> allNews = gameNewsRepository.findAll();
+        // 按sourceUrl分组
+        Map<String, List<GameNews>> byUrl = allNews.stream()
+                .filter(n -> n.getSourceUrl() != null && !n.getSourceUrl().isEmpty())
+                .collect(java.util.stream.Collectors.groupingBy(GameNews::getSourceUrl));
+
+        int deleted = 0;
+        for (Map.Entry<String, List<GameNews>> entry : byUrl.entrySet()) {
+            List<GameNews> duplicates = entry.getValue();
+            if (duplicates.size() <= 1) continue;
+
+            // 按中文字符数量排序（越多翻译越好），保留最佳版本
+            duplicates.sort((a, b) -> {
+                int cnA = countChineseChars(a.getTitle());
+                int cnB = countChineseChars(b.getTitle());
+                return Integer.compare(cnB, cnA);
+            });
+
+            // 删除除第一条外的所有重复
+            for (int i = 1; i < duplicates.size(); i++) {
+                gameNewsRepository.delete(duplicates.get(i));
+                deleted++;
+            }
+        }
+
+        // 也清理标题完全相同的重复（无sourceUrl的情况）
+        Map<String, List<GameNews>> byTitle = allNews.stream()
+                .filter(n -> n.getTitle() != null && !n.getTitle().isEmpty())
+                .collect(java.util.stream.Collectors.groupingBy(GameNews::getTitle));
+
+        for (Map.Entry<String, List<GameNews>> entry : byTitle.entrySet()) {
+            List<GameNews> duplicates = entry.getValue();
+            if (duplicates.size() <= 1) continue;
+            for (int i = 1; i < duplicates.size(); i++) {
+                gameNewsRepository.delete(duplicates.get(i));
+                deleted++;
+            }
+        }
+
+        if (deleted > 0) {
+            log.info("清理重复新闻: 删除{}条重复记录", deleted);
+        }
+    }
+
+    /**
+     * 计算字符串中中文字符的数量
+     */
+    private int countChineseChars(String text) {
+        if (text == null) return 0;
+        int count = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c >= 0x4E00 && c <= 0x9FFF) count++;
+        }
+        return count;
     }
 
     /**
@@ -89,20 +181,33 @@ public class NbaLiveSyncService {
         String awayTeam = newsItem.optString("awayTeam", "");
         String nbaGameId = newsItem.optString("nbaGameId", "");
 
-        // 检查是否已存在相同标题的新闻
+        // 检查是否已存在相同标题或相同来源URL的新闻（防止英文版和翻译版重复）
         List<GameNews> existing = gameNewsRepository.findAll().stream()
-                .filter(n -> n.getTitle().equals(headline))
+                .filter(n -> n.getTitle().equals(headline)
+                        || (sourceUrl != null && !sourceUrl.isEmpty() && sourceUrl.equals(n.getSourceUrl())))
                 .toList();
 
         if (!existing.isEmpty()) {
             // 如果已存在但没有nbaGameId，尝试补充
-            if (!nbaGameId.isEmpty()) {
-                GameNews old = existing.get(0);
+            GameNews old = existing.get(0);
+            if (nbaGameId != null && !nbaGameId.isEmpty()) {
                 if (old.getNbaGameId() == null || old.getNbaGameId().isEmpty()) {
                     old.setNbaGameId(nbaGameId);
                     gameNewsRepository.save(old);
-                    return 1;
                 }
+            }
+            // 如果新数据是中文版本而旧的是英文版本，更新为中文版本
+            if (headline != null && !headline.isEmpty()
+                    && old.getTitle() != null && !old.getTitle().equals(headline)
+                    && headline.chars().anyMatch(c -> c > 0x4E00 && c < 0x9FFF)) {
+                old.setTitle(headline);
+                if (description != null && !description.isEmpty()) {
+                    old.setSummary(description.length() > 300 ? description.substring(0, 297) + "..." : description);
+                }
+                if (content != null && !content.isEmpty()) {
+                    old.setContent(content);
+                }
+                gameNewsRepository.save(old);
             }
             return 0; // 已存在，跳过
         }
@@ -155,8 +260,8 @@ public class NbaLiveSyncService {
             pb.environment().put("NBA_PROXY_PORT", "7890");
 
             // 传递翻译API配置（从系统环境变量或.env文件读取）
-            String mimoApiKey = System.getenv("MIMO_API_KEY");
-            String mimoBaseUrl = System.getenv("MIMO_BASE_URL");
+            String mimoApiKey = com.nbamanager.config.EnvFileReader.get("MIMO_API_KEY");
+            String mimoBaseUrl = com.nbamanager.config.EnvFileReader.get("MIMO_BASE_URL");
             if (mimoApiKey != null && !mimoApiKey.isEmpty()) {
                 pb.environment().put("MIMO_API_KEY", mimoApiKey);
             }

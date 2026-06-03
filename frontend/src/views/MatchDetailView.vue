@@ -11,9 +11,9 @@
     <div class="page-inner stagger-in">
       <!-- 返回按钮 -->
       <div class="back-row">
-        <el-button class="back-btn" link @click="router.push('/news')">
+        <el-button class="back-btn" link @click="goBack">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="m15 18-6-6 6-6"/></svg>
-          返回
+          {{ returnTo ? '返回球队详情' : '返回' }}
         </el-button>
       </div>
 
@@ -21,9 +21,12 @@
       <div class="match-hero" v-loading="loading">
         <div class="match-hero-inner">
           <div class="match-hero-team">
-            <div class="hero-team-icon">🏀</div>
+            <div class="hero-team-icon">
+              <img v-if="homeTeamLogo" :src="homeTeamLogo" alt="" class="team-logo-img" />
+              <span v-else>🏀</span>
+            </div>
             <div class="hero-team-info">
-              <span class="hero-team-name">{{ boxScore?.homeTeam || '--' }}</span>
+              <span class="hero-team-name">{{ boxScore?.homeTeam || queryHomeTeam || '--' }}</span>
               <span class="hero-team-label">主场</span>
             </div>
           </div>
@@ -41,10 +44,13 @@
           </div>
           <div class="match-hero-team match-hero-team--away">
             <div class="hero-team-info hero-team-info--right">
-              <span class="hero-team-name">{{ boxScore?.awayTeam || '--' }}</span>
+              <span class="hero-team-name">{{ boxScore?.awayTeam || queryAwayTeam || '--' }}</span>
               <span class="hero-team-label">客场</span>
             </div>
-            <div class="hero-team-icon">🏀</div>
+            <div class="hero-team-icon">
+              <img v-if="awayTeamLogo" :src="awayTeamLogo" alt="" class="team-logo-img" />
+              <span v-else>🏀</span>
+            </div>
           </div>
         </div>
       </div>
@@ -75,14 +81,12 @@
         </el-table>
       </el-card>
 
-      <!-- 统计 / 比赛进程 Tabs -->
-      <el-tabs v-model="activeTab" class="detail-tabs">
-        <el-tab-pane label="统计" name="boxscore">
-          <div class="section-header">
-            <div class="section-header-left">
-              <h3 class="team-table-title">{{ boxScore?.homeTeam || '主队' }}</h3>
-            </div>
-          </div>
+      <!-- 球员统计 -->
+      <div class="section-header">
+        <div class="section-header-left">
+          <h3 class="team-table-title">{{ boxScore?.homeTeam || '主队' }}</h3>
+        </div>
+      </div>
           <el-card shadow="never" class="boxscore-card">
             <el-table :data="sortedHomePlayers" stripe v-loading="boxscoreLoading" empty-text="暂无数据" size="small">
               <el-table-column label="球员" min-width="140" fixed="left">
@@ -155,77 +159,75 @@
               </el-table-column>
             </el-table>
           </el-card>
-        </el-tab-pane>
-
-        <el-tab-pane label="比赛进程" name="playbyplay">
-          <!-- 节次筛选 -->
-          <div class="period-filter">
-            <el-button
-              v-for="p in availablePeriods"
-              :key="p"
-              size="small"
-              :type="selectedPeriod === p ? 'primary' : 'default'"
-              @click="filterPeriod(p)"
-            >{{ periodLabel(p) }}</el-button>
-          </div>
-          <el-card shadow="never" class="pbp-card">
-            <div class="pbp-list" v-loading="pbpLoading">
-              <template v-if="filteredPlayByPlay.length">
-                <div
-                  v-for="(event, idx) in filteredPlayByPlay"
-                  :key="idx"
-                  class="pbp-item"
-                >
-                  <div class="pbp-clock">
-                    <span class="pbp-period-tag">{{ periodLabel(event.period) }}</span>
-                    <span class="pbp-time">{{ event.gameClock }}</span>
-                  </div>
-                  <div class="pbp-desc">{{ event.description }}</div>
-                  <div class="pbp-score">
-                    <span class="pbp-score-home">{{ event.homeScore }}</span>
-                    <span class="pbp-score-sep">-</span>
-                    <span class="pbp-score-away">{{ event.awayScore }}</span>
-                  </div>
-                </div>
-              </template>
-              <el-empty v-else description="暂无比赛进程数据" />
-            </div>
-          </el-card>
-        </el-tab-pane>
-      </el-tabs>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { fetchBoxScore, fetchPlayByPlay, fetchQuarterScores } from '@/api/matchDetail'
-import type { BoxScore, BoxScorePlayer, PlayByPlayEvent, QuarterScore } from '@/api/types'
+import { fetchBoxScore, fetchQuarterScores } from '@/api/matchDetail'
+import type { BoxScore, BoxScorePlayer, QuarterScore } from '@/api/types'
+import { getTeamLogo } from '@/utils/teamLogos'
 
 const route = useRoute()
 const router = useRouter()
 
 const gameId = computed(() => (route.query.gameId as string) || '')
 const status = computed(() => (route.query.status as string) || 'FINISHED')
+const returnTo = computed(() => (route.query.returnTo as string) || '')
+const queryHomeTeam = computed(() => (route.query.homeTeam as string) || '')
+const queryAwayTeam = computed(() => (route.query.awayTeam as string) || '')
+const queryHomeScore = computed(() => {
+  const s = route.query.homeScore as string
+  return s ? Number(s) : null
+})
+const queryAwayScore = computed(() => {
+  const s = route.query.awayScore as string
+  return s ? Number(s) : null
+})
+
+function goBack() {
+  if (returnTo.value) {
+    router.push(returnTo.value)
+  } else {
+    router.push('/news')
+  }
+}
 
 const boxScore = ref<BoxScore | null>(null)
+
+// 当boxScore加载完成后，如果quarterScores为空，则从boxScore中获取
+watch(boxScore, (newVal) => {
+  if (newVal?.quarterScores?.length && !quarterScores.value.length) {
+    quarterScores.value = newVal.quarterScores
+  }
+})
 const quarterScores = ref<QuarterScore[]>([])
-const playByPlay = ref<PlayByPlayEvent[]>([])
 const loading = ref(false)
 const boxscoreLoading = ref(false)
 const quarterLoading = ref(false)
-const pbpLoading = ref(false)
-const activeTab = ref('boxscore')
-const selectedPeriod = ref<number | null>(null)
 
 const homeTotalScore = computed(() => {
+  // 优先使用查询参数中的官方分数
+  if (queryHomeScore.value !== null) return String(queryHomeScore.value)
   if (!boxScore.value) return '--'
   return boxScore.value.homePlayers.reduce((sum, p) => sum + p.points, 0)
 })
 
+const homeTeamLogo = computed(() => {
+  const team = boxScore.value?.homeTeam || queryHomeTeam.value
+  return team ? getTeamLogo(team) : null
+})
+const awayTeamLogo = computed(() => {
+  const team = boxScore.value?.awayTeam || queryAwayTeam.value
+  return team ? getTeamLogo(team) : null
+})
+
 const awayTotalScore = computed(() => {
+  // 优先使用查询参数中的官方分数
+  if (queryAwayScore.value !== null) return String(queryAwayScore.value)
   if (!boxScore.value) return '--'
   return boxScore.value.awayPlayers.reduce((sum, p) => sum + p.points, 0)
 })
@@ -240,16 +242,6 @@ function sortPlayers(players: BoxScorePlayer[]): BoxScorePlayer[] {
 const sortedHomePlayers = computed(() => sortPlayers(boxScore.value?.homePlayers ?? []))
 const sortedAwayPlayers = computed(() => sortPlayers(boxScore.value?.awayPlayers ?? []))
 
-const availablePeriods = computed(() => {
-  const periods = new Set(playByPlay.value.map((e) => e.period))
-  return Array.from(periods).sort((a, b) => a - b)
-})
-
-const filteredPlayByPlay = computed(() => {
-  if (selectedPeriod.value === null) return playByPlay.value
-  return playByPlay.value.filter((e) => e.period === selectedPeriod.value)
-})
-
 function statusType(s: string) {
   const map: Record<string, string> = { SCHEDULED: 'warning', LIVE: 'danger', FINISHED: 'info' }
   return map[s] || 'info'
@@ -260,18 +252,14 @@ function statusLabel(s: string) {
   return map[s] || s
 }
 
-function periodLabel(p: number) {
-  if (p <= 4) return `第${p}节`
-  return `OT${p - 4}`
-}
-
 function formatShooting(made: number, attempted: number, pct: number) {
   if (attempted === 0) return '0/0'
   return `${made}/${attempted} (${(pct * 100).toFixed(1)}%)`
 }
 
-function filterPeriod(p: number) {
-  selectedPeriod.value = selectedPeriod.value === p ? null : p
+function periodLabel(p: number) {
+  if (p <= 4) return `第${p}节`
+  return `OT${p - 4}`
 }
 
 async function loadBoxScore() {
@@ -281,6 +269,10 @@ async function loadBoxScore() {
   try {
     const { data } = await fetchBoxScore(gameId.value)
     boxScore.value = data
+    // 如果boxScore包含quarterScores，直接使用
+    if (data.quarterScores?.length) {
+      quarterScores.value = data.quarterScores
+    }
   } catch {
     ElMessage.error('加载比赛数据失败')
   } finally {
@@ -291,34 +283,30 @@ async function loadBoxScore() {
 
 async function loadQuarterScores() {
   if (!gameId.value) return
+  // 如果boxScore已经加载了quarterScores，跳过单独的API调用
+  if (quarterScores.value.length > 0) {
+    return
+  }
   quarterLoading.value = true
   try {
     const { data } = await fetchQuarterScores(gameId.value)
-    quarterScores.value = data
+    if (data && data.length > 0) {
+      quarterScores.value = data
+    }
   } catch {
-    ElMessage.error('加载逐节比分失败')
+    // 加载失败时不做处理
   } finally {
     quarterLoading.value = false
   }
 }
 
-async function loadPlayByPlay() {
-  if (!gameId.value) return
-  pbpLoading.value = true
-  try {
-    const { data } = await fetchPlayByPlay(gameId.value)
-    playByPlay.value = data
-  } catch {
-    ElMessage.error('加载比赛进程失败')
-  } finally {
-    pbpLoading.value = false
-  }
-}
 
-onMounted(() => {
-  loadBoxScore()
-  loadQuarterScores()
-  loadPlayByPlay()
+onMounted(async () => {
+  // 并行加载数据
+  await Promise.all([
+    loadBoxScore(),
+    loadQuarterScores()
+  ])
 })
 </script>
 
@@ -328,7 +316,11 @@ onMounted(() => {
   min-height: calc(100vh - 108px);
   position: relative;
   border-radius: var(--radius-lg);
+  animation: pageFadeIn 0.4s var(--ease-smooth) forwards;
+  opacity: 0;
+  transform: translateY(12px);
 }
+@keyframes pageFadeIn { to { opacity: 1; transform: translateY(0); } }
 
 /* 返回按钮 */
 .back-row {
@@ -359,7 +351,11 @@ onMounted(() => {
   margin-bottom: 24px;
   position: relative;
   overflow: hidden;
+  animation: matchHeroIn 0.6s var(--ease-smooth) forwards;
+  opacity: 0;
+  transform: translateY(16px);
 }
+@keyframes matchHeroIn { to { opacity: 1; transform: translateY(0); } }
 .match-hero::before {
   content: '';
   position: absolute;
@@ -399,8 +395,8 @@ onMounted(() => {
   justify-content: flex-end;
 }
 .hero-team-icon {
-  width: 56px;
-  height: 56px;
+  width: 60px;
+  height: 60px;
   border-radius: var(--radius-lg);
   background: var(--purple-dim);
   display: flex;
@@ -408,6 +404,18 @@ onMounted(() => {
   justify-content: center;
   font-size: 28px;
   flex-shrink: 0;
+  overflow: hidden;
+  border: 2px solid var(--border-light);
+  transition: all var(--duration-normal) var(--ease-smooth);
+}
+.match-hero:hover .hero-team-icon {
+  border-color: var(--purple);
+  box-shadow: 0 0 16px var(--purple-glow);
+}
+.team-logo-img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
 }
 .hero-team-info {
   display: flex;
@@ -418,7 +426,7 @@ onMounted(() => {
   text-align: right;
 }
 .hero-team-name {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--text-primary);
   font-family: var(--font-heading);
@@ -440,12 +448,13 @@ onMounted(() => {
   gap: 16px;
 }
 .hero-score {
-  font-size: 44px;
+  font-size: 48px;
   font-weight: 700;
   color: var(--accent);
   font-family: var(--font-heading);
   text-shadow: 0 0 30px var(--accent-glow);
   line-height: 1;
+  letter-spacing: -1px;
 }
 .hero-score-sep {
   font-size: 32px;
@@ -500,6 +509,18 @@ onMounted(() => {
   border: 1px solid var(--border-light) !important;
   border-radius: var(--radius-xl) !important;
   margin-bottom: 24px;
+  position: relative;
+  overflow: hidden;
+}
+.quarter-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--warning), var(--accent));
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 .period-label {
   font-weight: 600;
@@ -508,7 +529,7 @@ onMounted(() => {
   letter-spacing: 0.2px;
 }
 .quarter-score {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--text-secondary);
   font-family: var(--font-heading);
@@ -534,9 +555,11 @@ onMounted(() => {
   font-weight: 600;
   font-size: 14px;
   letter-spacing: 0.3px;
+  transition: color var(--duration-fast) var(--ease-smooth);
 }
 .detail-tabs :deep(.el-tabs__item.is-active) {
   color: var(--accent) !important;
+  font-weight: 700;
 }
 .detail-tabs :deep(.el-tabs__active-bar) {
   background-color: var(--accent) !important;
@@ -548,6 +571,17 @@ onMounted(() => {
   border: 1px solid var(--border-light) !important;
   border-radius: var(--radius-xl) !important;
   overflow: hidden;
+  position: relative;
+}
+.boxscore-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--purple), var(--accent));
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 .player-cell {
   display: flex;
@@ -571,10 +605,12 @@ onMounted(() => {
 .plus-positive {
   color: var(--accent);
   font-weight: 600;
+  text-shadow: 0 0 8px var(--accent-glow);
 }
 .plus-negative {
   color: var(--danger);
   font-weight: 600;
+  text-shadow: 0 0 8px var(--danger-glow);
 }
 
 /* 节次筛选 */
@@ -590,6 +626,18 @@ onMounted(() => {
   background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
   border-radius: var(--radius-xl) !important;
+  position: relative;
+  overflow: hidden;
+}
+.pbp-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--cyan), var(--purple));
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 .pbp-list {
   max-height: 600px;
@@ -601,13 +649,14 @@ onMounted(() => {
   gap: 16px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-light);
-  transition: background var(--duration-fast) var(--ease-smooth);
+  transition: all var(--duration-fast) var(--ease-smooth);
 }
 .pbp-item:last-child {
   border-bottom: none;
 }
 .pbp-item:hover {
   background: var(--bg-hover);
+  padding-left: 20px;
 }
 .pbp-clock {
   display: flex;
@@ -637,7 +686,8 @@ onMounted(() => {
   flex: 1;
   font-size: 13px;
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: 1.6;
+  letter-spacing: 0.2px;
 }
 .pbp-score {
   display: flex;

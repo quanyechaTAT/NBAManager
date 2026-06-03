@@ -2,11 +2,12 @@ package com.nbamanager.web.dto;
 
 public record PlayerDetailDto(
         Long id,
+        Long nbaPlayerId,
         String name,
         Long teamId,
         String teamName,
         String position,
-        Integer jerseyNumber,
+        String jerseyNumber,
         String height,
         Integer weight,
         String country,

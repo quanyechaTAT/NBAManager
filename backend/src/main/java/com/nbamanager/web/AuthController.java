@@ -8,6 +8,7 @@ import com.nbamanager.security.JwtService;
 import com.nbamanager.security.UserPrincipal;
 import com.nbamanager.service.NbaDataSyncService;
 import com.nbamanager.web.dto.ChangePasswordRequest;
+import com.nbamanager.web.dto.ChangeUsernameRequest;
 import com.nbamanager.web.dto.LoginRequest;
 import com.nbamanager.web.dto.LoginResponse;
 import com.nbamanager.web.dto.RegisterRequest;
@@ -21,6 +22,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -45,7 +47,7 @@ public class AuthController {
                 authenticationManager.authenticate(
                         new UsernamePasswordAuthenticationToken(request.username(), request.password()));
         UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
-        String token = jwtService.generateToken(principal.getUsername(), principal.getRole());
+        String token = jwtService.generateToken(principal.getUsername(), principal.getRole(), principal.getId());
 
         // 管理员登录时触发数据同步
         if (principal.getRole() == Role.ADMIN) {
@@ -68,7 +70,7 @@ public class AuthController {
         user.setRole(Role.USER);
         userAccountRepository.save(user);
 
-        String token = jwtService.generateToken(user.getUsername(), user.getRole());
+        String token = jwtService.generateToken(user.getUsername(), user.getRole(), user.getId());
         return new LoginResponse(token, user.getUsername(), user.getRole());
     }
 
@@ -91,5 +93,31 @@ public class AuthController {
 
         user.setPassword(passwordEncoder.encode(request.newPassword()));
         userAccountRepository.save(user);
+    }
+
+    @PutMapping("/username")
+    @PreAuthorize("isAuthenticated()")
+    @Transactional
+    public LoginResponse changeUsername(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody ChangeUsernameRequest request) {
+
+        UserAccount user = userAccountRepository.findByUsername(principal.getUsername())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "用户不存在"));
+
+        if (request.newUsername().equals(user.getUsername())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "新用户名不能与原用户名相同");
+        }
+
+        if (userAccountRepository.existsByUsername(request.newUsername())) {
+            throw new ApiException(HttpStatus.CONFLICT, "用户名已被占用");
+        }
+
+        user.setUsername(request.newUsername());
+        userAccountRepository.save(user);
+
+        // 生成新的token
+        String token = jwtService.generateToken(user.getUsername(), user.getRole(), user.getId());
+        return new LoginResponse(token, user.getUsername(), user.getRole());
     }
 }

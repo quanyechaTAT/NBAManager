@@ -80,7 +80,10 @@
             </div>
             <div v-for="(r, i) in ranks" :key="r.teamName" class="rank-row" :class="{ 'rank-first': i === 0 }">
               <span class="rank-no" :class="{ 'rank-no-gold': i === 0 }">{{ i + 1 }}</span>
-              <span class="rank-name rank-name--link" @click="goTeamDetail(r.teamName)">{{ r.teamName }}</span>
+              <span class="rank-name rank-name--link" @click="goTeamDetail(r.teamName)">
+                <img v-if="getTeamLogo(r.teamName)" :src="getTeamLogo(r.teamName)" class="rank-team-logo" alt="" />
+                {{ r.teamName }}
+              </span>
               <span class="rank-stat">{{ r.wins }}</span>
               <span class="rank-stat">{{ r.losses }}</span>
               <span class="rank-stat">{{ winPct(r.wins, r.losses) }}</span>
@@ -130,6 +133,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { createTeam, deleteTeam, fetchRankings, fetchTeams, updateTeam } from '@/api/team'
 import type { Team, TeamRank } from '@/api/types'
+import { getTeamLogo } from '@/utils/teamLogos'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -331,7 +335,11 @@ onMounted(async () => {
   transition: all var(--duration-normal) var(--ease-smooth);
   position: relative;
   z-index: 1;
+  animation: pageFadeIn 0.4s var(--ease-smooth) forwards;
+  opacity: 0;
+  transform: translateY(12px);
 }
+@keyframes pageFadeIn { to { opacity: 1; transform: translateY(0); } }
 :deep(.el-input__wrapper) {
   background: #1C2333 !important;
   border: 1px solid var(--border-light) !important;
@@ -359,7 +367,13 @@ onMounted(async () => {
   transition: all var(--duration-normal) var(--ease-smooth);
   position: relative;
   overflow: hidden;
+  animation: rankCardIn 0.5s var(--ease-smooth) forwards;
+  opacity: 0;
+  transform: translateY(12px);
 }
+.rank-card:nth-child(1) { animation-delay: 0.05s; }
+.rank-card:nth-child(2) { animation-delay: 0.1s; }
+@keyframes rankCardIn { to { opacity: 1; transform: translateY(0); } }
 .rank-card::before {
   content: '';
   position: absolute;
@@ -373,6 +387,7 @@ onMounted(async () => {
 .rank-card:hover {
   border-color: var(--border-medium);
   box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 .rank-header {
   margin-bottom: 12px;
@@ -404,7 +419,11 @@ onMounted(async () => {
 .rank-row {
   display: flex; align-items: center;
   padding: 7px 8px; border-radius: var(--radius-sm);
-  transition: background var(--duration-fast) var(--ease-smooth);
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+.rank-row:hover {
+  background: var(--bg-hover);
+  transform: translateX(4px);
 }
 .rank-row:hover { background: var(--bg-hover); }
 .rank-row-head {
@@ -418,9 +437,10 @@ onMounted(async () => {
   border-radius: var(--radius-sm);
   border-left: 2px solid var(--purple);
 }
-.rank-no { width: 28px; text-align: center; color: var(--text-muted); font-size: 13px; font-weight: 600; }
+.rank-no { width: 28px; text-align: center; color: var(--text-muted); font-size: 13px; font-weight: 600; transition: color var(--duration-fast) var(--ease-smooth); }
 .rank-no-gold { color: var(--accent); }
-.rank-name { flex: 1; color: var(--text-primary); font-size: 14px; font-weight: 500; }
+.rank-name { flex: 1; color: var(--text-primary); font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+.rank-team-logo { width: 22px; height: 22px; object-fit: contain; flex-shrink: 0; }
 .rank-name--link {
   cursor: pointer;
   transition: color var(--duration-fast) var(--ease-smooth);
@@ -442,5 +462,5 @@ onMounted(async () => {
 .rank-name--link:hover::after {
   width: 100%;
 }
-.rank-stat { width: 52px; text-align: center; color: var(--text-secondary); font-size: 13px; }
+.rank-stat { width: 52px; text-align: center; color: var(--text-secondary); font-size: 13px; font-family: var(--font-heading); }
 </style>

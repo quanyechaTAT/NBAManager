@@ -18,4 +18,7 @@ public record GameNewsDto(
         String nbaGameId,
         String category,
         String sourceUrl,
-        String imageUrl) {}
+        String imageUrl,
+        Integer viewCount,
+        Integer favoriteCount,
+        boolean favoritedByMe) {}

@@ -1,12 +1,15 @@
 # Backend
 backend/target/
 backend/.idea/
+backend/node_modules/
 *.iml
+*.class
 
 # Frontend
 frontend/node_modules/
 frontend/dist/
 frontend/.npm-cache/
+frontend/.vite/
 
 # Environment variables (sensitive)
 .env
@@ -18,10 +21,13 @@ backend/src/main/resources/application-local.yml
 
 # Database exports
 database/
+*.db
+*.sqlite
 
 # Python cache
 backend/scripts/__pycache__/
 *.pyc
+__pycache__/
 
 # Output files
 backend/scripts/output.json
@@ -30,10 +36,26 @@ backend/scripts/translate_log.txt
 # Logs
 *.log
 backend/backend.log
+nohup.out
 
 # Claude Code
 .claude/
 
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Screenshots (test artifacts)
+screenshots/
+test_screenshots/
+*.png
+
+# Root node_modules
+node_modules/

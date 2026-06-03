@@ -27,6 +27,10 @@
           <el-icon><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/></svg></el-icon>
           <span>赛事资讯</span>
         </el-menu-item>
+        <el-menu-item index="/community">
+          <el-icon><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></el-icon>
+          <span>社区</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
@@ -35,17 +39,20 @@
           <span class="title">{{ detailTeamName || pageTitle }}</span>
         </div>
         <div class="right">
+          <NotificationBell />
           <el-tag :type="auth.isAdmin ? 'warning' : 'info'" effect="light" class="role-tag">{{ roleLabel }}</el-tag>
-          <div class="user-avatar">
-            <span>{{ auth.username?.charAt(0)?.toUpperCase() }}</span>
+          <div class="user-avatar" @click="router.push('/profile')" style="cursor:pointer">
+            <img v-if="userAvatar" :src="userAvatar" class="user-avatar-img" />
+            <span v-else>{{ auth.username?.charAt(0)?.toUpperCase() }}</span>
           </div>
-          <span class="user">{{ auth.username }}</span>
+          <span class="user" @click="router.push('/profile')" style="cursor:pointer">{{ auth.username }}</span>
           <el-dropdown trigger="click">
             <el-button class="more-btn" link>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
+                <el-dropdown-item @click="showUsernameDialog = true">修改用户名</el-dropdown-item>
                 <el-dropdown-item @click="showPwdDialog = true">修改密码</el-dropdown-item>
                 <el-dropdown-item divided @click="onLogout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
@@ -54,7 +61,7 @@
         </div>
       </el-header>
       <el-main class="main" ref="mainRef">
-        <router-view />
+        <router-view :key="route.fullPath" />
       </el-main>
     </el-container>
   </el-container>
@@ -77,19 +84,38 @@
       <el-button type="primary" :loading="pwdLoading" @click="submitPwd">确 认</el-button>
     </template>
   </el-dialog>
+
+  <!-- 修改用户名弹窗 -->
+  <el-dialog v-model="showUsernameDialog" title="修改用户名" width="420px" :close-on-click-modal="false" @closed="resetUsernameForm">
+    <el-form ref="usernameFormRef" :model="usernameForm" :rules="usernameRules" label-width="80px" label-position="right">
+      <el-form-item label="当前用户">
+        <el-input :model-value="auth.username" disabled />
+      </el-form-item>
+      <el-form-item label="新用户名" prop="newUsername">
+        <el-input v-model="usernameForm.newUsername" placeholder="请输入新用户名（2-30个字符）" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="showUsernameDialog = false">取 消</el-button>
+      <el-button type="primary" :loading="usernameLoading" @click="submitUsername">确 认</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
-import { changePasswordApi } from '@/api/auth'
+import { useNotificationStore } from '@/stores/notification'
+import { changePasswordApi, changeUsernameApi } from '@/api/auth'
+import NotificationBell from '@/components/NotificationBell.vue'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const notificationStore = useNotificationStore()
 const mainRef = ref<{ $el: HTMLElement } | null>(null)
 
 // 路由变化时滚动到顶部
@@ -99,10 +125,15 @@ watch(() => route.path, () => {
   }
 })
 
+// 通知轮询
+onMounted(() => { if (auth.token) notificationStore.startPolling() })
+onUnmounted(() => { notificationStore.stopPolling() })
+
 const active = computed(() => {
   if (route.path.startsWith('/teams')) return '/teams'
   if (route.path.startsWith('/players')) return '/players'
   if (route.path.startsWith('/news')) return '/news'
+  if (route.path.startsWith('/community')) return '/community'
   return '/dashboard'
 })
 
@@ -117,6 +148,7 @@ const detailTeamName = computed(() => {
 const pageTitle = computed(() => (route.meta.title as string) || '')
 
 const roleLabel = computed(() => (auth.isAdmin ? '管理员' : '普通用户'))
+const userAvatar = computed(() => auth.avatarUrl)
 
 function onLogout() {
   auth.logout()
@@ -190,6 +222,48 @@ async function submitPwd() {
     pwdLoading.value = false
   }
 }
+
+/* -------- 修改用户名 -------- */
+const showUsernameDialog = ref(false)
+const usernameLoading = ref(false)
+const usernameFormRef = ref<FormInstance>()
+
+const usernameForm = reactive({
+  newUsername: '',
+})
+
+const usernameRules: FormRules = {
+  newUsername: [
+    { required: true, message: '请输入新用户名', trigger: 'blur' },
+    { min: 2, max: 30, message: '用户名长度应为2-30个字符', trigger: 'blur' },
+  ],
+}
+
+function resetUsernameForm() {
+  usernameForm.newUsername = ''
+  usernameFormRef.value?.resetFields()
+}
+
+async function submitUsername() {
+  await usernameFormRef.value?.validate()
+  usernameLoading.value = true
+  try {
+    const { data } = await changeUsernameApi({ newUsername: usernameForm.newUsername })
+    // 更新本地存储的用户名和token
+    auth.updateToken(data.token)
+    auth.setUsername(data.username)
+    ElMessage.success('用户名修改成功')
+    showUsernameDialog.value = false
+  } catch (e: unknown) {
+    const msg =
+      typeof e === 'object' && e !== null && 'response' in e
+        ? (e as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined
+    ElMessage.error(msg || '用户名修改失败')
+  } finally {
+    usernameLoading.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -202,6 +276,18 @@ async function submitPwd() {
   border-right: 1px solid var(--border-light);
   position: relative;
   overflow: hidden;
+}
+
+/* 侧边栏赛博朋克光效 */
+.aside::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1px;
+  height: 100%;
+  background: linear-gradient(180deg, transparent, var(--accent-glow), transparent);
+  z-index: 10;
 }
 .brand {
   display: flex;
@@ -258,12 +344,13 @@ async function submitPwd() {
   margin: 2px 12px;
   border-radius: var(--radius-md);
   color: var(--text-secondary) !important;
-  font-size: 14px;
-  font-family: var(--font-body);
-  font-weight: 500;
+  font-size: 13px;
+  font-family: var(--font-heading);
+  font-weight: 600;
   transition: all var(--duration-fast) var(--ease-smooth) !important;
   position: relative;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
   height: 42px;
   line-height: 42px;
 }
@@ -277,9 +364,10 @@ async function submitPwd() {
   color: var(--text-primary) !important;
 }
 :deep(.el-menu-item.is-active) {
-  background: var(--purple-dim) !important;
-  color: var(--purple-light) !important;
-  font-weight: 600;
+  background: var(--accent-lighter) !important;
+  color: var(--accent) !important;
+  font-weight: 700;
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.1);
 }
 :deep(.el-menu-item.is-active::before) {
   content: '';
@@ -307,15 +395,29 @@ async function submitPwd() {
   position: relative;
   z-index: 1;
 }
+
+/* 顶部栏底部光效 */
+.header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-glow), transparent);
+  opacity: 0.5;
+}
+
 .header-left {
   flex: 0 0 auto;
 }
 .title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--text-primary);
   font-family: var(--font-heading);
-  letter-spacing: 0.3px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }
 .right {
   display: flex;
@@ -324,14 +426,18 @@ async function submitPwd() {
 }
 .role-tag {
   border-radius: 20px !important;
-  font-size: 12px !important;
+  font-size: 11px !important;
   padding: 0 10px !important;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 .user-avatar {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--purple), var(--cyan));
+  background: linear-gradient(135deg, var(--accent), var(--cyan));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -340,6 +446,12 @@ async function submitPwd() {
   font-weight: 700;
   font-family: var(--font-heading);
   flex-shrink: 0;
+  overflow: hidden;
+}
+.user-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .user {
   color: var(--text-secondary);

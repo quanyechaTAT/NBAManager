@@ -34,7 +34,7 @@ public class MatchDetailService {
     private final GameBoxScoreRepository gameBoxScoreRepository;
     private final PlayByPlayRepository playByPlayRepository;
 
-    @Cacheable(value = "boxScore", key = "#gameId")
+    @Cacheable(value = "boxScore", key = "#gameId", unless = "#result.homeTeam.isEmpty()")
     @Transactional
     public BoxScoreDto getBoxScore(String gameId) {
         List<GameBoxScore> records = gameBoxScoreRepository.findByGameId(gameId);
@@ -51,23 +51,26 @@ public class MatchDetailService {
         // 翻译未翻译的球员名
         translatePlayerNames(records);
 
-        // 根据 teamId 分组，第一支队伍为主队，第二支为客队
-        Map<Long, List<GameBoxScore>> grouped = records.stream()
-                .collect(Collectors.groupingBy(GameBoxScore::getTeamId, LinkedHashMap::new, Collectors.toList()));
+        // 使用 isHome 字段分组主客队
+        List<GameBoxScore> homeRecords = records.stream()
+                .filter(GameBoxScore::isHome)
+                .collect(Collectors.toList());
+        List<GameBoxScore> awayRecords = records.stream()
+                .filter(r -> !r.isHome())
+                .collect(Collectors.toList());
 
-        List<List<GameBoxScore>> teams = new ArrayList<>(grouped.values());
         String homeTeam = "";
         String awayTeam = "";
         List<BoxScorePlayerDto> homePlayers = List.of();
         List<BoxScorePlayerDto> awayPlayers = List.of();
 
-        if (teams.size() >= 1) {
-            homeTeam = teams.get(0).get(0).getTeamName();
-            homePlayers = teams.get(0).stream().map(this::toBoxScorePlayerDto).collect(Collectors.toList());
+        if (!homeRecords.isEmpty()) {
+            homeTeam = homeRecords.get(0).getTeamName();
+            homePlayers = homeRecords.stream().map(this::toBoxScorePlayerDto).collect(Collectors.toList());
         }
-        if (teams.size() >= 2) {
-            awayTeam = teams.get(1).get(0).getTeamName();
-            awayPlayers = teams.get(1).stream().map(this::toBoxScorePlayerDto).collect(Collectors.toList());
+        if (!awayRecords.isEmpty()) {
+            awayTeam = awayRecords.get(0).getTeamName();
+            awayPlayers = awayRecords.stream().map(this::toBoxScorePlayerDto).collect(Collectors.toList());
         }
 
         List<QuarterScoreDto> quarterScores = getQuarterScores(gameId);
@@ -99,13 +102,17 @@ public class MatchDetailService {
                 return;
             }
 
-            // 更新记录
+            // 更新记录（批量保存）
+            List<GameBoxScore> toSave = new ArrayList<>();
             for (GameBoxScore r : records) {
                 String cn = nameMap.get(r.getPlayerName());
                 if (cn != null && !cn.isEmpty()) {
                     r.setPlayerName(cn);
-                    gameBoxScoreRepository.save(r);
+                    toSave.add(r);
                 }
+            }
+            if (!toSave.isEmpty()) {
+                gameBoxScoreRepository.saveAll(toSave);
             }
             log.info("翻译了 {} 个球员名", nameMap.size());
         } catch (Exception e) {
@@ -179,7 +186,7 @@ public class MatchDetailService {
         return result;
     }
 
-    @Cacheable(value = "playByPlay", key = "#gameId + ':' + #period")
+    @Cacheable(value = "playByPlay", key = "#gameId + ':' + #period", unless = "#result.isEmpty()")
     @Transactional
     public List<PlayByPlayDto> getPlayByPlay(String gameId, Integer period) {
         List<PlayByPlay> records;
@@ -201,25 +208,96 @@ public class MatchDetailService {
         return records.stream().map(this::toPlayByPlayDto).collect(Collectors.toList());
     }
 
-    @Cacheable(value = "quarterScores", key = "#gameId")
-    @Transactional(readOnly = true)
+    @Cacheable(value = "quarterScores", key = "#gameId", unless = "#result.isEmpty()")
+    @Transactional
     public List<QuarterScoreDto> getQuarterScores(String gameId) {
+        // 先从数据库获取Play-by-Play数据
         List<PlayByPlay> allEvents = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId);
 
+        // 如果数据库没有数据，调用Python脚本获取
         if (allEvents.isEmpty()) {
             fetchFromPython("playbyplay", gameId);
             allEvents = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId);
         }
 
-        // 每节取最后一个事件的比分
+        // 从Play-by-Play数据计算逐节比分
         Map<Integer, PlayByPlay> lastByPeriod = new LinkedHashMap<>();
         for (PlayByPlay event : allEvents) {
             lastByPeriod.put(event.getPeriod(), event);
         }
 
-        return lastByPeriod.entrySet().stream()
+        List<QuarterScoreDto> result = lastByPeriod.entrySet().stream()
                 .map(e -> new QuarterScoreDto(e.getKey(), e.getValue().getHomeScore(), e.getValue().getAwayScore()))
                 .collect(Collectors.toList());
+
+        // 如果Play-by-Play没有数据，尝试从ScoreboardV3获取
+        if (result.isEmpty()) {
+            result = fetchQuarterScoresFromScoreboard(gameId);
+        }
+
+        return result;
+    }
+
+    /**
+     * 从ScoreboardV3获取逐节比分（备选方案）
+     */
+    private List<QuarterScoreDto> fetchQuarterScoresFromScoreboard(String gameId) {
+        try {
+            String scriptPath = findScriptPath();
+            ProcessBuilder pb = new ProcessBuilder("python", scriptPath, "quarters", gameId);
+            pb.redirectErrorStream(false);
+            pb.directory(new File(scriptPath).getParentFile());
+            pb.environment().put("PYTHONIOENCODING", "utf-8");
+            // 代理配置（可选）
+            String proxyHost = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_HOST");
+            String proxyPort = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_PORT");
+            if (proxyHost != null && !proxyHost.isEmpty()) {
+                pb.environment().put("NBA_PROXY_HOST", proxyHost);
+            }
+            if (proxyPort != null && !proxyPort.isEmpty()) {
+                pb.environment().put("NBA_PROXY_PORT", proxyPort);
+            }
+
+            String mimoApiKey = com.nbamanager.config.EnvFileReader.get("MIMO_API_KEY");
+            String mimoBaseUrl = com.nbamanager.config.EnvFileReader.get("MIMO_BASE_URL");
+            if (mimoApiKey != null && !mimoApiKey.isEmpty()) {
+                pb.environment().put("MIMO_API_KEY", mimoApiKey);
+            }
+            if (mimoBaseUrl != null && !mimoBaseUrl.isEmpty()) {
+                pb.environment().put("MIMO_BASE_URL", mimoBaseUrl);
+            }
+
+            Process process = pb.start();
+            StringBuilder output = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append("\n");
+                }
+            }
+            process.waitFor();
+
+            String jsonStr = output.toString().trim();
+            if (jsonStr.isEmpty()) return List.of();
+
+            org.json.JSONObject root = new org.json.JSONObject(jsonStr);
+            org.json.JSONArray arr = root.optJSONArray("quarterScores");
+            if (arr == null) return List.of();
+
+            List<QuarterScoreDto> scores = new ArrayList<>();
+            for (int i = 0; i < arr.length(); i++) {
+                org.json.JSONObject obj = arr.getJSONObject(i);
+                scores.add(new QuarterScoreDto(
+                        obj.getInt("period"),
+                        obj.getInt("homeScore"),
+                        obj.getInt("awayScore")));
+            }
+            return scores;
+        } catch (Exception e) {
+            log.warn("从ScoreboardV3获取逐节比分失败: {}", e.getMessage());
+            return List.of();
+        }
     }
 
     /**
@@ -234,12 +312,19 @@ public class MatchDetailService {
             pb.redirectErrorStream(false);
             pb.directory(new File(scriptPath).getParentFile());
             pb.environment().put("PYTHONIOENCODING", "utf-8");
-            pb.environment().put("NBA_PROXY_HOST", "127.0.0.1");
-            pb.environment().put("NBA_PROXY_PORT", "7890");
+            // 代理配置（可选）
+            String proxyHost = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_HOST");
+            String proxyPort = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_PORT");
+            if (proxyHost != null && !proxyHost.isEmpty()) {
+                pb.environment().put("NBA_PROXY_HOST", proxyHost);
+            }
+            if (proxyPort != null && !proxyPort.isEmpty()) {
+                pb.environment().put("NBA_PROXY_PORT", proxyPort);
+            }
 
             // 传递翻译API配置
-            String mimoApiKey = System.getenv("MIMO_API_KEY");
-            String mimoBaseUrl = System.getenv("MIMO_BASE_URL");
+            String mimoApiKey = com.nbamanager.config.EnvFileReader.get("MIMO_API_KEY");
+            String mimoBaseUrl = com.nbamanager.config.EnvFileReader.get("MIMO_BASE_URL");
             if (mimoApiKey != null && !mimoApiKey.isEmpty()) {
                 pb.environment().put("MIMO_API_KEY", mimoApiKey);
             }
@@ -267,7 +352,14 @@ public class MatchDetailService {
                 }
             }
 
-            int exitCode = process.waitFor();
+            // 等待进程完成，最多60秒
+            boolean finished = process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
+            if (!finished) {
+                log.error("Python脚本执行超时, dataType={}, gameId={}", dataType, gameId);
+                process.destroyForcibly();
+                return;
+            }
+            int exitCode = process.exitValue();
             if (exitCode != 0) {
                 log.error("Python脚本执行失败, exitCode={}, error={}", exitCode, errorOutput.toString());
                 return;
@@ -280,12 +372,12 @@ public class MatchDetailService {
             }
 
             JSONObject data = new JSONObject(jsonStr);
-            if ("boxscore".equals(dataType) && data.has("boxscore")) {
+            if ("boxscore".equals(dataType) && data.has("boxscore") && !data.isNull("boxscore")) {
                 JSONObject boxscore = data.getJSONObject("boxscore");
-                if (boxscore.has("players")) {
+                if (boxscore.has("players") && !boxscore.isNull("players")) {
                     saveBoxScore(boxscore.getJSONArray("players"), gameId);
                 }
-            } else if ("playbyplay".equals(dataType) && data.has("playByPlay")) {
+            } else if ("playbyplay".equals(dataType) && data.has("playByPlay") && !data.isNull("playByPlay")) {
                 savePlayByPlay(data.getJSONArray("playByPlay"), gameId);
             }
 
@@ -297,6 +389,7 @@ public class MatchDetailService {
     }
 
     private void saveBoxScore(JSONArray boxScoreArray, String gameId) {
+        List<GameBoxScore> records = new ArrayList<>();
         for (int i = 0; i < boxScoreArray.length(); i++) {
             JSONObject obj = boxScoreArray.getJSONObject(i);
             GameBoxScore bs = new GameBoxScore();
@@ -323,12 +416,15 @@ public class MatchDetailService {
             bs.setFtPct(obj.optDouble("ftPct", 0.0));
             bs.setPlusMinus(obj.optInt("plusMinus", 0));
             bs.setStarter(obj.optBoolean("starter", false));
-            gameBoxScoreRepository.save(bs);
+            bs.setHome(obj.optBoolean("isHome", false));
+            records.add(bs);
         }
-        log.info("保存boxscore数据: {}条记录, gameId={}", boxScoreArray.length(), gameId);
+        gameBoxScoreRepository.saveAll(records);
+        log.info("保存boxscore数据: {}条记录, gameId={}", records.size(), gameId);
     }
 
     private void savePlayByPlay(JSONArray playByPlayArray, String gameId) {
+        List<PlayByPlay> records = new ArrayList<>();
         for (int i = 0; i < playByPlayArray.length(); i++) {
             JSONObject obj = playByPlayArray.getJSONObject(i);
             PlayByPlay pbp = new PlayByPlay();
@@ -342,9 +438,10 @@ public class MatchDetailService {
             pbp.setPlayerId(obj.has("playerId") && !obj.isNull("playerId") ? obj.getLong("playerId") : null);
             pbp.setPlayerName(obj.optString("playerName", ""));
             pbp.setTeamId(obj.has("teamId") && !obj.isNull("teamId") ? obj.getLong("teamId") : null);
-            playByPlayRepository.save(pbp);
+            records.add(pbp);
         }
-        log.info("保存play-by-play数据: {}条记录, gameId={}", playByPlayArray.length(), gameId);
+        playByPlayRepository.saveAll(records);
+        log.info("保存play-by-play数据: {}条记录, gameId={}", records.size(), gameId);
     }
 
     private String findScriptPath() {

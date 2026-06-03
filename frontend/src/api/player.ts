@@ -19,13 +19,13 @@ export interface PlayerPayload {
   efficiency: number
   trueShootingPct: number
   usagePct: number
-  jerseyNumber: number
+  jerseyNumber: string
   height: string
   weight: number
   country: string
 }
 
-export function fetchPlayers(params: { q?: string; teamId?: number; position?: string; page: number; size: number }) {
+export function fetchPlayers(params: { q?: string; teamId?: number; position?: string; page: number; size: number; sort?: string }) {
   return request.get<PageResponse<Player>>('/players', { params })
 }
 

@@ -37,6 +37,9 @@ public class PlayerGameLog {
     @Column(nullable = false, length = 100)
     private String opponent;
 
+    @Column(nullable = false)
+    private boolean isHome = false;
+
     @Column(length = 10)
     private String minutes;
 

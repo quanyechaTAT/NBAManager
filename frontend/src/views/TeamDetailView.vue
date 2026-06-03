@@ -21,10 +21,16 @@
       <div class="team-hero" v-loading="teamLoading">
         <div class="team-hero-inner">
           <div class="team-hero-left">
-            <div class="team-icon">🏀</div>
+            <div class="team-icon">
+              <img v-if="teamInfo?.logoUrl" :src="teamInfo.logoUrl" alt="" class="team-logo-img" />
+              <span v-else>🏀</span>
+            </div>
             <div>
               <h1 class="team-name">{{ teamInfo?.name }}</h1>
               <p class="team-sub">{{ teamInfo?.city }} · {{ teamInfo?.conference }}</p>
+              <el-button v-if="auth.token" :type="isFollowed ? 'success' : 'primary'" plain size="small" @click="toggleFollow" class="follow-btn">
+                {{ isFollowed ? '★ 已关注' : '+ 关注' }}
+              </el-button>
             </div>
           </div>
           <div class="team-hero-stats">
@@ -62,7 +68,6 @@
           <el-table-column label="主队" min-width="120">
             <template #default="{ row }">
               <span class="match-team" :class="{
-                'match-team--win': row.homeScore > row.awayScore,
                 'match-team--self': row.homeTeam === teamName,
               }">{{ row.homeTeam }}</span>
             </template>
@@ -79,7 +84,6 @@
           <el-table-column label="客队" min-width="120">
             <template #default="{ row }">
               <span class="match-team" :class="{
-                'match-team--win': row.awayScore > row.homeScore,
                 'match-team--self': row.awayTeam === teamName,
               }">{{ row.awayTeam }}</span>
             </template>
@@ -131,20 +135,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchTeams } from '@/api/team'
 import { fetchMatchRecords } from '@/api/matchRecord'
 import type { Team, MatchRecord } from '@/api/types'
+import { toggleFavorite, fetchFollowedTeamIds } from '@/api/favorite'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 
 const teamName = computed(() => (route.query.name as string) || '')
 const teamInfo = ref<Team | null>(null)
 const teamLoading = ref(false)
 const matchRecords = ref<MatchRecord[]>([])
+const isFollowed = ref(false)
 const matchLoading = ref(false)
 
 async function loadTeamInfo() {
@@ -165,7 +173,13 @@ async function loadMatchRecords() {
   matchLoading.value = true
   try {
     const { data } = await fetchMatchRecords(teamName.value)
+    // 过滤掉无效比赛（0:0比分）并限制为最近10场、1个月内
+    const now = new Date()
+    const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
     matchRecords.value = data
+      .filter((m: MatchRecord) => !(m.homeScore === 0 && m.awayScore === 0 && m.status === 'FINISHED'))
+      .filter((m: MatchRecord) => new Date(m.matchDate) >= oneMonthAgo)
+      .slice(0, 10)
   } catch {
     ElMessage.error('加载对战记录失败')
   } finally {
@@ -197,15 +211,20 @@ function getResultLabel(row: MatchRecord) {
 }
 
 function goToMatchDetail(row: MatchRecord) {
+  if (!row.nbaGameId) {
+    ElMessage.warning('该比赛暂无详细数据')
+    return
+  }
   router.push({
     path: '/match-detail',
     query: {
-      gameId: row.nbaGameId || String(row.id),
+      gameId: row.nbaGameId,
+      status: row.status,
       homeTeam: row.homeTeam,
       awayTeam: row.awayTeam,
       homeScore: String(row.homeScore),
       awayScore: String(row.awayScore),
-      status: row.status,
+      returnTo: `/teams/detail?name=${teamName.value}`,
     },
   })
 }
@@ -239,8 +258,31 @@ const headToHeadStats = computed(() => {
     .sort((a, b) => b.wins - a.wins)
 })
 
+async function toggleFollow() {
+  if (!auth.token || !teamInfo.value) { ElMessage.warning('请先登录'); return }
+  try {
+    const { data } = await toggleFavorite('TEAM', teamInfo.value.id)
+    isFollowed.value = data.favorited
+  } catch { /* ignore */ }
+}
+
+async function checkFollowStatus() {
+  if (!auth.token || !teamInfo.value) return
+  try {
+    const { data } = await fetchFollowedTeamIds()
+    isFollowed.value = data.includes(teamInfo.value.id)
+  } catch { /* ignore */ }
+}
+
+watch(teamName, () => {
+  if (teamName.value) {
+    loadTeamInfo().then(() => checkFollowStatus())
+    loadMatchRecords()
+  }
+}, { immediate: false })
+
 onMounted(() => {
-  loadTeamInfo()
+  loadTeamInfo().then(() => checkFollowStatus())
   loadMatchRecords()
 })
 </script>
@@ -251,7 +293,11 @@ onMounted(() => {
   min-height: calc(100vh - 108px);
   position: relative;
   border-radius: var(--radius-lg);
+  animation: pageFadeIn 0.4s var(--ease-smooth) forwards;
+  opacity: 0;
+  transform: translateY(12px);
 }
+@keyframes pageFadeIn { to { opacity: 1; transform: translateY(0); } }
 
 /* 返回按钮 */
 .back-row {
@@ -282,7 +328,11 @@ onMounted(() => {
   margin-bottom: 24px;
   position: relative;
   overflow: hidden;
+  animation: heroSlideIn 0.5s var(--ease-smooth) forwards;
+  opacity: 0;
+  transform: translateY(16px);
 }
+@keyframes heroSlideIn { to { opacity: 1; transform: translateY(0); } }
 .team-hero::before {
   content: '';
   position: absolute;
@@ -318,8 +368,8 @@ onMounted(() => {
   gap: 16px;
 }
 .team-icon {
-  width: 56px;
-  height: 56px;
+  width: 60px;
+  height: 60px;
   border-radius: var(--radius-lg);
   background: var(--purple-dim);
   display: flex;
@@ -327,10 +377,22 @@ onMounted(() => {
   justify-content: center;
   font-size: 28px;
   flex-shrink: 0;
+  overflow: hidden;
+  border: 2px solid var(--border-light);
+  transition: all var(--duration-normal) var(--ease-smooth);
+}
+.team-hero:hover .team-icon {
+  border-color: var(--purple);
+  box-shadow: 0 0 16px var(--purple-glow);
+}
+.team-logo-img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
 }
 .team-name {
   margin: 0;
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 700;
   color: var(--text-primary);
   font-family: var(--font-heading);
@@ -341,6 +403,7 @@ onMounted(() => {
   font-size: 14px;
   color: var(--text-muted);
 }
+.follow-btn { margin-top: 8px !important; }
 .team-hero-stats {
   display: flex;
   align-items: center;
@@ -351,11 +414,12 @@ onMounted(() => {
 }
 .hero-stat-num {
   display: block;
-  font-size: 32px;
+  font-size: 34px;
   font-weight: 700;
   color: var(--text-primary);
   font-family: var(--font-heading);
   line-height: 1.1;
+  letter-spacing: -0.5px;
 }
 .hero-stat-num--win {
   color: var(--accent);
@@ -370,8 +434,9 @@ onMounted(() => {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-top: 4px;
+  margin-top: 6px;
   display: block;
+  font-weight: 600;
 }
 .hero-stat-divider {
   width: 1px;
@@ -412,6 +477,18 @@ onMounted(() => {
   background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
   border-radius: var(--radius-xl) !important;
+  position: relative;
+  overflow: hidden;
+}
+.match-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--purple));
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 .match-team {
   font-weight: 600;
@@ -432,7 +509,7 @@ onMounted(() => {
   justify-content: center;
 }
 .match-score {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--text-secondary);
   font-family: var(--font-heading);
@@ -457,10 +534,27 @@ onMounted(() => {
   padding: 16px 20px;
   margin-bottom: 16px;
   transition: all var(--duration-normal) var(--ease-smooth);
+  position: relative;
+  overflow: hidden;
+}
+.h2h-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 0;
+  background: linear-gradient(180deg, var(--accent), var(--purple));
+  transition: height var(--duration-normal) var(--ease-smooth);
+  border-radius: 0 2px 2px 0;
+}
+.h2h-card:hover::before {
+  height: 100%;
 }
 .h2h-card:hover {
   border-color: var(--border-medium);
   box-shadow: var(--shadow-md);
+  transform: translateX(4px);
 }
 .h2h-header {
   display: flex;
@@ -473,29 +567,33 @@ onMounted(() => {
   font-weight: 700;
   color: var(--text-primary);
   font-family: var(--font-heading);
+  letter-spacing: 0.2px;
 }
 .h2h-record {
   font-size: 13px;
   color: var(--text-muted);
   font-weight: 500;
+  font-family: var(--font-heading);
 }
 .h2h-bar {
-  height: 6px;
+  height: 8px;
   background: var(--bg-hover);
-  border-radius: 3px;
+  border-radius: 4px;
   overflow: hidden;
   margin-bottom: 8px;
 }
 .h2h-bar-win {
   height: 100%;
   background: linear-gradient(90deg, var(--accent), var(--accent-light));
-  border-radius: 3px;
-  transition: width 0.6s var(--ease-smooth);
+  border-radius: 4px;
+  transition: width 0.8s var(--ease-smooth);
+  box-shadow: 0 0 8px var(--accent-glow);
 }
 .h2h-detail {
   display: flex;
   justify-content: space-between;
   font-size: 12px;
   color: var(--text-muted);
+  font-family: var(--font-heading);
 }
 </style>
