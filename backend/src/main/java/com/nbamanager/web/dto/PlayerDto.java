@@ -2,6 +2,7 @@ package com.nbamanager.web.dto;
 
 public record PlayerDto(
         Long id,
+        Long nbaPlayerId,
         String name,
         Long teamId,
         String teamName,
@@ -20,7 +21,7 @@ public record PlayerDto(
         Double efficiency,
         Double trueShootingPct,
         Double usagePct,
-        Integer jerseyNumber,
+        String jerseyNumber,
         String height,
         Integer weight,
         String country) {}

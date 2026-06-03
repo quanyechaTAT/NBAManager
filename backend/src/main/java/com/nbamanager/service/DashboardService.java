@@ -41,6 +41,6 @@ public class DashboardService {
                         .map(p -> new TopScorerRow(p.getName(), p.getPointsPerGame(), p.getTeam().getName()))
                         .collect(Collectors.toList());
 
-        return new DashboardStatsDto(teamRows, top);
+        return new DashboardStatsDto(teams.size(), players.size(), teamRows, top);
     }
 }

@@ -116,6 +116,7 @@ public class PlayerService {
         Team t = p.getTeam();
         return new PlayerDto(
                 p.getId(),
+                p.getNbaPlayerId(),
                 p.getName(),
                 t.getId(),
                 t.getName(),

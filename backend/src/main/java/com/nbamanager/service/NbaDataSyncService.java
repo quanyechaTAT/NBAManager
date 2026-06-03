@@ -24,6 +24,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -76,7 +77,12 @@ public class NbaDataSyncService {
                 teamsAdded = result[1];
             }
 
-            // 3. 更新球员数据
+            // 3. 清理重复球员和旧数据
+            int duplicatesRemoved = cleanupDuplicatePlayers();
+            log.info("清理重复球员: {} 条", duplicatesRemoved);
+            int oldDataRemoved = cleanupOldPlayers();
+            log.info("清理无nbaPlayerId的旧球员: {} 条", oldDataRemoved);
+
             int playersUpdated = 0;
             int playersAdded = 0;
             if (data.has("players")) {
@@ -135,12 +141,19 @@ public class NbaDataSyncService {
             pb.directory(new File(scriptPath).getParentFile());
             // 强制Python使用UTF-8编码输出，防止Windows下GBK乱码
             pb.environment().put("PYTHONIOENCODING", "utf-8");
-            pb.environment().put("NBA_PROXY_HOST", "127.0.0.1");
-            pb.environment().put("NBA_PROXY_PORT", "7890");
+            // 代理配置（可选）
+            String proxyHost = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_HOST");
+            String proxyPort = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_PORT");
+            if (proxyHost != null && !proxyHost.isEmpty()) {
+                pb.environment().put("NBA_PROXY_HOST", proxyHost);
+            }
+            if (proxyPort != null && !proxyPort.isEmpty()) {
+                pb.environment().put("NBA_PROXY_PORT", proxyPort);
+            }
 
             // 传递翻译API配置
-            String mimoApiKey = System.getenv("MIMO_API_KEY");
-            String mimoBaseUrl = System.getenv("MIMO_BASE_URL");
+            String mimoApiKey = com.nbamanager.config.EnvFileReader.get("MIMO_API_KEY");
+            String mimoBaseUrl = com.nbamanager.config.EnvFileReader.get("MIMO_BASE_URL");
             if (mimoApiKey != null && !mimoApiKey.isEmpty()) {
                 pb.environment().put("MIMO_API_KEY", mimoApiKey);
             }
@@ -150,6 +163,16 @@ public class NbaDataSyncService {
 
             // 执行脚本
             Process process = pb.start();
+
+            // 读取stdout（避免缓冲区满导致死锁）
+            StringBuilder output = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append("\n");
+                }
+            }
 
             // 读取错误输出（用于日志）
             StringBuilder errorOutput = new StringBuilder();
@@ -259,6 +282,67 @@ public class NbaDataSyncService {
     }
 
     /**
+     * 清理没有nbaPlayerId的旧球员数据
+     */
+    private int cleanupOldPlayers() {
+        List<Player> allPlayers = playerRepository.findAll();
+        int removed = 0;
+        for (Player p : allPlayers) {
+            if (p.getNbaPlayerId() == null || p.getNbaPlayerId() == 0) {
+                playerRepository.delete(p);
+                removed++;
+            }
+        }
+        return removed;
+    }
+
+    /**
+     * 清理重复球员（保留最新的记录）
+     */
+    private int cleanupDuplicatePlayers() {
+        List<Player> allPlayers = playerRepository.findAll();
+        int removed = 0;
+
+        // 1. 按nbaPlayerId去重（优先）
+        Map<Long, List<Player>> byNbaId = allPlayers.stream()
+                .filter(p -> p.getNbaPlayerId() != null && p.getNbaPlayerId() > 0)
+                .collect(Collectors.groupingBy(Player::getNbaPlayerId));
+        for (Map.Entry<Long, List<Player>> entry : byNbaId.entrySet()) {
+            List<Player> duplicates = entry.getValue();
+            if (duplicates.size() <= 1) continue;
+            // 保留最新的（最后添加的）
+            Player keep = duplicates.get(duplicates.size() - 1);
+            for (Player p : duplicates) {
+                if (!p.getId().equals(keep.getId())) {
+                    playerRepository.delete(p);
+                    removed++;
+                }
+            }
+        }
+
+        // 2. 按名字去重（处理没有nbaPlayerId的情况）
+        List<Player> remaining = playerRepository.findAll();
+        Map<String, List<Player>> byName = remaining.stream()
+                .collect(Collectors.groupingBy(Player::getName));
+        for (Map.Entry<String, List<Player>> entry : byName.entrySet()) {
+            List<Player> duplicates = entry.getValue();
+            if (duplicates.size() <= 1) continue;
+            Player keep = duplicates.stream()
+                    .filter(p -> p.getNbaPlayerId() != null && p.getNbaPlayerId() > 0)
+                    .findFirst()
+                    .orElse(duplicates.get(duplicates.size() - 1));
+            for (Player p : duplicates) {
+                if (!p.getId().equals(keep.getId())) {
+                    playerRepository.delete(p);
+                    removed++;
+                }
+            }
+        }
+
+        return removed;
+    }
+
+    /**
      * 更新球员数据
      */
     private int[] updatePlayers(JSONArray players) {
@@ -287,7 +371,7 @@ public class NbaDataSyncService {
             double per = playerData.optDouble("per", 110.0);
             double tsPct = playerData.optDouble("tsPct", fgPct);
             double usgPct = playerData.optDouble("usgPct", 20.0);
-            int jersey = playerData.optInt("jersey", 0);
+            String jersey = playerData.optString("jersey", "0");
 
             // 查找球队
             Team team = teamRepository.findByName(teamName);
@@ -296,13 +380,17 @@ public class NbaDataSyncService {
                 continue;
             }
 
-            // 查找现有球员 - 优先使用nbaPlayerId，回退到name+team
+            // 查找现有球员 - 优先使用nbaPlayerId（处理转会），回退到name+team
             Player existingPlayer = null;
             if (nbaPlayerId > 0) {
                 existingPlayer = playerRepository.findByNbaPlayerId(nbaPlayerId);
             }
             if (existingPlayer == null) {
                 existingPlayer = findPlayerByNameAndTeam(name, team);
+            }
+            // 如果按name+team找不到，尝试按name在所有球队中查找（处理转会情况）
+            if (existingPlayer == null && nbaPlayerId <= 0) {
+                existingPlayer = findPlayerByName(name);
             }
             if (existingPlayer != null) {
                 // 更新现有球员
@@ -323,9 +411,7 @@ public class NbaDataSyncService {
                 existingPlayer.setEfficiency(per);
                 existingPlayer.setTrueShootingPct(tsPct);
                 existingPlayer.setUsagePct(usgPct);
-                if (jersey > 0) {
-                    existingPlayer.setJerseyNumber(jersey);
-                }
+                existingPlayer.setJerseyNumber(jersey);
                 playerRepository.save(existingPlayer);
                 updated++;
             } else {
@@ -349,7 +435,7 @@ public class NbaDataSyncService {
                 newPlayer.setEfficiency(per);
                 newPlayer.setTrueShootingPct(tsPct);
                 newPlayer.setUsagePct(usgPct);
-                newPlayer.setJerseyNumber(jersey > 0 ? jersey : 0);
+                newPlayer.setJerseyNumber(jersey);
                 newPlayer.setHeight("6-6");
                 newPlayer.setWeight(210);
                 newPlayer.setCountry("美国");
@@ -368,6 +454,16 @@ public class NbaDataSyncService {
     private Player findPlayerByNameAndTeam(String name, Team team) {
         return playerRepository.findAll().stream()
                 .filter(p -> p.getName().equals(name) && p.getTeam().getId().equals(team.getId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * 根据名字查找球员（处理转会情况）
+     */
+    private Player findPlayerByName(String name) {
+        return playerRepository.findAll().stream()
+                .filter(p -> p.getName().equals(name))
                 .findFirst()
                 .orElse(null);
     }

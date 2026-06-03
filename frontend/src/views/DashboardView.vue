@@ -35,12 +35,6 @@
               <span>🏀</span>
             </div>
           </div>
-          <div class="stat-card-footer">
-            <span class="stat-trend stat-trend--up">↑ 活跃</span>
-            <div class="sparkline-wrap">
-              <v-chart class="sparkline" :option="sparkTeam" autoresize />
-            </div>
-          </div>
         </el-card>
 
         <el-card shadow="never" class="stat-card stat-card--cyan">
@@ -54,12 +48,6 @@
               <span>⭐</span>
             </div>
           </div>
-          <div class="stat-card-footer">
-            <span class="stat-trend stat-trend--up">↑ 活跃</span>
-            <div class="sparkline-wrap">
-              <v-chart class="sparkline" :option="sparkPlayer" autoresize />
-            </div>
-          </div>
         </el-card>
 
         <el-card shadow="never" class="stat-card stat-card--gold">
@@ -71,12 +59,6 @@
             </div>
             <div class="stat-card-icon">
               <span>🏆</span>
-            </div>
-          </div>
-          <div class="stat-card-footer">
-            <span class="stat-trend stat-trend--up">↑ 冠军</span>
-            <div class="sparkline-wrap">
-              <v-chart class="sparkline" :option="sparkWins" autoresize />
             </div>
           </div>
         </el-card>
@@ -136,52 +118,9 @@ const auth = useAuthStore()
 const stats = ref<DashboardStats | null>(null)
 const loaded = ref(false)
 
-const teamCount = computed(() => stats.value?.teamWinRows.length ?? 0)
-const playerCount = computed(() => stats.value?.topScorers.length ?? 0)
+const teamCount = computed(() => stats.value?.teamCount ?? 0)
+const playerCount = computed(() => stats.value?.playerCount ?? 0)
 const maxWins = computed(() => Math.max(0, ...(stats.value?.teamWinRows.map((r) => r.wins) ?? [])))
-
-/* ---- 迷你 sparkline ---- */
-const sparkTeam = computed(() => ({
-  grid: { left: 0, right: 0, top: 0, bottom: 0 },
-  xAxis: { show: false, type: 'category', data: Array.from({ length: 7 }, (_, i) => i) },
-  yAxis: { show: false, type: 'value' },
-  series: [{
-    type: 'line', smooth: true, symbol: 'none',
-    lineStyle: { width: 2, color: '#6C5CE7' },
-    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-      { offset: 0, color: 'rgba(108,92,231,0.3)' }, { offset: 1, color: 'rgba(108,92,231,0.02)' }
-    ]) },
-    data: [3, 5, 4, 6, 5, 7, teamCount.value],
-  }],
-}))
-
-const sparkPlayer = computed(() => ({
-  grid: { left: 0, right: 0, top: 0, bottom: 0 },
-  xAxis: { show: false, type: 'category', data: Array.from({ length: 7 }, (_, i) => i) },
-  yAxis: { show: false, type: 'value' },
-  series: [{
-    type: 'line', smooth: true, symbol: 'none',
-    lineStyle: { width: 2, color: '#00D2FF' },
-    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-      { offset: 0, color: 'rgba(0,210,255,0.3)' }, { offset: 1, color: 'rgba(0,210,255,0.02)' }
-    ]) },
-    data: [10, 14, 12, 16, 15, 18, playerCount.value],
-  }],
-}))
-
-const sparkWins = computed(() => ({
-  grid: { left: 0, right: 0, top: 0, bottom: 0 },
-  xAxis: { show: false, type: 'category', data: Array.from({ length: 7 }, (_, i) => i) },
-  yAxis: { show: false, type: 'value' },
-  series: [{
-    type: 'line', smooth: true, symbol: 'none',
-    lineStyle: { width: 2, color: '#FFA726' },
-    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-      { offset: 0, color: 'rgba(255,167,38,0.3)' }, { offset: 1, color: 'rgba(255,167,38,0.02)' }
-    ]) },
-    data: [20, 28, 32, 35, 40, 45, maxWins.value],
-  }],
-}))
 
 /* ---- 主图表 ---- */
 const winsOption = computed(() => {
@@ -320,7 +259,11 @@ onMounted(async () => {
   min-height: calc(100vh - 108px);
   position: relative;
   border-radius: var(--radius-lg);
+  animation: pageFadeIn 0.4s var(--ease-smooth) forwards;
+  opacity: 0;
+  transform: translateY(12px);
 }
+@keyframes pageFadeIn { to { opacity: 1; transform: translateY(0); } }
 
 /* 欢迎横幅 */
 .welcome-banner .welcome-tags {
@@ -333,36 +276,59 @@ onMounted(async () => {
   align-items: center;
   gap: 4px;
   padding: 4px 12px;
-  background: rgba(108, 92, 231, 0.1);
-  border: 1px solid rgba(108, 92, 231, 0.2);
+  background: rgba(0, 255, 136, 0.08);
+  border: 1px solid rgba(0, 255, 136, 0.15);
   border-radius: 20px;
-  font-size: 12px;
-  color: var(--purple-light);
-  font-weight: 500;
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 600;
+  font-family: var(--font-heading);
+  letter-spacing: 0.5px;
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+.welcome-tag:hover {
+  background: rgba(0, 255, 136, 0.15);
+  transform: translateY(-1px);
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.1);
 }
 
 /* 统计卡片 */
 .overview {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+  gap: 16px;
   margin-bottom: 20px;
 }
 .stat-card {
   background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
   border-radius: var(--radius-xl) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
   transition: all var(--duration-normal) var(--ease-smooth);
   overflow: hidden;
+  position: relative;
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0;
+  transition: opacity var(--duration-normal) var(--ease-smooth);
+}
+.stat-card:hover::before {
+  opacity: 1;
 }
 .stat-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3), 0 3px 10px rgba(0, 0, 0, 0.22) !important;
+  transform: translateY(-4px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), 0 0 1px rgba(0, 255, 136, 0.2) !important;
 }
-.stat-card--purple:hover { border-color: var(--purple) !important; }
-.stat-card--cyan:hover { border-color: var(--cyan) !important; }
-.stat-card--gold:hover { border-color: var(--orange) !important; }
+.stat-card--purple:hover { border-color: var(--purple) !important; box-shadow: 0 16px 40px rgba(139, 92, 246, 0.2), 0 4px 12px rgba(0, 0, 0, 0.25) !important; }
+.stat-card--cyan:hover { border-color: var(--cyan) !important; box-shadow: 0 16px 40px rgba(6, 182, 212, 0.2), 0 4px 12px rgba(0, 0, 0, 0.25) !important; }
+.stat-card--gold:hover { border-color: var(--orange) !important; box-shadow: 0 16px 40px rgba(245, 158, 11, 0.2), 0 4px 12px rgba(0, 0, 0, 0.25) !important; }
 
 .stat-card :deep(.el-card__body) {
   padding: 0;
@@ -387,14 +353,18 @@ onMounted(async () => {
   color: var(--text-dim);
 }
 .stat-card-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-md);
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
+  font-size: 24px;
   flex-shrink: 0;
+  transition: all var(--duration-normal) var(--ease-smooth);
+}
+.stat-card:hover .stat-card-icon {
+  transform: scale(1.1) rotate(5deg);
 }
 .stat-card--purple .stat-card-icon { background: var(--purple-dim); }
 .stat-card--cyan .stat-card-icon { background: var(--cyan-dim); }
@@ -417,13 +387,28 @@ onMounted(async () => {
   background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
   border-radius: var(--radius-xl) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
   transition: all var(--duration-normal) var(--ease-smooth);
   overflow: hidden;
+  position: relative;
+}
+.chart-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--purple), var(--accent));
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  opacity: 0;
+  transition: opacity var(--duration-normal) var(--ease-smooth);
+}
+.chart-card:hover::before {
+  opacity: 1;
 }
 .chart-card:hover {
-  border-color: var(--border-medium) !important;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), 0 0 1px rgba(0, 255, 136, 0.2) !important;
 }
 .chart-body {
   padding: 8px 16px 16px;

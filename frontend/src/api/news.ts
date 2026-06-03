@@ -46,3 +46,8 @@ export function updateNews(id: number, data: GameNewsPayload) {
 export function deleteNews(id: number) {
   return request.delete(`/news/${id}`)
 }
+
+/** 收藏/取消收藏资讯 */
+export function toggleNewsFavorite(id: number) {
+  return request.post<{ favorited: boolean }>(`/news/${id}/favorite`)
+}

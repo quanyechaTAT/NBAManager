@@ -17,6 +17,10 @@ export interface ChangePasswordBody {
   newPassword: string
 }
 
+export interface ChangeUsernameBody {
+  newUsername: string
+}
+
 export function loginApi(body: LoginBody) {
   return request.post<LoginRes>('/auth/login', body)
 }
@@ -27,4 +31,8 @@ export function registerApi(body: LoginBody) {
 
 export function changePasswordApi(body: ChangePasswordBody) {
   return request.put('/auth/password', body)
+}
+
+export function changeUsernameApi(body: ChangeUsernameBody) {
+  return request.put<LoginRes>('/auth/username', body)
 }

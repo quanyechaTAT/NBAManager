@@ -24,7 +24,7 @@ public record PlayerRequest(
         @NotNull @DecimalMin("0.0") Double efficiency,
         @NotNull @DecimalMin("0.0") Double trueShootingPct,
         @NotNull @DecimalMin("0.0") Double usagePct,
-        @NotNull @Min(0) Integer jerseyNumber,
+        @Size(max = 3) String jerseyNumber,
         @NotBlank @Size(max = 32) String height,
         @NotNull @Min(0) Integer weight,
         @NotBlank @Size(max = 64) String country) {}

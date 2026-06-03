@@ -1,5 +1,6 @@
 package com.nbamanager.web;
 
+import com.nbamanager.security.UserPrincipal;
 import com.nbamanager.service.GameNewsService;
 import com.nbamanager.web.dto.GameNewsDto;
 import com.nbamanager.web.dto.GameNewsRequest;
@@ -11,6 +12,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -28,18 +31,35 @@ public class GameNewsController {
 
     private final GameNewsService gameNewsService;
 
-    /** 分页列表（所有认证用户均可查看） */
+    /** 分页列表 */
     @GetMapping
     public PageResponse<GameNewsDto> list(
             @RequestParam(required = false) String q,
             @PageableDefault(size = 10, sort = "gameStartTime", direction = Sort.Direction.DESC) Pageable pageable) {
-        return PageResponse.from(gameNewsService.list(q, pageable));
+        return PageResponse.from(gameNewsService.list(q, getCurrentUserId(), pageable));
     }
 
-    /** 单条详情 */
+    /** 单条详情（增加浏览量） */
     @GetMapping("/{id}")
     public GameNewsDto get(@PathVariable Long id) {
-        return gameNewsService.get(id);
+        return gameNewsService.get(id, getCurrentUserId());
+    }
+
+    /** 收藏/取消收藏 */
+    @PostMapping("/{id}/favorite")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public java.util.Map<String, Boolean> toggleFavorite(@PathVariable Long id) {
+        Long userId = getCurrentUserId();
+        boolean favorited = gameNewsService.toggleFavorite(userId, id);
+        return java.util.Map.of("favorited", favorited);
+    }
+
+    private Long getCurrentUserId() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof UserDetails ud) {
+            return ((UserPrincipal) ud).getId();
+        }
+        return null;
     }
 
     /** 今日赛事 */

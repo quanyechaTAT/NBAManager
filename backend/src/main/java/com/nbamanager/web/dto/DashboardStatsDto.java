@@ -2,7 +2,7 @@ package com.nbamanager.web.dto;
 
 import java.util.List;
 
-public record DashboardStatsDto(List<TeamWinRow> teamWinRows, List<TopScorerRow> topScorers) {
+public record DashboardStatsDto(int teamCount, int playerCount, List<TeamWinRow> teamWinRows, List<TopScorerRow> topScorers) {
 
     public record TeamWinRow(String name, int wins, int losses) {}
 

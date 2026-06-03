@@ -40,4 +40,7 @@ public class Team {
 
     @Column(nullable = false)
     private Integer losses;
+
+    @Column(length = 500)
+    private String logoUrl;
 }

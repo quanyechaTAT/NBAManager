@@ -28,7 +28,7 @@
           <el-card shadow="hover" class="game-card" :class="`game-card--${item.status.toLowerCase()}`" @click="showDetail(item)">
             <div class="game-teams">
               <div class="team team-home">
-                <span class="team-name">{{ item.homeTeam }}</span>
+                <span class="team-name">{{ item.homeTeam || '待定' }}</span>
                 <span class="team-score" v-if="item.status === 'LIVE' || item.status === 'FINISHED'">{{ item.homeScore }}</span>
               </div>
               <div class="game-vs">
@@ -36,7 +36,7 @@
                 <el-tag :type="statusType(item.status)" size="small">{{ statusLabel(item.status) }}</el-tag>
               </div>
               <div class="team team-away">
-                <span class="team-name">{{ item.awayTeam }}</span>
+                <span class="team-name">{{ item.awayTeam || '待定' }}</span>
                 <span class="team-score" v-if="item.status === 'LIVE' || item.status === 'FINISHED'">{{ item.awayScore }}</span>
               </div>
             </div>
@@ -45,6 +45,13 @@
             </div>
             <div class="game-title">{{ item.title }}</div>
             <div class="game-summary">{{ item.summary }}</div>
+            <div class="game-stats">
+              <span>👁 {{ item.viewCount || 0 }}</span>
+              <span>❤️ {{ item.favoriteCount || 0 }}</span>
+              <el-button v-if="auth.token" :type="item.favoritedByMe ? 'danger' : ''" link size="small" @click.stop="toggleFav(item)">
+                {{ item.favoritedByMe ? '★ 已收藏' : '☆ 收藏' }}
+              </el-button>
+            </div>
             <div class="game-actions" v-if="item.nbaGameId">
               <el-button type="primary" plain size="small" class="match-detail-btn" @click.stop="goToMatchDetail(item)">
                 📊 比赛详细数据
@@ -78,17 +85,17 @@
           <template #default="{ row }">
             <div class="cell-title" @click="showDetail(row)">
               <el-tag :type="statusType(row.status)" size="small" class="mr-8">{{ statusLabel(row.status) }}</el-tag>
-              <el-tag v-if="row.category && row.category !== 'general'" :type="categoryType(row.category)" size="small" class="mr-8">{{ categoryLabel(row.category) }}</el-tag>
+              <el-tag v-if="row.nbaGameId && row.category && row.category !== 'general'" :type="categoryType(row.category)" size="small" class="mr-8">{{ categoryLabel(row.category) }}</el-tag>
               <span class="cell-link">{{ row.title }}</span>
             </div>
           </template>
         </el-table-column>
         <el-table-column label="对阵" width="200">
           <template #default="{ row }">
-            <span>{{ row.homeTeam }}</span>
+            <span>{{ row.homeTeam || '待定' }}</span>
             <span v-if="row.status === 'FINISHED' && row.homeScore != null" class="score-inline"> {{ row.homeScore }}</span>
             <span class="mx-4">VS</span>
-            <span>{{ row.awayTeam }}</span>
+            <span>{{ row.awayTeam || '待定' }}</span>
             <span v-if="row.status === 'FINISHED' && row.awayScore != null" class="score-inline"> {{ row.awayScore }}</span>
           </template>
         </el-table-column>
@@ -139,7 +146,14 @@
         </div>
         <el-divider />
         <div class="detail-content">{{ current.content }}</div>
+        <div class="detail-stats">
+          <span>👁 浏览量：{{ current.viewCount || 0 }}</span>
+          <span>❤️ 收藏量：{{ current.favoriteCount || 0 }}</span>
+        </div>
         <div class="detail-actions">
+          <el-button v-if="auth.token" :type="current.favoritedByMe ? 'danger' : ''" plain size="small" @click="toggleFav(current)">
+            {{ current.favoritedByMe ? '★ 已收藏' : '☆ 收藏' }}
+          </el-button>
           <el-button v-if="current.sourceUrl" type="success" plain size="small" @click="openSource(current.sourceUrl)">🔗 查看原文</el-button>
           <el-button v-if="current.nbaGameId" type="primary" size="small" @click="goToMatchDetail(current)">📊 查看比赛详细数据</el-button>
           <el-tooltip v-else content="该新闻未关联NBA比赛ID，无法查看比赛详情" placement="top">
@@ -233,13 +247,15 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { fetchNews, fetchTodayNews, createNews, updateNews, deleteNews, type GameNewsPayload } from '@/api/news'
+import { fetchNews, fetchNewsDetail, fetchTodayNews, createNews, updateNews, deleteNews, toggleNewsFavorite, type GameNewsPayload } from '@/api/news'
+import { recordBrowse } from '@/api/browseHistory'
 import { useAuthStore } from '@/stores/auth'
 import type { GameNews } from '@/api/types'
 
 const auth = useAuthStore()
+const route = useRoute()
 
 const q = ref('')
 const page = ref(1)
@@ -339,6 +355,15 @@ async function load() {
   }
 }
 
+async function toggleFav(item: GameNews) {
+  if (!auth.token) { ElMessage.warning('请先登录'); return }
+  try {
+    const { data } = await toggleNewsFavorite(item.id)
+    item.favoritedByMe = data.favorited
+    item.favoriteCount += data.favorited ? 1 : -1
+  } catch { /* ignore */ }
+}
+
 async function loadToday() {
   todayLoading.value = true
   try {
@@ -351,9 +376,23 @@ async function loadToday() {
   }
 }
 
-function showDetail(item: GameNews) {
-  current.value = item
+async function showDetail(item: GameNews) {
   dialogVisible.value = true
+  if (auth.token) {
+    recordBrowse('NEWS', item.id).catch(() => {})
+  }
+  // 调用详情API增加浏览量
+  try {
+    const { data } = await fetchNewsDetail(item.id)
+    current.value = data
+    // 同步更新列表中的浏览量
+    const idx = list.value.findIndex(n => n.id === item.id)
+    if (idx >= 0) { list.value[idx].viewCount = data.viewCount; list.value[idx].favoriteCount = data.favoriteCount }
+    const tidx = todayNews.value.findIndex(n => n.id === item.id)
+    if (tidx >= 0) { todayNews.value[tidx].viewCount = data.viewCount; todayNews.value[tidx].favoriteCount = data.favoriteCount }
+  } catch {
+    current.value = item
+  }
 }
 
 const router = useRouter()
@@ -362,7 +401,18 @@ function goToMatchDetail(item: GameNews) {
     ElMessage.warning('该比赛暂无详细数据（缺少NBA比赛ID）')
     return
   }
-  router.push({ path: '/match-detail', query: { gameId: item.nbaGameId, homeTeam: item.homeTeam, awayTeam: item.awayTeam, homeScore: item.homeScore ?? '', awayScore: item.awayScore ?? '', status: item.status } })
+  router.push({
+    path: '/match-detail',
+    query: {
+      gameId: item.nbaGameId,
+      status: item.status,
+      homeTeam: item.homeTeam,
+      awayTeam: item.awayTeam,
+      homeScore: item.homeScore != null ? String(item.homeScore) : undefined,
+      awayScore: item.awayScore != null ? String(item.awayScore) : undefined,
+      returnTo: '/news'
+    }
+  })
 }
 
 // --- 管理员操作 ---
@@ -442,19 +492,45 @@ async function handleDelete(id: number) {
   }
 }
 
-onMounted(() => {
-  loadToday()
-  load()
+onMounted(async () => {
+  await loadToday()
+  await load()
+  // 如果 URL 中有 newsId 参数，自动打开对应的资讯详情
+  const newsId = route.query.newsId
+  if (newsId) {
+    const id = Number(newsId)
+    const found = list.value.find(n => n.id === id) || todayNews.value.find(n => n.id === id)
+    if (found) {
+      showDetail(found)
+    } else {
+      // 如果列表中没有，直接从 API 获取（不重复调用 showDetail 避免浏览量+2）
+      try {
+        const { data } = await fetchNewsDetail(id)
+        current.value = data
+        dialogVisible.value = true
+        if (auth.token) {
+          recordBrowse('NEWS', id).catch(() => {})
+        }
+      } catch { /* ignore */ }
+    }
+  }
 })
 </script>
 
 <style scoped>
+/* 防止 stagger-in 动画与 el-dialog 关闭动画冲突导致抖动 */
+:deep(.el-overlay) { animation: none !important; opacity: 1 !important; transform: none !important; }
+
 .page {
   padding: 4px 0;
   min-height: calc(100vh - 108px);
   position: relative;
   border-radius: var(--radius-lg);
+  animation: pageFadeIn 0.4s var(--ease-smooth) forwards;
+  opacity: 0;
+  transform: translateY(12px);
 }
+@keyframes pageFadeIn { to { opacity: 1; transform: translateY(0); } }
 .section-header {
   display: flex;
   align-items: center;
@@ -472,11 +548,11 @@ onMounted(() => {
 .section-header-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 .section-header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 20px;
   color: var(--text-primary);
   font-family: var(--font-heading);
   font-weight: 700;
@@ -485,13 +561,16 @@ onMounted(() => {
 .section-sub {
   font-size: 12px;
   color: var(--text-muted);
+  letter-spacing: 0.2px;
 }
 .date {
   color: var(--text-muted);
   font-size: 13px;
+  font-family: var(--font-heading);
+  letter-spacing: 0.2px;
 }
 .today-games {
-  min-height: 60px;
+  min-height: 80px;
 }
 .game-card {
   cursor: pointer;
@@ -502,14 +581,22 @@ onMounted(() => {
   transition: all var(--duration-normal) var(--ease-smooth);
   position: relative;
   overflow: hidden;
+  animation: gameCardIn 0.5s var(--ease-smooth) forwards;
+  opacity: 0;
+  transform: translateY(12px);
+  padding: 16px !important;
 }
+.game-card:nth-child(1) { animation-delay: 0.05s; }
+.game-card:nth-child(2) { animation-delay: 0.1s; }
+.game-card:nth-child(3) { animation-delay: 0.15s; }
+@keyframes gameCardIn { to { opacity: 1; transform: translateY(0); } }
 .game-card::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 3px;
+  height: 4px;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   z-index: 1;
 }
@@ -517,7 +604,7 @@ onMounted(() => {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(0, 230, 118, 0.02) 0%, transparent 40%);
+  background: linear-gradient(180deg, rgba(0, 230, 118, 0.03) 0%, transparent 40%);
   pointer-events: none;
   opacity: 0;
   transition: opacity var(--duration-normal) var(--ease-smooth);
@@ -526,31 +613,57 @@ onMounted(() => {
   background: linear-gradient(90deg, var(--warning), #FFB74D);
   box-shadow: 0 0 12px var(--warning-glow);
 }
+.game-card--scheduled .team-score {
+  color: var(--warning);
+  text-shadow: 0 0 16px var(--warning-glow);
+}
 .game-card--live::before {
   background: linear-gradient(90deg, var(--danger), #FF6B7A);
-  box-shadow: 0 0 12px var(--danger-glow);
+  box-shadow: 0 0 16px var(--danger-glow);
+  animation: livePulse 1.5s ease-in-out infinite;
+}
+.game-card--live .team-score {
   animation: livePulse 1.5s ease-in-out infinite;
 }
 .game-card--finished::before {
   background: var(--border-medium);
+  opacity: 0.6;
+}
+.game-card--finished .team-score {
+  color: var(--text-secondary);
+  text-shadow: none;
+  font-size: 24px;
 }
 @keyframes livePulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 12px var(--danger-glow); }
-  50% { opacity: 0.5; box-shadow: 0 0 20px var(--danger-glow); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 16px var(--danger-glow); }
+  50% { opacity: 0.6; box-shadow: 0 0 24px var(--danger-glow); }
 }
 .game-card:hover {
-  transform: translateY(-3px);
+  transform: translateY(-4px) !important;
   border-color: var(--accent) !important;
-  box-shadow: 0 8px 32px rgba(0, 230, 118, 0.12) !important;
+  box-shadow: 0 12px 40px rgba(0, 230, 118, 0.18) !important;
+  animation: none;
+  opacity: 1;
 }
 .game-card:hover::after {
   opacity: 1;
+}
+.game-card:hover .game-title {
+  color: var(--accent-light);
+}
+.game-card:hover .team-name {
+  color: var(--accent);
+  transition: color var(--duration-fast) var(--ease-smooth);
+}
+.game-card:hover .game-stats {
+  color: var(--text-secondary);
+  border-top-color: var(--border-medium);
 }
 .game-teams {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .team {
   text-align: center;
@@ -559,35 +672,36 @@ onMounted(() => {
 .team-name {
   display: block;
   font-weight: 700;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--text-primary);
   font-family: var(--font-heading);
   letter-spacing: 0.3px;
 }
 .team-score {
   display: block;
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 700;
   color: var(--accent);
   margin-top: 4px;
   font-family: var(--font-heading);
   text-shadow: 0 0 20px var(--accent-glow);
+  letter-spacing: -1px;
 }
 .game-vs {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 0 12px;
+  gap: 8px;
+  padding: 0 16px;
 }
 .vs-text {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text-dim);
   letter-spacing: 2px;
 }
 .game-info {
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 .game-time {
   font-size: 12px;
@@ -597,10 +711,11 @@ onMounted(() => {
   border-radius: var(--radius-sm);
   display: inline-block;
   border: 1px solid rgba(0, 230, 118, 0.06);
+  font-family: var(--font-heading);
 }
 .game-title {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--text-primary);
   font-family: var(--font-heading);
   margin-bottom: 6px;
@@ -610,11 +725,22 @@ onMounted(() => {
 .game-summary {
   font-size: 13px;
   color: var(--text-muted);
-  line-height: 1.5;
+  line-height: 1.6;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  letter-spacing: 0.2px;
+}
+.game-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding-top: 8px;
+  border-top: 1px solid var(--border-light);
 }
 .game-actions {
   margin-top: 10px;
@@ -622,44 +748,58 @@ onMounted(() => {
   justify-content: flex-end;
 }
 .match-detail-btn {
-  border-radius: var(--radius-sm) !important;
+  border-radius: var(--radius-md) !important;
   font-size: 12px !important;
   font-weight: 600 !important;
   letter-spacing: 0.3px;
   transition: all var(--duration-fast) var(--ease-smooth) !important;
 }
 .match-detail-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 230, 118, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 230, 118, 0.25);
 }
 .no-data-text {
   color: var(--text-dim);
   font-size: 12px;
+  font-style: italic;
 }
 .toolbar {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 .news-list-card {
   overflow: visible;
+  position: relative;
+}
+.news-list-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--cyan), var(--purple));
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  z-index: 1;
 }
 /* 搜索栏 */
 .search-input-wrap {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 14px;
+  padding: 10px 16px;
   background: var(--bg-hover);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   transition: all var(--duration-fast) var(--ease-smooth);
   max-width: 320px;
 }
 .search-input-wrap:hover {
   border-color: var(--border-medium);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 .search-input-wrap:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-glow);
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 .search-input-icon {
   width: 16px;
@@ -717,6 +857,7 @@ onMounted(() => {
   transition: all var(--duration-fast) var(--ease-smooth);
   font-weight: 500;
   position: relative;
+  letter-spacing: 0.2px;
 }
 .cell-link::after {
   content: '';
@@ -739,11 +880,12 @@ onMounted(() => {
 .score-inline {
   color: var(--accent);
   font-weight: 700;
+  font-family: var(--font-heading);
 }
 .pager {
   display: flex;
   justify-content: flex-end;
-  margin-top: 14px;
+  margin-top: 16px;
 }
 :deep(.el-card) {
   background: var(--bg-card) !important;
@@ -771,6 +913,7 @@ onMounted(() => {
   align-items: center;
   gap: 16px;
   margin-bottom: 20px;
+  flex-wrap: wrap;
 }
 .detail-time {
   color: var(--text-muted);
@@ -778,13 +921,14 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
+  font-family: var(--font-heading);
 }
 .detail-score {
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 24px;
-  padding: 20px 0;
+  padding: 24px 0;
   background: linear-gradient(135deg, rgba(0, 230, 118, 0.03) 0%, rgba(0, 230, 118, 0.01) 100%);
   border-radius: var(--radius-lg);
   border: 1px solid rgba(0, 230, 118, 0.08);
@@ -795,7 +939,7 @@ onMounted(() => {
 }
 .score-box strong {
   display: block;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--text-primary);
   margin-bottom: 8px;
   font-family: var(--font-heading);
@@ -803,15 +947,16 @@ onMounted(() => {
   letter-spacing: 0.3px;
 }
 .big-score {
-  font-size: 44px;
+  font-size: 48px;
   font-weight: 700;
   color: var(--accent);
   font-family: var(--font-heading);
   text-shadow: 0 0 30px var(--accent-glow);
   line-height: 1;
+  letter-spacing: -1px;
 }
 .score-divider {
-  font-size: 32px;
+  font-size: 36px;
   font-weight: 300;
   color: var(--text-dim);
 }
@@ -820,30 +965,53 @@ onMounted(() => {
   justify-content: center;
   align-items: center;
   gap: 32px;
-  padding: 24px 0;
+  padding: 28px 0;
   background: linear-gradient(135deg, rgba(0, 230, 118, 0.02) 0%, transparent 100%);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-light);
 }
 .detail-team {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--text-primary);
   font-family: var(--font-heading);
   letter-spacing: 0.3px;
 }
 .detail-vs-text {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--text-dim);
   font-weight: 700;
   letter-spacing: 3px;
   text-transform: uppercase;
 }
 .detail-content {
-  font-size: 14px;
-  line-height: 1.8;
+  font-size: 15px;
+  line-height: 1.9;
   color: var(--text-secondary);
   white-space: pre-wrap;
+  letter-spacing: 0.2px;
+}
+.detail-stats {
+  display: flex;
+  gap: 20px;
+  margin-top: 16px;
+  padding: 14px 18px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--text-muted);
+  position: relative;
+  overflow: hidden;
+}
+.detail-stats::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--purple));
+  border-radius: 1px;
 }
 .detail-image {
   margin-bottom: 16px;
@@ -858,9 +1026,11 @@ onMounted(() => {
   display: block;
 }
 .detail-actions {
-  margin-top: 16px;
+  margin-top: 20px;
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-light);
 }
 </style>

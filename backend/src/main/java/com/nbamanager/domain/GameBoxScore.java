@@ -40,6 +40,9 @@ public class GameBoxScore {
     @Column(nullable = false, length = 80)
     private String teamName;
 
+    @Column(nullable = false)
+    private boolean isHome = false;
+
     @Column(length = 10)
     private String minutes;
 

@@ -86,8 +86,8 @@ public class Player {
     @Column(nullable = false)
     private Double usagePct;
 
-    @Column(nullable = false)
-    private Integer jerseyNumber;
+    @Column(nullable = false, length = 8)
+    private String jerseyNumber;
 
     @Column(nullable = false, length = 32)
     private String height;

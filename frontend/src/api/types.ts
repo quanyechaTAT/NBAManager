@@ -15,10 +15,12 @@ export interface Team {
   conference: string
   wins: number
   losses: number
+  logoUrl?: string
 }
 
 export interface Player {
   id: number
+  nbaPlayerId: number | null
   name: string
   teamId: number
   teamName: string
@@ -37,7 +39,7 @@ export interface Player {
   efficiency: number
   trueShootingPct: number
   usagePct: number
-  jerseyNumber: number
+  jerseyNumber: string
   height: string
   weight: number
   country: string
@@ -52,6 +54,8 @@ export interface TeamRank {
 }
 
 export interface DashboardStats {
+  teamCount: number
+  playerCount: number
   teamWinRows: { name: string; wins: number; losses: number }[]
   topScorers: { playerName: string; ppg: number; teamName: string }[]
 }
@@ -73,6 +77,9 @@ export interface GameNews {
   category: string
   sourceUrl: string | null
   imageUrl: string | null
+  viewCount: number
+  favoriteCount: number
+  favoritedByMe: boolean
 }
 
 export interface MatchRecord {
