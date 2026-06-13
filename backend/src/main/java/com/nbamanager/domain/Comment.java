@@ -16,7 +16,8 @@ import lombok.Setter;
 @Entity
 @Table(name = "comments", indexes = {
         @Index(name = "idx_comment_post_id", columnList = "postId"),
-        @Index(name = "idx_comment_user_id", columnList = "userId")
+        @Index(name = "idx_comment_user_id", columnList = "userId"),
+        @Index(name = "idx_comment_game_id", columnList = "gameId")
 })
 @Getter
 @Setter
@@ -27,8 +28,10 @@ public class Comment {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
     private Long postId;
+
+    @Column(length = 64)
+    private String gameId;
 
     @Column(nullable = false)
     private Long userId;
@@ -50,4 +53,6 @@ public class Comment {
     protected void onCreate() {
         createTime = LocalDateTime.now();
     }
+
+
 }

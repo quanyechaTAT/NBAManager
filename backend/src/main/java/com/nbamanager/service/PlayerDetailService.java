@@ -1,10 +1,12 @@
 package com.nbamanager.service;
 
+import com.nbamanager.domain.MatchRecord;
 import com.nbamanager.domain.Player;
 import com.nbamanager.domain.PlayerCareerStats;
 import com.nbamanager.domain.PlayerGameLog;
 import com.nbamanager.domain.Team;
 import com.nbamanager.exception.ApiException;
+import com.nbamanager.repository.MatchRecordRepository;
 import com.nbamanager.repository.PlayerCareerStatsRepository;
 import com.nbamanager.repository.PlayerGameLogRepository;
 import com.nbamanager.repository.PlayerRepository;
@@ -38,12 +40,19 @@ public class PlayerDetailService {
     private final PlayerGameLogRepository playerGameLogRepository;
     private final PlayerCareerStatsRepository playerCareerStatsRepository;
     private final TeamRepository teamRepository;
+    private final MatchRecordRepository matchRecordRepository;
 
     @Cacheable(value = "playerDetail", key = "#playerId")
     @Transactional(readOnly = true)
     public PlayerDetailDto getDetail(Long playerId) {
-        Player p = playerRepository.findById(playerId)
-                .orElseThrow(() -> notFound(playerId));
+        Player p = playerRepository.findById(playerId).orElse(null);
+        // 如果DB ID找不到，尝试用nbaPlayerId查找（兼容历史数据跳转）
+        if (p == null) {
+            p = playerRepository.findByNbaPlayerId(playerId);
+        }
+        if (p == null) {
+            throw notFound(playerId);
+        }
         Team t = p.getTeam();
         return new PlayerDetailDto(
                 p.getId(),
@@ -69,20 +78,32 @@ public class PlayerDetailService {
                 p.getFreeThrowPct(),
                 p.getEfficiency(),
                 p.getTrueShootingPct(),
-                p.getUsagePct());
+                p.getUsagePct(),
+                p.getPer(),
+                p.getWinShares(),
+                p.getVorp(),
+                p.getBpm(),
+                p.getOffensiveRating(),
+                p.getDefensiveRating());
     }
 
     @Cacheable(value = "playerCareer", key = "#playerId")
     @Transactional
     public List<PlayerCareerStatsDto> getCareerStats(Long playerId) {
-        List<PlayerCareerStats> records = playerCareerStatsRepository.findByPlayerIdOrderBySeasonAsc(playerId);
+        // 兼容nbaPlayerId查找
+        Player lookupPlayer = playerRepository.findById(playerId).orElse(null);
+        if (lookupPlayer == null) {
+            lookupPlayer = playerRepository.findByNbaPlayerId(playerId);
+        }
+        Long actualId = (lookupPlayer != null) ? lookupPlayer.getId() : playerId;
+
+        List<PlayerCareerStats> records = playerCareerStatsRepository.findByPlayerIdOrderBySeasonAsc(actualId);
 
         if (records.isEmpty()) {
             // 使用 nbaPlayerId 调用 Python 脚本
-            Player player = playerRepository.findById(playerId).orElse(null);
-            Long nbaPlayerId = (player != null && player.getNbaPlayerId() != null) ? player.getNbaPlayerId() : playerId;
-            fetchFromPython("player_career", String.valueOf(nbaPlayerId), playerId);
-            records = playerCareerStatsRepository.findByPlayerIdOrderBySeasonAsc(playerId);
+            Long nbaPlayerId = (lookupPlayer != null && lookupPlayer.getNbaPlayerId() != null) ? lookupPlayer.getNbaPlayerId() : playerId;
+            fetchFromPython("player_career", String.valueOf(nbaPlayerId), actualId);
+            records = playerCareerStatsRepository.findByPlayerIdOrderBySeasonAsc(actualId);
         }
 
         return records.stream().map(this::toCareerStatsDto).collect(Collectors.toList());
@@ -90,8 +111,43 @@ public class PlayerDetailService {
 
     @Transactional(readOnly = true)
     public Page<PlayerGameLogDto> getGameLog(Long playerId, String season, Pageable pageable) {
-        Page<PlayerGameLog> page;
+        // 获取球员信息（兼容nbaPlayerId查找）
+        Player player = playerRepository.findById(playerId).orElse(null);
+        if (player == null) {
+            player = playerRepository.findByNbaPlayerId(playerId);
+        }
+        if (player == null || player.getTeam() == null) {
+            return Page.empty(pageable);
+        }
 
+        String teamName = player.getTeam().getName();
+
+        // 优先从球队比赛记录中获取（这是真实可靠的数据）
+        List<MatchRecord> teamMatches = matchRecordRepository.findByTeamName(teamName);
+
+        if (!teamMatches.isEmpty()) {
+            // 有球队比赛记录，使用球队数据
+            List<PlayerGameLogDto> gameLogList = teamMatches.stream()
+                    .filter(m -> "FINISHED".equals(m.getStatus())
+                            && m.getHomeScore() != null && m.getHomeScore() > 0
+                            && m.getAwayScore() != null && m.getAwayScore() > 0)
+                    .sorted((a, b) -> b.getMatchDate().compareTo(a.getMatchDate()))
+                    .map(m -> toGameLogFromMatch(m, teamName))
+                    .collect(Collectors.toList());
+
+            // 手动分页
+            int start = (int) pageable.getOffset();
+            int end = Math.min(start + pageable.getPageSize(), gameLogList.size());
+            List<PlayerGameLogDto> pageContent = start < gameLogList.size()
+                    ? gameLogList.subList(start, end)
+                    : List.of();
+
+            return new org.springframework.data.domain.PageImpl<>(
+                    pageContent, pageable, gameLogList.size());
+        }
+
+        // 没有球队比赛记录，回退到球员个人数据（过滤掉没上场的比赛）
+        Page<PlayerGameLog> page;
         if (season != null && !season.isBlank()) {
             page = playerGameLogRepository.findByPlayerIdAndSeasonOrderByMatchDateDesc(playerId, season, pageable);
         } else {
@@ -100,10 +156,8 @@ public class PlayerDetailService {
 
         // 如果数据库没有数据，从Python脚本获取
         if (page.isEmpty()) {
-            Player player = playerRepository.findById(playerId).orElse(null);
-            Long nbaPlayerId = (player != null && player.getNbaPlayerId() != null) ? player.getNbaPlayerId() : playerId;
+            Long nbaPlayerId = player.getNbaPlayerId() != null ? player.getNbaPlayerId() : playerId;
             fetchFromPython("player_gamelog", String.valueOf(nbaPlayerId), playerId);
-            // 重新查询
             if (season != null && !season.isBlank()) {
                 page = playerGameLogRepository.findByPlayerIdAndSeasonOrderByMatchDateDesc(playerId, season, pageable);
             } else {
@@ -111,7 +165,47 @@ public class PlayerDetailService {
             }
         }
 
-        return page.map(this::toGameLogDto);
+        // 过滤掉球员没上场的比赛（得分、篮板、助攻都为0的比赛）
+        Page<PlayerGameLog> filteredPage = page.map(g -> g);
+        List<PlayerGameLogDto> filteredContent = page.getContent().stream()
+                .filter(g -> g.getPoints() > 0 || g.getRebounds() > 0 || g.getAssists() > 0)
+                .map(this::toGameLogDto)
+                .collect(Collectors.toList());
+
+        return new org.springframework.data.domain.PageImpl<>(
+                filteredContent, pageable, filteredContent.size());
+    }
+
+    /**
+     * 从球队比赛记录转换为球员比赛日志格式
+     */
+    private PlayerGameLogDto toGameLogFromMatch(MatchRecord m, String teamName) {
+        boolean isHome = teamName.equals(m.getHomeTeam());
+        String opponent = isHome ? m.getAwayTeam() : m.getHomeTeam();
+        int teamScore = isHome ? m.getHomeScore() : m.getAwayScore();
+        int opponentScore = isHome ? m.getAwayScore() : m.getHomeScore();
+        String result = teamScore > opponentScore ? "W" : "L";
+
+        return new PlayerGameLogDto(
+                m.getNbaGameId() != null ? m.getNbaGameId() : "",
+                m.getMatchDate() != null ? m.getMatchDate().toString() : "",
+                opponent,
+                isHome,
+                "",  // 球队比赛记录无个人分钟数
+                0,   // 球队比赛记录无个人得分
+                0,   // 篮板
+                0,   // 助攻
+                0,   // 抢断
+                0,   // 盖帽
+                0,   // 失误
+                0.0, // 命中率
+                0.0, // 三分
+                0.0, // 罚球
+                0,   // 正负值
+                result,
+                teamScore,
+                opponentScore
+        );
     }
 
     /**
@@ -315,7 +409,9 @@ public class PlayerDetailService {
                 g.getThreePct(),
                 g.getFtPct(),
                 g.getPlusMinus(),
-                g.getResult());
+                g.getResult(),
+                0,  // 旧格式无球队比分
+                0);
     }
 
     private static ApiException notFound(Long id) {

@@ -10,9 +10,15 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 
     List<Comment> findByPostIdAndParentIdIsNullOrderByCreateTimeAsc(Long postId);
 
+    List<Comment> findByGameIdOrderByCreateTimeAsc(String gameId);
+
     long countByPostId(Long postId);
+
+    long countByGameId(String gameId);
 
     long countByUserId(Long userId);
 
     void deleteByPostId(Long postId);
+
+    void deleteByGameId(String gameId);
 }

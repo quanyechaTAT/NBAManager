@@ -19,7 +19,10 @@
           <h2>球队战绩</h2>
           <p>维护球队基本信息、胜负场数据。</p>
         </div>
-        <el-button type="primary" @click="openCreate">新建球队</el-button>
+        <div class="section-actions">
+          <SyncButton module="teams" label="同步球队" @sync-success="loadTeams" />
+          <el-button type="primary" @click="openCreate">新建球队</el-button>
+        </div>
       </div>
       <div class="toolbar">
         <el-input v-model="keyword" placeholder="搜索球队名称" clearable style="width: 260px" @keyup.enter="loadTeams" />
@@ -67,7 +70,7 @@
         <div class="rank-card">
           <div class="rank-header">
             <span class="rank-title">{{ conf === '东部' ? '🏆' : '🌟' }} {{ conf }}联盟排名</span>
-            <span class="rank-sub">按净胜场排序</span>
+            <span class="rank-sub">按胜率排序</span>
           </div>
           <div class="rank-list">
             <div class="rank-row rank-row-head">
@@ -95,7 +98,7 @@
     </el-row>
 
     <!-- 新建/编辑弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑球队' : '新建球队'" width="480px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑球队' : '新建球队'" width="480px" destroy-on-close class="dialog-light">
       <el-form :model="form" label-width="80px">
         <el-form-item label="球队名称">
           <el-input v-model="form.name" placeholder="如：湖人" />
@@ -134,6 +137,7 @@ import { useAuthStore } from '@/stores/auth'
 import { createTeam, deleteTeam, fetchRankings, fetchTeams, updateTeam } from '@/api/team'
 import type { Team, TeamRank } from '@/api/types'
 import { getTeamLogo } from '@/utils/teamLogos'
+import SyncButton from '@/components/common/SyncButton.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -315,6 +319,11 @@ onMounted(async () => {
   color: var(--text-muted);
   font-size: 13px;
 }
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .toolbar {
   display: flex;
   gap: 12px;
@@ -341,17 +350,17 @@ onMounted(async () => {
 }
 @keyframes pageFadeIn { to { opacity: 1; transform: translateY(0); } }
 :deep(.el-input__wrapper) {
-  background: #1C2333 !important;
-  border: 1px solid var(--border-light) !important;
+  background: var(--bg-input) !important;
+  border: 1.5px solid var(--border-light) !important;
   box-shadow: none !important;
-  border-radius: var(--radius-sm) !important;
+  border-radius: 8px !important;
 }
 :deep(.el-input__wrapper:hover) {
   border-color: var(--border-medium) !important;
 }
 :deep(.el-input__wrapper.is-focus) {
-  border-color: var(--purple) !important;
-  box-shadow: 0 0 0 2px var(--purple-glow) !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-glow) !important;
 }
 :deep(.el-input__inner) { color: var(--text-primary) !important; font-family: var(--font-body); }
 :deep(.el-input__inner::placeholder) { color: var(--text-dim) !important; }

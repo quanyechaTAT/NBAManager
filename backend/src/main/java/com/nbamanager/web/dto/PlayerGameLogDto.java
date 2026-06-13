@@ -16,4 +16,6 @@ public record PlayerGameLogDto(
         Double threePct,
         Double ftPct,
         Integer plusMinus,
-        String result) {}
+        String result,
+        Integer teamScore,
+        Integer opponentScore) {}

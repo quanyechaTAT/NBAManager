@@ -41,4 +41,6 @@ public class UserBrowseHistory {
     protected void onCreate() {
         browseTime = LocalDateTime.now();
     }
+
+
 }

@@ -10,6 +10,7 @@ API KEY从环境变量读取，确保安全
 import os
 import sys
 import json
+import re
 import ssl
 import time
 import urllib.request
@@ -335,6 +336,96 @@ def translate_news_article(article):
         translated[field_name] = value
 
     return translated
+
+
+# 交易翻译专用系统提示词
+TRADE_SYSTEM_PROMPT = """你是一个专业的NBA交易分析师。请将NBA交易信息翻译为中文，并以标准化JSON格式返回。
+
+翻译规则：
+1. 球员姓名使用标准中文译名（如：LeBron James → 勒布朗·詹姆斯）
+2. 球队名称使用标准中文名（如：Lakers → 湖人，Warriors → 勇士）
+3. 选秀权必须保留（如：2026 second-round pick → 2026年第二轮选秀权）
+4. 交易细节必须完整，不能省略任何球员或选秀权
+
+返回格式（严格JSON）：
+{
+  "summary": "简短中文摘要",
+  "players": ["球员1中文名", "球员2中文名"],
+  "teams": ["球队1中文名", "球队2中文名"],
+  "draft_picks": ["选秀权描述1"],
+  "details": "详细中文描述"
+}
+
+只返回JSON，不要添加任何其他内容。"""
+
+
+def translate_trade_details(description, max_retries=2):
+    """
+    翻译交易详情，返回标准化JSON格式
+
+    Args:
+        description: 英文交易描述
+        max_retries: 最大重试次数
+
+    Returns:
+        dict: 包含 players, teams, draft_picks, details 的字典
+        None: 翻译失败时返回None
+    """
+    if not description or not description.strip():
+        return None
+
+    # 检查缓存
+    cache_key = f"trade:{description.strip()}"
+    if cache_key in _translation_cache:
+        return _translation_cache[cache_key]
+
+    if not MIMO_API_KEY:
+        return None
+
+    for attempt in range(max_retries + 1):
+        try:
+            _rate_limit()
+
+            url = f"{MIMO_BASE_URL}/chat/completions"
+
+            payload = {
+                "model": "mimo-v2.5",
+                "messages": [
+                    {"role": "system", "content": TRADE_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"请翻译以下交易信息：\n\n{description}"}
+                ],
+                "temperature": 0.2,
+                "max_tokens": 1000
+            }
+
+            data = json.dumps(payload).encode('utf-8')
+
+            req = urllib.request.Request(url, data=data, headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {MIMO_API_KEY}',
+                'User-Agent': 'NBAManager/1.0'
+            })
+
+            opener = _get_opener()
+            response = opener.open(req, timeout=30)
+            result = json.loads(response.read().decode('utf-8'))
+
+            content = result['choices'][0]['message']['content']
+
+            # 提取JSON部分
+            json_match = re.search(r'\{[\s\S]*\}', content)
+            if json_match:
+                trade_data = json.loads(json_match.group())
+                _translation_cache[cache_key] = trade_data
+                return trade_data
+
+        except Exception as e:
+            if attempt < max_retries:
+                time.sleep(1 * (attempt + 1))
+                continue
+            print(f"交易翻译失败: {e}", file=sys.stderr)
+
+    return None
 
 
 def main():

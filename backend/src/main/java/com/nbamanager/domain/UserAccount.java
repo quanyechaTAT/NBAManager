@@ -32,4 +32,6 @@ public class UserAccount {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private Role role;
+
+
 }

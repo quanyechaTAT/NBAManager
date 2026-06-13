@@ -2,6 +2,8 @@ package com.nbamanager.web;
 
 import com.nbamanager.service.PlayerService;
 import com.nbamanager.web.dto.PageResponse;
+import com.nbamanager.web.dto.PlayerCompareDto;
+import com.nbamanager.web.dto.PlayerDetailDto;
 import com.nbamanager.web.dto.PlayerDto;
 import com.nbamanager.web.dto.PlayerRequest;
 import jakarta.validation.Valid;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PlayerController {
 
     private final PlayerService playerService;
+    private final com.nbamanager.service.PlayerDetailService playerDetailService;
 
     @GetMapping
     public PageResponse<PlayerDto> list(
@@ -56,5 +59,14 @@ public class PlayerController {
     @PreAuthorize("hasRole('ADMIN')")
     public void delete(@PathVariable Long id) {
         playerService.delete(id);
+    }
+
+    @GetMapping("/compare")
+    public PlayerCompareDto compare(
+            @RequestParam Long id1,
+            @RequestParam Long id2) {
+        PlayerDetailDto p1 = playerDetailService.getDetail(id1);
+        PlayerDetailDto p2 = playerDetailService.getDetail(id2);
+        return new PlayerCompareDto(p1, p2);
     }
 }

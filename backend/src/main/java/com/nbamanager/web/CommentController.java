@@ -32,10 +32,19 @@ public class CommentController {
         return commentService.listByPost(postId, userId);
     }
 
+    @GetMapping("/game/{gameId}")
+    public List<CommentDto> listByGame(@PathVariable String gameId) {
+        Long userId = getCurrentUserId();
+        return commentService.listByGameId(gameId, userId);
+    }
+
     @PostMapping
     @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
     public CommentDto create(@AuthenticationPrincipal UserPrincipal user,
                              @Valid @RequestBody CommentRequest request) {
+        if (request.gameId() != null && !request.gameId().isBlank()) {
+            return commentService.createForGame(user.getId(), request);
+        }
         return commentService.create(user.getId(), request.postId(), request);
     }
 

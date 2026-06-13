@@ -32,8 +32,16 @@ public class MatchRecord {
     @Column(nullable = false, length = 80)
     private String homeTeam;
 
+    /** 主队英文名 */
+    @Column(name = "home_team_en", length = 80)
+    private String homeTeamEn;
+
     @Column(nullable = false, length = 80)
     private String awayTeam;
+
+    /** 客队英文名 */
+    @Column(name = "away_team_en", length = 80)
+    private String awayTeamEn;
 
     @Column(nullable = false)
     private Integer homeScore;
@@ -55,4 +63,6 @@ public class MatchRecord {
     /** NBA官方比赛ID（10位数字，如 0022400001） */
     @Column(length = 16)
     private String nbaGameId;
+
+
 }

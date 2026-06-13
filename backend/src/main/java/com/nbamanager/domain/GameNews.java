@@ -31,6 +31,10 @@ public class GameNews {
     @Column(nullable = false, length = 120)
     private String title;
 
+    /** 英文标题 */
+    @Column(name = "title_en", length = 200)
+    private String titleEn;
+
     /** 摘要 */
     @Column(nullable = false, length = 300)
     private String summary;
@@ -38,6 +42,10 @@ public class GameNews {
     /** 详细内容 */
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
+
+    /** 英文内容 */
+    @Column(name = "content_en", columnDefinition = "TEXT")
+    private String contentEn;
 
     /** 主队名称 */
     @Column(nullable = false, length = 80)
@@ -94,4 +102,5 @@ public class GameNews {
     /** 收藏量 */
     @Column(nullable = false)
     private Integer favoriteCount = 0;
+
 }

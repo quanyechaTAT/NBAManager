@@ -60,4 +60,8 @@ public class UserPrincipal implements UserDetails {
     public boolean isEnabled() {
         return true;
     }
+
+    // 手动添加getter方法（Lombok可能未正确处理）
+    public Long getId() { return id; }
+    public Role getRole() { return role; }
 }

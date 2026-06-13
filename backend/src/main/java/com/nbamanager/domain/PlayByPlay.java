@@ -52,4 +52,5 @@ public class PlayByPlay {
     private String playerName;
 
     private Long teamId;
+
 }

@@ -7,6 +7,7 @@
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
             <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
           </svg>
+          <span v-if="pushSupported && pushPermission === 'default'" class="push-indicator" title="点击开启推送通知"></span>
           <span v-if="notificationStore.unreadCount > 0" class="bell-badge">
             <span class="badge-pulse"></span>
             {{ notificationStore.unreadCount > 99 ? '99+' : notificationStore.unreadCount }}
@@ -60,14 +61,18 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
 import { fetchNotifications, markAsRead, markAllAsRead, deleteNotification, clearReadNotifications } from '@/api/notification'
+import { usePushNotification } from '@/composables/usePushNotification'
 import type { Notification } from '@/api/notification'
 
 const router = useRouter()
 const auth = useAuthStore()
 const notificationStore = useNotificationStore()
+
+const { isSupported: pushSupported, permissionStatus: pushPermission, requestPermission } = usePushNotification()
 
 const loading = ref(false)
 const notifications = ref<Notification[]>([])
@@ -136,6 +141,14 @@ async function clearRead() {
 
 function onBellClick() {
   notificationStore.refresh()
+  // On first click, request push notification permission if not yet granted
+  if (pushSupported.value && pushPermission.value === 'default') {
+    requestPermission().then((granted) => {
+      if (granted) {
+        ElMessage.success('已开启浏览器推送通知')
+      }
+    })
+  }
 }
 </script>
 
@@ -156,6 +169,24 @@ function onBellClick() {
   color: var(--accent);
   background: var(--accent-lighter);
   transform: scale(1.05);
+}
+
+/* 推送权限指示器 */
+.push-indicator {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning);
+  border: 2px solid var(--bg-page);
+  box-shadow: 0 0 6px var(--warning-glow);
+  animation: pushPulse 2s ease-in-out infinite;
+}
+@keyframes pushPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.2); }
 }
 
 /* 徽章 */

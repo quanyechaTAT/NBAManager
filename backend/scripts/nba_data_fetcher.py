@@ -24,9 +24,19 @@ if sys.platform == 'win32':
     except (AttributeError, ValueError):
         pass
 
+# 加载 .env 文件
+env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '.env')
+if os.path.exists(env_path):
+    with open(env_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                os.environ.setdefault(key.strip(), value.strip())
+
 # 导入翻译模块
 try:
-    from translator import translate_text, translate_news_article
+    from translator import translate_text, translate_news_article, translate_trade_details
     HAS_TRANSLATOR = True
 except ImportError:
     HAS_TRANSLATOR = False
@@ -35,17 +45,28 @@ except ImportError:
 # 代理配置（可选，代理不可用时直连）
 PROXY_HOST = os.environ.get('NBA_PROXY_HOST', '')
 PROXY_PORT = os.environ.get('NBA_PROXY_PORT', '')
+PROXY_URL = ''
 
 if PROXY_HOST and PROXY_PORT:
+    PROXY_URL = f'http://{PROXY_HOST}:{PROXY_PORT}'
     proxy_handler = urllib.request.ProxyHandler({
-        'https': f'http://{PROXY_HOST}:{PROXY_PORT}',
-        'http': f'http://{PROXY_HOST}:{PROXY_PORT}',
+        'https': PROXY_URL,
+        'http': PROXY_URL,
     })
     proxy_opener = urllib.request.build_opener(proxy_handler)
     urllib.request.install_opener(proxy_opener)
+    # 设置requests库的代理环境变量
+    os.environ['HTTP_PROXY'] = PROXY_URL
     print(f"已配置代理: {PROXY_HOST}:{PROXY_PORT}", file=sys.stderr)
 else:
-    print("未配置代理，使用直连", file=sys.stderr)
+    # 显式清除所有代理环境变量，防止系统代理干扰
+    for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']:
+        os.environ.pop(key, None)
+    # 安装无代理的opener
+    proxy_handler = urllib.request.ProxyHandler({})
+    proxy_opener = urllib.request.build_opener(proxy_handler)
+    urllib.request.install_opener(proxy_opener)
+    print("未配置代理，使用直连（已清除系统代理）", file=sys.stderr)
 
 try:
     from nba_api.stats.endpoints import (
@@ -64,6 +85,23 @@ try:
     HAS_NBA_API = True
 except ImportError:
     HAS_NBA_API = False
+
+try:
+    from nba_api.stats.endpoints import DraftHistory
+    HAS_DRAFT_API = True
+except ImportError:
+    HAS_DRAFT_API = False
+
+# 禁用nba_api的代理（nba_api使用requests库，需要单独配置）
+if not PROXY_URL:
+    try:
+        import requests
+        # 设置requests不使用代理
+        session = requests.Session()
+        session.trust_env = False
+        session.proxies = {'http': None, 'https': None}
+    except ImportError:
+        pass
 
 # 球队英文名/缩写到中文名映射
 TEAM_NAME_MAP = {
@@ -585,6 +623,52 @@ NBA_TERM_MAP = {
     'top scorer': '得分王', 'head coach': '主教练',
 }
 
+# 动态翻译映射文件路径
+DYNAMIC_MAP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'player_cn_map_dynamic.json')
+
+# 加载动态翻译映射
+_dynamic_cn_map = {}
+if os.path.exists(DYNAMIC_MAP_FILE):
+    try:
+        with open(DYNAMIC_MAP_FILE, 'r', encoding='utf-8') as f:
+            _dynamic_cn_map = json.load(f)
+    except Exception:
+        _dynamic_cn_map = {}
+
+def save_dynamic_map():
+    """保存动态翻译映射到文件"""
+    try:
+        with open(DYNAMIC_MAP_FILE, 'w', encoding='utf-8') as f:
+            json.dump(_dynamic_cn_map, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"保存动态映射失败: {e}", file=sys.stderr)
+
+def translate_player_name(en_name):
+    """翻译球员名：先查本地映射，再调用MIMO API，最后保存映射"""
+    # 1. 先查静态映射
+    if en_name in PLAYER_CN_MAP:
+        return PLAYER_CN_MAP[en_name], 'MAPPED'
+
+    # 2. 再查动态映射
+    if en_name in _dynamic_cn_map:
+        return _dynamic_cn_map[en_name], 'MAPPED'
+
+    # 3. 调用MIMO API翻译
+    if HAS_TRANSLATOR:
+        try:
+            prompt = f"请将以下NBA球员名字翻译为中文，只输出中文名字，不要添加其他内容：\n{en_name}"
+            cn_name = translate_text(prompt, max_retries=1)
+            if cn_name and cn_name != en_name and len(cn_name) < len(en_name) * 3:
+                # 翻译成功，保存到动态映射
+                _dynamic_cn_map[en_name] = cn_name
+                save_dynamic_map()
+                return cn_name, 'API_TRANSLATED'
+        except Exception as e:
+            pass  # 翻译失败时返回英文名
+
+    # 4. 翻译失败，返回英文名
+    return en_name, 'UNTRANSLATED'
+
 # 球员英文名 -> 球衣号码 映射（使用字符串以支持"00"等格式）
 PLAYER_JERSEY_MAP = {
     # 湖人
@@ -812,8 +896,14 @@ def fetch_team_standings():
         conf = data.get('Conference', '')
         conference = '东部' if conf == 'East' else '西部'
 
+        # 获取英文名和缩写
+        en_name = data.get('TeamName', '')
+        abbreviation = data.get('TeamAbbreviation', '')
+
         result.append({
             'name': cn_name,
+            'nameEn': en_name,
+            'abbreviation': abbreviation,
             'city': city,
             'conference': conference,
             'wins': _safe_int(data.get('WINS')),
@@ -903,13 +993,15 @@ def fetch_player_stats():
         if usg_pct < 1.0:
             usg_pct = 20.0
 
-        # 球员名翻译
+        # 球员名翻译（先查映射，再调用MIMO API）
         en_name = data.get('PLAYER_NAME', '')
-        cn_name = PLAYER_CN_MAP.get(en_name, en_name)
+        cn_name, translation_status = translate_player_name(en_name)
 
         result.append({
             'nbaPlayerId': player_id,
             'name': cn_name,
+            'nameEn': en_name,
+            'translationStatus': translation_status,
             'team': cn_team,
             'position': position,
             'ppg': round(ppg, 1),
@@ -993,41 +1085,74 @@ def fetch_today_games():
     _init_team_map()
     print("正在获取今日比赛数据...", file=sys.stderr)
 
+    result = []
+
+    # 方式1: 尝试live endpoint（有实时比分和时钟）
     try:
-        sb = live_scoreboard.Scoreboard(timeout=15)
+        from nba_api.live.nba.endpoints import scoreboard as live_sb
+        sb = live_sb.ScoreBoard(timeout=15)
         data = sb.get_dict()
         time.sleep(0.5)
+        for game in data.get('scoreboard', {}).get('games', []):
+            home = game.get('homeTeam', {})
+            away = game.get('awayTeam', {})
+            home_cn = TEAM_ABBR_MAP.get(home.get('teamTricode', ''), home.get('teamName', ''))
+            away_cn = TEAM_ABBR_MAP.get(away.get('teamTricode', ''), away.get('teamName', ''))
+            game_status = game.get('gameStatus', 0)
+            if game_status == 1:
+                status = 'SCHEDULED'
+            elif game_status == 2:
+                status = 'LIVE'
+            else:
+                status = 'FINISHED'
+            result.append({
+                'gameId': game.get('gameId', ''),
+                'homeTeam': home_cn,
+                'awayTeam': away_cn,
+                'homeScore': _safe_int(home.get('score')),
+                'awayScore': _safe_int(away.get('score')),
+                'status': status,
+                'startTime': game.get('gameEt', ''),
+                'period': game.get('period', 0),
+                'gameClock': game.get('gameClock', ''),
+            })
+        if result:
+            print(f"Live API获取到 {len(result)} 场今日比赛", file=sys.stderr)
+            return result
     except Exception as e:
-        print(f"获取今日比赛失败: {e}", file=sys.stderr)
-        return []
+        print(f"Live scoreboard失败，切换到ScoreboardV3: {e}", file=sys.stderr)
 
-    result = []
-    for game in data.get('scoreboard', {}).get('games', []):
-        home = game.get('homeTeam', {})
-        away = game.get('awayTeam', {})
-
-        home_cn = TEAM_ABBR_MAP.get(home.get('teamTricode', ''), home.get('teamName', ''))
-        away_cn = TEAM_ABBR_MAP.get(away.get('teamTricode', ''), away.get('teamName', ''))
-
-        game_status = game.get('gameStatus', 0)
-        if game_status == 1:
-            status = 'SCHEDULED'
-        elif game_status == 2:
-            status = 'LIVE'
-        else:
-            status = 'FINISHED'
-
-        result.append({
-            'gameId': game.get('gameId', ''),
-            'homeTeam': home_cn,
-            'awayTeam': away_cn,
-            'homeScore': _safe_int(home.get('score')),
-            'awayScore': _safe_int(away.get('score')),
-            'status': status,
-            'startTime': game.get('gameEt', ''),
-            'period': game.get('period', 0),
-            'gameClock': game.get('gameClock', ''),
-        })
+    # 方式2: 使用ScoreboardV3（兼容性更好，支持代理）
+    try:
+        today_str = datetime.now().strftime('%m/%d/%Y')
+        sb = ScoreboardV3(game_date=today_str, timeout=15)
+        data = sb.get_dict()
+        time.sleep(0.5)
+        for game in data.get('scoreboard', {}).get('games', []):
+            home = game.get('homeTeam', {})
+            away = game.get('awayTeam', {})
+            home_cn = TEAM_ABBR_MAP.get(home.get('teamTricode', ''), home.get('teamName', ''))
+            away_cn = TEAM_ABBR_MAP.get(away.get('teamTricode', ''), away.get('teamName', ''))
+            game_status = game.get('gameStatus', 0)
+            if game_status == 1:
+                status = 'SCHEDULED'
+            elif game_status == 2:
+                status = 'LIVE'
+            else:
+                status = 'FINISHED'
+            result.append({
+                'gameId': game.get('gameId', ''),
+                'homeTeam': home_cn,
+                'awayTeam': away_cn,
+                'homeScore': _safe_int(home.get('score')),
+                'awayScore': _safe_int(away.get('score')),
+                'status': status,
+                'startTime': game.get('gameEt', ''),
+                'period': game.get('period', 0),
+                'gameClock': game.get('gameClock', ''),
+            })
+    except Exception as e:
+        print(f"ScoreboardV3也失败: {e}", file=sys.stderr)
 
     print(f"获取到 {len(result)} 场今日比赛", file=sys.stderr)
     return result
@@ -1085,6 +1210,368 @@ def fetch_recent_games():
 
     print(f"获取到 {len(games)} 场比赛记录", file=sys.stderr)
     return games
+
+
+def fetch_playoff_bracket(season=None):
+    """从NBA API和ESPN API获取季后赛对阵图（真实数据）"""
+    _init_team_map()
+
+    if season is None:
+        current_year = datetime.now().year
+        season = f"{current_year-1}-{str(current_year)[-2:]}"
+
+    print(f"正在获取 {season} 赛季季后赛数据...", file=sys.stderr)
+
+    # 第一步：从 NBA API 获取季后赛系列赛结构（包含轮次信息）
+    series_data = fetch_playoff_series(season)
+    print(f"从NBA API获取到 {len(series_data)} 组系列赛结构", file=sys.stderr)
+
+    # 第二步：从 ESPN API 获取比赛比分
+    start_year = int(season.split('-')[0])
+    playoff_start = f"{start_year+1}0415"
+    playoff_end = f"{start_year+1}0630"
+    games_data = fetch_espn_playoff_games(playoff_start, playoff_end)
+    print(f"从ESPN API获取到 {len(games_data)} 场比赛", file=sys.stderr)
+
+    # 第三步：结合系列赛结构和比赛数据构建对阵图
+    matchups = build_bracket(series_data, games_data)
+
+    print(f"最终构建 {len(matchups)} 组系列赛", file=sys.stderr)
+    return {'matchups': matchups, 'games': games_data}
+
+
+def build_bracket_from_games(games_data):
+    """仅从ESPN比赛数据构建季后赛对阵图"""
+    # 按球队组合分组比赛
+    series_map = {}
+    for game in games_data:
+        teams = tuple(sorted([game['homeTeam'], game['awayTeam']]))
+        if teams not in series_map:
+            series_map[teams] = {
+                'team1Name': teams[0],
+                'team2Name': teams[1],
+                'team1Wins': 0,
+                'team2Wins': 0,
+                'games': [],
+                'status': 'SCHEDULED',
+                'conference': 'Unknown',
+                'round': 1,
+            }
+
+        matchup = series_map[teams]
+        matchup['games'].append(game)
+
+        # 使用结构化的胜负数据
+        home_wins = game.get('homeSeriesWins', 0)
+        away_wins = game.get('awaySeriesWins', 0)
+
+        # 更新胜负数（取最大值，因为每场比赛都会报告当前系列赛比分）
+        if home_wins > 0 or away_wins > 0:
+            if teams[0] == game['homeTeam']:
+                matchup['team1Wins'] = max(matchup['team1Wins'], home_wins)
+                matchup['team2Wins'] = max(matchup['team2Wins'], away_wins)
+            else:
+                matchup['team1Wins'] = max(matchup['team1Wins'], away_wins)
+                matchup['team2Wins'] = max(matchup['team2Wins'], home_wins)
+
+        # 判断状态
+        if game.get('seriesCompleted'):
+            matchup['status'] = 'COMPLETED'
+            matchup['winner'] = matchup['team1Name'] if matchup['team1Wins'] > matchup['team2Wins'] else matchup['team2Name']
+        elif matchup['team1Wins'] >= 4 or matchup['team2Wins'] >= 4:
+            matchup['status'] = 'COMPLETED'
+            matchup['winner'] = matchup['team1Name'] if matchup['team1Wins'] > matchup['team2Wins'] else matchup['team2Name']
+        elif game['status'] == 'LIVE':
+            matchup['status'] = 'IN_PROGRESS'
+        elif matchup['games']:
+            matchup['status'] = 'IN_PROGRESS'
+
+    # 判断联盟
+    eastern_teams = {'活塞', '老鹰', '凯尔特人', '76人', '魔术', '猛龙', '骑士', '尼克斯',
+                     '热火', '黄蜂', '奇才', '步行者', '篮网', '公牛', '雄鹿'}
+
+    for key, matchup in series_map.items():
+        team1 = matchup['team1Name']
+        matchup['conference'] = 'East' if team1 in eastern_teams else 'West'
+
+    # 根据总胜场数排序和判断轮次
+    sorted_matchups = sorted(series_map.values(), key=lambda x: x['team1Wins'] + x['team2Wins'])
+
+    # 分配轮次（根据胜场数范围）
+    for matchup in sorted_matchups:
+        total_wins = matchup['team1Wins'] + matchup['team2Wins']
+        if total_wins <= 4:
+            matchup['round'] = 1
+        elif total_wins <= 8:
+            matchup['round'] = 2
+        elif total_wins <= 12:
+            matchup['round'] = 3
+        else:
+            matchup['round'] = 4
+
+    return sorted_matchups
+
+
+def fetch_playoff_series(season):
+    """从NBA API获取季后赛对阵结构"""
+    try:
+        from nba_api.stats.endpoints import CommonPlayoffSeries
+        # 明确指定不使用代理
+        series = CommonPlayoffSeries(season=season, timeout=60, proxy='')
+        data = series.get_dict()
+        time.sleep(1.0)
+
+        result = []
+        seen_series = set()
+        for rs in data.get('resultSets', []):
+            if rs.get('name') != 'PlayoffSeries':
+                continue
+            headers = rs.get('headers', [])
+            for row in rs.get('rowSet', []):
+                d = dict(zip(headers, row))
+                series_id = d.get('SERIES_ID', '')
+
+                # 只处理每个系列赛一次（每场比赛都有一行）
+                if series_id in seen_series:
+                    continue
+                seen_series.add(series_id)
+
+                # 解析轮次: 0042500RN, R=轮次 (1=首轮, 2=半决赛, 3=分区决赛, 4=总决赛)
+                round_num = 1
+                if len(series_id) >= 8:
+                    round_char = series_id[7]
+                    round_num = int(round_char) if round_char.isdigit() else 1
+
+                home_id = _safe_int(d.get('HOME_TEAM_ID'))
+                away_id = _safe_int(d.get('VISITOR_TEAM_ID'))
+                home_cn = TEAM_ID_TO_CN.get(home_id, str(home_id))
+                away_cn = TEAM_ID_TO_CN.get(away_id, str(away_id))
+
+                result.append({
+                    'seriesId': series_id,
+                    'homeTeamId': home_id,
+                    'awayTeamId': away_id,
+                    'homeTeam': home_cn,
+                    'awayTeam': away_cn,
+                    'round': round_num,
+                })
+        return result
+    except Exception as e:
+        print(f"获取季后赛对阵失败: {e}", file=sys.stderr)
+        return []
+
+
+def fetch_espn_playoff_games(start_date, end_date):
+    """从ESPN API获取季后赛比赛（分段请求避免超时）"""
+    all_games = []
+
+    # 将日期范围分成更小的段（每30天一段）
+    from datetime import datetime, timedelta
+    start = datetime.strptime(start_date, '%Y%m%d')
+    end = datetime.strptime(end_date, '%Y%m%d')
+
+    current = start
+    while current < end:
+        chunk_end = min(current + timedelta(days=30), end)
+        chunk_start_str = current.strftime('%Y%m%d')
+        chunk_end_str = chunk_end.strftime('%Y%m%d')
+
+        url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?seasontype=3&dates={chunk_start_str}-{chunk_end_str}&limit=100"
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'})
+            no_proxy_opener = urllib.request.build_opener()
+            response = no_proxy_opener.open(req, timeout=30)
+            data = json.loads(response.read().decode('utf-8'))
+
+            events = data.get('events', [])
+            for event in events:
+                comp = event.get('competitions', [{}])[0]
+                competitors = comp.get('competitors', [])
+                if len(competitors) < 2:
+                    continue
+
+                home = next((c for c in competitors if c.get('homeAway') == 'home'), competitors[0])
+                away = next((c for c in competitors if c.get('homeAway') == 'away'), competitors[1])
+
+                home_team = home.get('team', {})
+                away_team = away.get('team', {})
+
+                status_type = comp.get('status', {}).get('type', {}).get('name', '')
+                status = 'FINISHED' if status_type == 'STATUS_FINAL' else 'LIVE' if status_type == 'STATUS_IN_PROGRESS' else 'SCHEDULED'
+
+                # 系列赛信息
+                series = comp.get('series', {})
+                series_summary = series.get('summary', '')
+                series_completed = series.get('completed', False)
+
+                # 从series.competitors获取胜负数
+                series_competitors = series.get('competitors', [])
+                home_series_wins = 0
+                away_series_wins = 0
+                for sc in series_competitors:
+                    sc_id = sc.get('id', '')
+                    sc_wins = sc.get('wins', 0)
+                    if sc_id == home_team.get('id', ''):
+                        home_series_wins = sc_wins
+                    elif sc_id == away_team.get('id', ''):
+                        away_series_wins = sc_wins
+
+                all_games.append({
+                    'homeTeam': TEAM_NAME_MAP.get(home_team.get('displayName', ''), home_team.get('displayName', '')),
+                    'homeTeamEn': home_team.get('displayName', ''),
+                    'homeTeamId': home_team.get('id', ''),
+                    'awayTeam': TEAM_NAME_MAP.get(away_team.get('displayName', ''), away_team.get('displayName', '')),
+                    'awayTeamEn': away_team.get('displayName', ''),
+                    'awayTeamId': away_team.get('id', ''),
+                    'homeScore': _safe_int(home.get('score', 0)),
+                    'awayScore': _safe_int(away.get('score', 0)),
+                    'date': event.get('date', '')[:10],
+                    'status': status,
+                    'gameId': event.get('id', ''),
+                    'seriesSummary': series_summary,
+                    'seriesCompleted': series_completed,
+                    'homeSeriesWins': home_series_wins,
+                    'awaySeriesWins': away_series_wins,
+                })
+
+            time.sleep(0.5)  # 避免请求过快
+        except Exception as e:
+            print(f"获取{chunk_start_str}-{chunk_end_str}数据失败: {e}", file=sys.stderr)
+
+        current = chunk_end
+
+    print(f"获取到 {len(all_games)} 场季后赛比赛", file=sys.stderr)
+    return all_games
+
+
+def build_bracket(series_data, games_data):
+    """根据NBA API对阵结构和ESPN比分构建对阵图"""
+    # 按球队组合分组比赛，并提取系列赛信息
+    games_by_teams = {}
+    series_info_by_teams = {}  # 存储系列赛的最新状态
+    for game in games_data:
+        teams = tuple(sorted([game['homeTeam'], game['awayTeam']]))
+        if teams not in games_by_teams:
+            games_by_teams[teams] = []
+            series_info_by_teams[teams] = {
+                'homeSeriesWins': 0,
+                'awaySeriesWins': 0,
+                'seriesCompleted': False,
+                'seriesSummary': ''
+            }
+        games_by_teams[teams].append(game)
+
+        # 更新系列赛信息（使用最新的数据）
+        if game.get('homeSeriesWins', 0) > 0 or game.get('awaySeriesWins', 0) > 0:
+            series_info_by_teams[teams]['homeSeriesWins'] = game['homeSeriesWins']
+            series_info_by_teams[teams]['awaySeriesWins'] = game['awaySeriesWins']
+        if game.get('seriesCompleted'):
+            series_info_by_teams[teams]['seriesCompleted'] = True
+        if game.get('seriesSummary'):
+            series_info_by_teams[teams]['seriesSummary'] = game['seriesSummary']
+
+    # 东部球队ID列表
+    eastern_ids = {1610612738, 1610612752, 1610612749, 1610612739, 1610612754, 1610612755,
+                   1610612748, 1610612753, 1610612741, 1610612751, 1610612737, 1610612761,
+                   1610612765, 1610612766, 1610612764}
+
+    # 按 seriesId 构建系列赛
+    series_map = {}
+    for s in series_data:
+        sid = s['seriesId']
+        if sid in series_map:
+            continue
+
+        conference = 'East' if s['homeTeamId'] in eastern_ids else 'West'
+        # 总决赛
+        if s['round'] == 4:
+            conference = 'Finals'
+
+        series_map[sid] = {
+            'seriesId': sid,
+            'team1Name': s['homeTeam'],
+            'team2Name': s['awayTeam'],
+            'team1Id': s['homeTeamId'],
+            'team2Id': s['awayTeamId'],
+            'round': s['round'],
+            'conference': conference,
+            'team1Wins': 0,
+            'team2Wins': 0,
+            'status': 'SCHEDULED',
+            'games': [],
+        }
+
+        # 查找对应的比赛
+        matchup = series_map[sid]
+        teams_tuple = tuple(sorted([s['homeTeam'], s['awayTeam']]))
+
+        # 优先使用ESPN API的系列赛数据（更准确）
+        if teams_tuple in series_info_by_teams:
+            info = series_info_by_teams[teams_tuple]
+            # 确定哪个是team1（主场球队）
+            if s['homeTeam'] == teams_tuple[0]:
+                matchup['team1Wins'] = info['homeSeriesWins']
+                matchup['team2Wins'] = info['awaySeriesWins']
+            else:
+                matchup['team1Wins'] = info['awaySeriesWins']
+                matchup['team2Wins'] = info['homeSeriesWins']
+
+            if info['seriesCompleted']:
+                matchup['status'] = 'COMPLETED'
+                matchup['winner'] = matchup['team1Name'] if matchup['team1Wins'] > matchup['team2Wins'] else matchup['team2Name']
+            elif matchup['team1Wins'] >= 4:
+                matchup['status'] = 'COMPLETED'
+                matchup['winner'] = matchup['team1Name']
+            elif matchup['team2Wins'] >= 4:
+                matchup['status'] = 'COMPLETED'
+                matchup['winner'] = matchup['team2Name']
+            elif info['homeSeriesWins'] > 0 or info['awaySeriesWins'] > 0:
+                matchup['status'] = 'IN_PROGRESS'
+
+        # 添加比赛记录
+        if teams_tuple in games_by_teams:
+            matchup['games'] = games_by_teams[teams_tuple]
+
+            # 如果没有系列赛数据，从比赛结果计算
+            if matchup['team1Wins'] == 0 and matchup['team2Wins'] == 0:
+                for game in games_by_teams[teams_tuple]:
+                    if game['status'] == 'FINISHED':
+                        if game['homeScore'] > game['awayScore']:
+                            if game['homeTeam'] == matchup['team1Name']:
+                                matchup['team1Wins'] += 1
+                            else:
+                                matchup['team2Wins'] += 1
+                        else:
+                            if game['awayTeam'] == matchup['team1Name']:
+                                matchup['team1Wins'] += 1
+                            else:
+                                matchup['team2Wins'] += 1
+
+                # 更新状态
+                if matchup['team1Wins'] >= 4:
+                    matchup['status'] = 'COMPLETED'
+                    matchup['winner'] = matchup['team1Name']
+                elif matchup['team2Wins'] >= 4:
+                    matchup['status'] = 'COMPLETED'
+                    matchup['winner'] = matchup['team2Name']
+                elif matchup['games']:
+                    matchup['status'] = 'IN_PROGRESS'
+
+    matchups = []
+    for sid, m in series_map.items():
+        matchup = {
+            'team1Name': m['team1Name'],
+            'team2Name': m['team2Name'],
+            'team1Wins': m['team1Wins'],
+            'team2Wins': m['team2Wins'],
+            'round': m['round'],
+            'conference': m['conference'],
+            'status': m['status'],
+            'winner': m.get('winner', ''),
+        }
+        matchups.append(matchup)
+
+    return matchups
 
 
 def fetch_boxscore(game_id):
@@ -1459,15 +1946,24 @@ def fetch_nba_news(limit=20):
             category = 'trade'
         elif any(word in original_lower for word in ['injury', 'hurt', 'out', 'doubtful']):
             category = 'injury'
-        elif any(word in original_lower for word in ['score', 'win', 'loss', 'beat', 'game', 'finals', 'recap']):
-            category = 'game'
         elif any(word in original_lower for word in ['draft', 'pick', 'rookie']):
             category = 'draft'
+        elif any(word in original_lower for word in ['score', 'win', 'loss', 'beat', 'game', 'finals', 'recap']):
+            # 只有当有实际比赛数据时才分类为game
+            # 检查是否有nba_game_id或者标题中包含具体比分
+            import re
+            has_score = bool(re.search(r'\d+\s*[-:]\s*\d+', headline))
+            if nba_game_id or has_score:
+                category = 'game'
+            else:
+                category = 'general'
 
         parsed = {
             'headline': headline,
+            'headlineEn': headline,  # 保存英文原版
             'description': description,
             'content': content,
+            'contentEn': content,  # 保存英文原版
             'imageUrl': image_url,
             'sourceUrl': source_url,
             'published': published,
@@ -1534,6 +2030,249 @@ def fetch_nba_news(limit=20):
     return parsed_articles
 
 
+def fetch_draft_history(year=None):
+    """从nba_api获取选秀历史数据（最近5年）"""
+    if not HAS_DRAFT_API:
+        print("DraftHistory API不可用，请安装nba_api", file=sys.stderr)
+        return []
+
+    # 如果指定了年份，只获取该年份；否则获取最近5年
+    if year is not None:
+        years_to_fetch = [year]
+    else:
+        current_year = datetime.now().year
+        years_to_fetch = [current_year - i for i in range(5)]  # 最近5年
+
+    all_result = []
+    for yr in years_to_fetch:
+        print(f"正在获取{yr}年选秀历史数据...", file=sys.stderr)
+
+        try:
+            # 使用正确的参数名 season_year_nullable
+            draft = DraftHistory(season_year_nullable=yr, timeout=60)
+            data = draft.get_dict()
+            time.sleep(1.5)  # 避免请求过快
+        except Exception as e:
+            print(f"获取{yr}年选秀历史失败: {e}", file=sys.stderr)
+            continue
+
+        # 解析数据
+        for rs in data.get('resultSets', []):
+            headers = rs.get('headers', [])
+            for row in rs.get('rowSet', []):
+                d = dict(zip(headers, row))
+
+                player_name = d.get('PLAYER_NAME', '')
+                team_abbr = d.get('TEAM_ABBREVIATION', '')
+                team_name = d.get('TEAM_NAME', '')
+
+                # 翻译球员名
+                cn_player = PLAYER_CN_MAP.get(player_name, player_name)
+                # 翻译球队名
+                cn_team = TEAM_ABBR_MAP.get(team_abbr, TEAM_NAME_MAP.get(
+                    f"{d.get('TEAM_CITY', '')} {team_name}".strip(), team_name))
+
+                round_num = _safe_int(d.get('ROUND_NUMBER'))
+                round_pick = _safe_int(d.get('ROUND_PICK'))
+                overall_pick = _safe_int(d.get('OVERALL_PICK'))
+
+                # 确定轮次（Round 3+ 通常算作第二轮）
+                if round_num > 2:
+                    effective_round = 2
+                else:
+                    effective_round = round_num if round_num > 0 else 1
+
+                all_result.append({
+                    'year': _safe_int(d.get('SEASON', yr)),
+                    'round': effective_round,
+                    'pickNumber': overall_pick if overall_pick > 0 else round_pick,
+                    'teamName': cn_team,
+                    'teamNameEn': f"{d.get('TEAM_CITY', '')} {team_name}".strip(),
+                    'playerName': cn_player,
+                    'playerNameEn': player_name,
+                    'playerPosition': '',
+                    'fromTeamName': '',
+                    'notes': f"选秀顺位第{overall_pick}位",
+                })
+
+    print(f"共获取到 {len(all_result)} 条选秀记录", file=sys.stderr)
+    return all_result
+
+
+def fetch_transactions():
+    """从ESPN获取NBA交易/球员变动数据（支持分页）"""
+    import re
+    print("正在从ESPN获取NBA交易数据...", file=sys.stderr)
+
+    all_transactions = []
+    page = 1
+    max_pages = 5  # 最多获取5页（125条记录）
+
+    while page <= max_pages:
+        url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/transactions?page={page}"
+
+        try:
+            req = urllib.request.Request(url, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json',
+            })
+
+            no_proxy_opener = urllib.request.build_opener()
+            response = no_proxy_opener.open(req, timeout=15)
+            data = json.loads(response.read().decode('utf-8'))
+        except Exception as e:
+            print(f"获取ESPN交易数据失败 (page {page}): {e}", file=sys.stderr)
+            break
+
+        transactions = data.get('transactions', [])
+        if not transactions:
+            break
+
+        all_transactions.extend(transactions)
+
+        # 检查是否有更多页
+        page_count = data.get('pageCount', 1)
+        if page >= page_count:
+            break
+        page += 1
+        time.sleep(0.5)  # 避免请求过快
+
+    if not all_transactions:
+        print("未获取到交易数据", file=sys.stderr)
+        return []
+
+    print(f"获取到 {len(all_transactions)} 条交易原始记录", file=sys.stderr)
+
+    result = []
+    for txn in all_transactions:
+        date_str = txn.get('date', '')
+        description = txn.get('description', '')
+        team_info = txn.get('team', {})
+
+        # 解析日期
+        trade_date = ''
+        if date_str:
+            try:
+                trade_date = date_str.replace('Z', '').split('T')[0]
+            except Exception:
+                trade_date = date_str
+
+        # 获取发起交易的球队
+        team_name = team_info.get('displayName', '')
+        cn_team1 = TEAM_NAME_MAP.get(team_name, team_name) if team_name else ''
+
+        # 确定交易类型
+        desc_lower = description.lower()
+        trade_type = 'TRADE'
+        if 'waive' in desc_lower or 'release' in desc_lower:
+            trade_type = 'WAIVE'
+        elif 'sign' in desc_lower:
+            trade_type = 'SIGN'
+        elif 'recall' in desc_lower:
+            trade_type = 'RECALL'
+        elif 'hire' in desc_lower or 'appoint' in desc_lower:
+            trade_type = 'HIRE'
+
+        # 只保留真正的交易（球队间的球员交换），跳过签约、裁员、任命等
+        if trade_type != 'TRADE':
+            continue
+
+        # 从description中提取涉及的球队和球员
+        cn_teams = []
+        players_involved = []
+
+        # 提取所有提到的球队
+        for en_name, cn_name in TEAM_NAME_MAP.items():
+            if en_name in description:
+                if cn_name not in cn_teams:
+                    cn_teams.append(cn_name)
+
+        # 如果只找到一个球队，添加发起球队
+        if cn_team1 and cn_team1 not in cn_teams:
+            cn_teams.insert(0, cn_team1)
+
+        # 确保至少有一个球队
+        if not cn_teams:
+            cn_teams.append(cn_team1 if cn_team1 else '其他球队')
+
+        # 提取球员名字（支持两部分、三部分名字，带撇号和连字符）
+        # 提取球员名字
+        player_patterns = [
+            r'(?:Acquired|Signed|Waived|Claimed|Traded)\s+(?:G|F|C|PG|SG|SF|PF)\s+([A-Za-z\'\-]+(?:\s+[A-Za-z\'\-]+)+)',
+            r'(?:Acquired|Signed|Waived|Claimed|Traded)\s+([A-Za-z\'\-]+(?:\s+[A-Za-z\'\-]+)+)',
+            r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+(?:from|to|with)',
+        ]
+        for pattern in player_patterns:
+            matches = re.findall(pattern, description)
+            for match in matches:
+                # 排除常见的非球员名词汇
+                if match.lower() in ('the', 'a', 'an', 'for', 'from', 'and', 'with', 'to', 'in', 'of', 'exchange', 'consideration'):
+                    continue
+                # 使用翻译函数（先查映射，再调用MIMO API）
+                cn_player, _ = translate_player_name(match)
+                if cn_player not in players_involved:
+                    players_involved.append(cn_player)
+
+        # 提取选秀权信息
+        draft_picks = []
+        # 匹配选秀权模式：如 "2026 second-round pick", "future first-round pick"
+        pick_patterns = [
+            (r'(\d{4})\s+(first|second|third|1st|2nd|3rd)\s*-\s*round\s+picks?', lambda m: f'{m.group(1)}年{"第一轮" if "first" in m.group(2).lower() or "1st" in m.group(2).lower() else "第二轮" if "second" in m.group(2).lower() or "2nd" in m.group(2).lower() else "第三轮"}选秀权'),
+            (r'(first|second|third|1st|2nd|3rd)\s*-\s*round\s+picks?', lambda m: f'{"第一轮" if "first" in m.group(1).lower() or "1st" in m.group(1).lower() else "第二轮" if "second" in m.group(1).lower() or "2nd" in m.group(1).lower() else "第三轮"}选秀权'),
+            (r'future\s+(first|second|third|1st|2nd|3rd)\s*-\s*round\s+picks?', lambda m: f'未来{"第一轮" if "first" in m.group(1).lower() or "1st" in m.group(1).lower() else "第二轮" if "second" in m.group(1).lower() or "2nd" in m.group(1).lower() else "第三轮"}选秀权'),
+            (r'(\d{4})\s+(first|second|third)\s+round\s+picks?', lambda m: f'{m.group(1)}年{"第一轮" if "first" in m.group(2).lower() else "第二轮" if "second" in m.group(2).lower() else "第三轮"}选秀权'),
+        ]
+        for pattern, formatter in pick_patterns:
+            matches = re.finditer(pattern, description, re.IGNORECASE)
+            for match in matches:
+                pick_str = formatter(match)
+                if pick_str and pick_str not in draft_picks:
+                    draft_picks.append(pick_str)
+
+        # 使用本地映射翻译描述（确保快速响应）
+        cn_description = description
+        # 先翻译球队名
+        for en_name, cn_name in TEAM_NAME_MAP.items():
+            cn_description = cn_description.replace(en_name, cn_name)
+        # 合并静态映射和动态映射
+        all_player_map = {**PLAYER_CN_MAP, **_dynamic_cn_map}
+        # 再翻译球员名（按名字长度降序排序，避免短名字误匹配长名字）
+        sorted_players = sorted(all_player_map.items(), key=lambda x: len(x[0]), reverse=True)
+        for en_name, cn_name in sorted_players:
+            cn_description = cn_description.replace(en_name, cn_name)
+
+        # 格式化交易信息
+        players_str = '、'.join(players_involved) if players_involved else ''
+        draft_picks_str = '、'.join(draft_picks) if draft_picks else ''
+
+        # 交易：显示所有涉及的球队（可能多于2支）
+        teams_display = cn_teams if cn_teams else ['未知球队']
+        if len(teams_display) == 1:
+            details = f"{teams_display[0]}交易" + (f"，涉及{players_str}" if players_str else '')
+        elif len(teams_display) == 2:
+            details = f"{teams_display[0]}与{teams_display[1]}交易" + (f"，涉及{players_str}" if players_str else '')
+        else:
+            # 多方交易
+            teams_part = '、'.join(teams_display)
+            details = f"多方交易（{teams_part}）" + (f"，涉及{players_str}" if players_str else '')
+
+        # 如果MIMO翻译更详细，使用MIMO翻译
+        if cn_description != description and len(cn_description) > len(details):
+            details = cn_description
+
+        result.append({
+            'date': trade_date,
+            'teams': teams_display,
+            'playersInvolved': players_str,
+            'draftPicksInvolved': draft_picks_str,
+            'details': details,
+            'type': trade_type,
+        })
+
+    print(f"解析到 {len(result)} 条交易记录", file=sys.stderr)
+    return result
+
+
 def main():
     """主函数"""
     if not HAS_NBA_API:
@@ -1556,6 +2295,16 @@ def main():
 
     if action in ('all', 'games'):
         result['games'] = fetch_recent_games()
+
+    if action in ('all', 'trades'):
+        result['trades'] = fetch_transactions()
+
+    if action in ('all', 'draft'):
+        result['draftPicks'] = fetch_draft_history()
+
+    if action in ('all', 'playoff'):
+        season = sys.argv[2] if len(sys.argv) > 2 else None
+        result['playoff'] = fetch_playoff_bracket(season)
 
     if action == 'today':
         result['todayGames'] = fetch_today_games()
@@ -1580,8 +2329,30 @@ def main():
         season = sys.argv[3] if len(sys.argv) > 3 else None
         result['gameLog'] = fetch_player_gamelog(int(sys.argv[2]), season)
 
-    # 输出JSON到文件（避免Windows编码问题）
-    output_file = os.path.join(os.path.dirname(__file__), 'output.json')
+    if action == 'draft' and len(sys.argv) > 2:
+        year = int(sys.argv[2])
+        result['draftPicks'] = fetch_draft_history(year)
+
+    if action == 'historical_players' and len(sys.argv) > 2:
+        season = sys.argv[2]
+        result['players'] = fetch_historical_players(season)
+
+    if action == 'historical_teams' and len(sys.argv) > 2:
+        season = sys.argv[2]
+        result['teams'] = fetch_historical_teams(season)
+
+    if action == 'games_by_date' and len(sys.argv) > 2:
+        date_str = sys.argv[2]
+        result['games'] = fetch_games_by_date(date_str)
+
+    if action == 'shot_chart' and len(sys.argv) > 2:
+        player_id = int(sys.argv[2])
+        season = sys.argv[3] if len(sys.argv) > 3 else _get_current_season()
+        result['shots'] = fetch_shot_chart(player_id, season)
+
+    # 输出JSON到文件（支持自定义输出文件名，避免竞争条件）
+    output_filename = os.environ.get('OUTPUT_FILE', 'output.json')
+    output_file = os.path.join(os.path.dirname(__file__), output_filename)
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
     # 输出到stdout（使用utf-8编码避免Windows GBK错误）
@@ -1590,6 +2361,260 @@ def main():
     except UnicodeEncodeError:
         # Windows GBK编码兼容：使用ensure_ascii=True
         print(json.dumps(result, ensure_ascii=True, indent=2))
+
+
+def fetch_historical_players(season):
+    """获取指定赛季的球员常规赛数据"""
+    _init_team_map()
+    print(f"正在获取 {season} 赛季球员常规赛数据...", file=sys.stderr)
+
+    try:
+        from nba_api.stats.endpoints import LeagueDashPlayerStats
+
+        stats = LeagueDashPlayerStats(
+            season=season,
+            per_mode_detailed='PerGame',
+            measure_type_detailed_defense='Base',
+            season_type_all_star='Regular Season',
+            timeout=90
+        )
+        data = stats.get_dict()
+        time.sleep(1.0)
+
+        result = []
+        for row in data['resultSets'][0]['rowSet']:
+            headers = data['resultSets'][0]['headers']
+            d = dict(zip(headers, row))
+
+            player_id = d.get('PLAYER_ID', 0)
+            player_name = d.get('PLAYER_NAME', '')
+
+            # 翻译球员名
+            cn_name = PLAYER_CN_MAP.get(player_name, player_name)
+
+            # 获取球队名
+            team_id = d.get('TEAM_ID', 0)
+            team_name = TEAM_ID_TO_CN.get(team_id, d.get('TEAM_ABBREVIATION', ''))
+
+            result.append({
+                'nbaPlayerId': player_id,
+                'name': cn_name,
+                'nameEn': player_name,
+                'teamName': team_name,
+                'teamNameEn': d.get('TEAM_ABBREVIATION', ''),
+                'position': POSITION_MAP.get(d.get('POSITION', ''), ''),
+                'jersey': str(PLAYER_JERSEY_MAP.get(player_name, '')),
+                'gp': d.get('GP', 0),
+                'gs': d.get('GS', 0),
+                'mpg': round(d.get('MIN', 0), 1),
+                'ppg': round(d.get('PTS', 0), 1),
+                'rpg': round(d.get('REB', 0), 1),
+                'apg': round(d.get('AST', 0), 1),
+                'spg': round(d.get('STL', 0), 1),
+                'bpg': round(d.get('BLK', 0), 1),
+                'fgPct': round(d.get('FG_PCT', 0), 3),
+                'threePct': round(d.get('FG3_PCT', 0), 3),
+                'ftPct': round(d.get('FT_PCT', 0), 3),
+                'topg': round(d.get('TOV', 0), 1),
+            })
+
+        print(f"获取到 {len(result)} 名球员的 {season} 赛季常规赛数据", file=sys.stderr)
+        return result
+
+    except Exception as e:
+        print(f"获取 {season} 赛季球员数据失败: {e}", file=sys.stderr)
+        return []
+
+
+def fetch_historical_teams(season):
+    """获取指定赛季的球队常规赛数据"""
+    _init_team_map()
+    print(f"正在获取 {season} 赛季球队常规赛数据...", file=sys.stderr)
+
+    try:
+        from nba_api.stats.endpoints import LeagueStandingsV3
+
+        standings = LeagueStandingsV3(
+            season=season,
+            season_type='Regular Season',
+            timeout=90
+        )
+        data = standings.get_dict()
+        time.sleep(1.0)
+
+        result = []
+        for team in data['resultSets'][0]['rowSet']:
+            headers = data['resultSets'][0]['headers']
+            d = dict(zip(headers, team))
+
+            team_id = d.get('TeamID', 0)
+            team_name = TEAM_ID_TO_CN.get(team_id, d.get('TeamCity', ''))
+
+            result.append({
+                'teamId': team_id,
+                'teamName': team_name,
+                'teamNameEn': d.get('TeamCity', '') + ' ' + d.get('TeamName', ''),
+                'conference': d.get('Conference', ''),
+                'division': d.get('Division', ''),
+                'wins': d.get('WINS', 0),
+                'losses': d.get('LOSSES', 0),
+                'winPct': round(d.get('WinPCT', 0), 3),
+                'conferenceRank': d.get('ConferenceRank', 0),
+                'divisionRank': d.get('DivisionRank', 0),
+                'leagueRank': d.get('LeagueRank', 0),
+                'ppg': round(d.get('PTS', 0), 1),
+                'oppg': round(d.get('OPP_PTS', 0), 1),
+                'rpg': round(d.get('REB', 0), 1),
+                'apg': round(d.get('AST', 0), 1),
+            })
+
+        print(f"获取到 {len(result)} 支球队的 {season} 赛季常规赛数据", file=sys.stderr)
+        return result
+
+    except Exception as e:
+        print(f"获取 {season} 赛季球队数据失败: {e}", file=sys.stderr)
+        return []
+
+
+def fetch_shot_chart(player_id, season=None):
+    """获取球员投篮数据"""
+    _init_team_map()
+    if season is None:
+        season = _get_current_season()
+
+    print(f"正在获取球员 {player_id} 的投篮数据 (赛季: {season})...", file=sys.stderr)
+
+    try:
+        from nba_api.stats.endpoints import ShotChartDetail
+
+        shots = ShotChartDetail(
+            player_id=player_id,
+            team_id=0,
+            season_nullable=season,
+            context_measure_simple='FGA',
+            timeout=60
+        )
+        data = shots.get_dict()
+        time.sleep(1.0)
+
+        result = []
+        for row in data.get('resultSets', []):
+            if row.get('name') == 'Shot_Chart_Detail':
+                headers = row.get('headers', [])
+                for shot_row in row.get('rowSet', []):
+                    d = dict(zip(headers, shot_row))
+
+                    # 转换坐标（NBA API的坐标系统）
+                    loc_x = d.get('LOC_X', 0)
+                    loc_y = d.get('LOC_Y', 0)
+
+                    # 转换为SVG坐标系 (x: 0-50, y: 0-47)
+                    # NBA API: x = -250 to 250, y = -50 to 470
+                    svg_x = (loc_x + 250) / 10  # 转换为 0-50
+                    svg_y = (loc_y + 50) / 11    # 转换为 0-47
+
+                    # 判断区域
+                    zone = determine_zone(svg_x, svg_y)
+
+                    # 判断命中
+                    made = d.get('SHOT_MADE_FLAG', 0) == 1
+
+                    result.append({
+                        'x': round(svg_x, 2),
+                        'y': round(svg_y, 2),
+                        'made': made,
+                        'zone': zone,
+                        'shotType': d.get('SHOT_TYPE', ''),
+                        'gameId': d.get('GAME_ID', ''),
+                        'gameDate': d.get('GAME_DATE', ''),
+                        'period': d.get('PERIOD', 0),
+                    })
+
+        print(f"获取到 {len(result)} 次投篮记录", file=sys.stderr)
+        return result
+
+    except Exception as e:
+        print(f"获取球员 {player_id} 投篮数据失败: {e}", file=sys.stderr)
+        return []
+
+
+def determine_zone(x, y):
+    """根据坐标判断投篮区域"""
+    cx = 25  # 中心x
+    basket_y = 5.25  # 篮筐y
+
+    # 计算到篮筐的距离
+    dist = ((x - cx) ** 2 + (y - basket_y) ** 2) ** 0.5
+
+    # 篮下区域 (距离篮筐很近)
+    if dist < 4:
+        return 'restricted'
+
+    # 油漆区
+    if 17 <= x <= 33 and y <= 19:
+        return 'paint'
+
+    # 底角三分
+    if (x < 5 or x > 45) and y < 14:
+        return 'corner_three'
+
+    # 三分线外
+    if dist > 22:
+        return 'three_point'
+
+    # 中距离
+    return 'mid_range'
+
+
+def fetch_games_by_date(date_str):
+    """获取指定日期的比赛数据"""
+    _init_team_map()
+    print(f"正在获取 {date_str} 的比赛数据...", file=sys.stderr)
+
+    try:
+        from datetime import datetime
+        from nba_api.stats.endpoints import ScoreboardV3
+
+        # 解析日期
+        date = datetime.strptime(date_str, '%Y%m%d')
+
+        # 使用ScoreboardV3获取指定日期的比赛
+        scoreboard = ScoreboardV3(game_date=date.strftime('%Y-%m-%d'), timeout=30)
+        data = scoreboard.get_dict()
+        time.sleep(0.5)
+
+        result = []
+        for game in data.get('scoreboard', {}).get('games', []):
+            home = game.get('homeTeam', {})
+            away = game.get('awayTeam', {})
+
+            home_id = _safe_int(home.get('teamId'))
+            away_id = _safe_int(away.get('teamId'))
+            home_score = _safe_int(home.get('score'))
+            away_score = _safe_int(away.get('score'))
+
+            home_cn = TEAM_ID_TO_CN.get(home_id, home.get('teamTricode', ''))
+            away_cn = TEAM_ID_TO_CN.get(away_id, away.get('teamTricode', ''))
+
+            game_status = game.get('gameStatus', 0)
+            status = 'FINISHED' if game_status == 3 else 'LIVE' if game_status == 2 else 'SCHEDULED'
+
+            result.append({
+                'gameId': game.get('gameId', ''),
+                'homeTeam': home_cn,
+                'awayTeam': away_cn,
+                'homeScore': home_score,
+                'awayScore': away_score,
+                'status': status,
+                'date': date.strftime('%Y-%m-%d'),
+            })
+
+        print(f"获取到 {len(result)} 场比赛", file=sys.stderr)
+        return result
+
+    except Exception as e:
+        print(f"获取 {date_str} 比赛数据失败: {e}", file=sys.stderr)
+        return []
 
 
 if __name__ == '__main__':

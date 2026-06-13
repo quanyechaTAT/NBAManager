@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 public record CommentRequest(
-        @NotNull Long postId,
+        Long postId,
+        String gameId,
         @NotBlank @Size(max = 2000) String content,
         Long parentId) {}

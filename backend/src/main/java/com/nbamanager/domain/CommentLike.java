@@ -30,4 +30,6 @@ public class CommentLike {
     private Long userId;
 
     private LocalDateTime createTime;
+
+
 }

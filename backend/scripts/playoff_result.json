@@ -1,0 +1,152 @@
+[
+  {
+    "team1Name": "活塞",
+    "team2Name": "魔术",
+    "team1Wins": 4,
+    "team2Wins": 3,
+    "round": 1,
+    "conference": "East",
+    "status": "COMPLETED",
+    "winner": "活塞"
+  },
+  {
+    "team1Name": "凯尔特人",
+    "team2Name": "76人",
+    "team1Wins": 4,
+    "team2Wins": 3,
+    "round": 1,
+    "conference": "East",
+    "status": "COMPLETED",
+    "winner": "凯尔特人"
+  },
+  {
+    "team1Name": "尼克斯",
+    "team2Name": "老鹰",
+    "team1Wins": 2,
+    "team2Wins": 4,
+    "round": 1,
+    "conference": "East",
+    "status": "COMPLETED",
+    "winner": "老鹰"
+  },
+  {
+    "team1Name": "骑士",
+    "team2Name": "猛龙",
+    "team1Wins": 3,
+    "team2Wins": 4,
+    "round": 1,
+    "conference": "East",
+    "status": "COMPLETED",
+    "winner": "猛龙"
+  },
+  {
+    "team1Name": "雷霆",
+    "team2Name": "太阳",
+    "team1Wins": 4,
+    "team2Wins": 0,
+    "round": 1,
+    "conference": "West",
+    "status": "COMPLETED",
+    "winner": "雷霆"
+  },
+  {
+    "team1Name": "马刺",
+    "team2Name": "开拓者",
+    "team1Wins": 1,
+    "team2Wins": 4,
+    "round": 1,
+    "conference": "West",
+    "status": "COMPLETED",
+    "winner": "开拓者"
+  },
+  {
+    "team1Name": "掘金",
+    "team2Name": "森林狼",
+    "team1Wins": 4,
+    "team2Wins": 2,
+    "round": 1,
+    "conference": "West",
+    "status": "COMPLETED",
+    "winner": "掘金"
+  },
+  {
+    "team1Name": "湖人",
+    "team2Name": "火箭",
+    "team1Wins": 2,
+    "team2Wins": 4,
+    "round": 1,
+    "conference": "West",
+    "status": "COMPLETED",
+    "winner": "火箭"
+  },
+  {
+    "team1Name": "活塞",
+    "team2Name": "骑士",
+    "team1Wins": 3,
+    "team2Wins": 4,
+    "round": 2,
+    "conference": "East",
+    "status": "COMPLETED",
+    "winner": "骑士"
+  },
+  {
+    "team1Name": "尼克斯",
+    "team2Name": "76人",
+    "team1Wins": 4,
+    "team2Wins": 0,
+    "round": 2,
+    "conference": "East",
+    "status": "COMPLETED",
+    "winner": "尼克斯"
+  },
+  {
+    "team1Name": "雷霆",
+    "team2Name": "湖人",
+    "team1Wins": 4,
+    "team2Wins": 0,
+    "round": 2,
+    "conference": "West",
+    "status": "COMPLETED",
+    "winner": "雷霆"
+  },
+  {
+    "team1Name": "马刺",
+    "team2Name": "森林狼",
+    "team1Wins": 4,
+    "team2Wins": 2,
+    "round": 2,
+    "conference": "West",
+    "status": "COMPLETED",
+    "winner": "马刺"
+  },
+  {
+    "team1Name": "尼克斯",
+    "team2Name": "骑士",
+    "team1Wins": 0,
+    "team2Wins": 4,
+    "round": 3,
+    "conference": "East",
+    "status": "COMPLETED",
+    "winner": "骑士"
+  },
+  {
+    "team1Name": "雷霆",
+    "team2Name": "马刺",
+    "team1Wins": 3,
+    "team2Wins": 4,
+    "round": 3,
+    "conference": "West",
+    "status": "COMPLETED",
+    "winner": "马刺"
+  },
+  {
+    "team1Name": "马刺",
+    "team2Name": "尼克斯",
+    "team1Wins": 3,
+    "team2Wins": 1,
+    "round": 4,
+    "conference": "Finals",
+    "status": "IN_PROGRESS",
+    "winner": ""
+  }
+]

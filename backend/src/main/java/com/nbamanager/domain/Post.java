@@ -55,6 +55,9 @@ public class Post {
     @Column(nullable = false)
     private Boolean isTop = false;
 
+    @Column(nullable = false)
+    private Boolean hasPoll = false;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;
@@ -69,4 +72,6 @@ public class Post {
     protected void onUpdate() {
         updateTime = LocalDateTime.now();
     }
+
+
 }

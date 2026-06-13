@@ -18,6 +18,7 @@
         <p>维护球员所属球队、位置与详细场均数据。</p>
       </div>
       <div class="head-actions">
+        <SyncButton v-if="auth.isAdmin" module="players" label="同步球员" @sync-success="load" />
         <el-button type="success" plain @click="exportExcel">📥 导出 Excel</el-button>
         <el-button v-if="auth.isAdmin" type="primary" @click="openCreate">新建球员</el-button>
       </div>
@@ -81,7 +82,7 @@
       />
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑球员' : '新建球员'" width="680px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑球员' : '新建球员'" width="680px" destroy-on-close class="dialog-light">
       <el-form :model="form" label-width="100px">
         <el-divider content-position="left">基本信息</el-divider>
         <div class="form-row">
@@ -212,6 +213,7 @@ import { useAuthStore } from '@/stores/auth'
 import { createPlayer, deletePlayer, fetchPlayers, updatePlayer } from '@/api/player'
 import { fetchTeams } from '@/api/team'
 import type { Player, Team } from '@/api/types'
+import SyncButton from '@/components/common/SyncButton.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -662,33 +664,33 @@ onMounted(async () => {
   min-width: 0;
 }
 :deep(.el-input__wrapper) {
-  background: #1C2333 !important;
-  border: 1px solid var(--border-light) !important;
+  background: var(--bg-input) !important;
+  border: 1.5px solid var(--border-light) !important;
   box-shadow: none !important;
-  border-radius: var(--radius-sm) !important;
+  border-radius: 8px !important;
 }
 :deep(.el-input__wrapper:hover) {
   border-color: var(--border-medium) !important;
 }
 :deep(.el-input__wrapper.is-focus) {
-  border-color: var(--purple) !important;
-  box-shadow: 0 0 0 2px var(--purple-glow) !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-glow) !important;
 }
 :deep(.el-input__inner) { color: var(--text-primary) !important; font-family: var(--font-body); }
 :deep(.el-input__inner::placeholder) { color: var(--text-dim) !important; }
 
 :deep(.el-select .el-select__wrapper) {
-  background: #1C2333 !important;
-  border: 1px solid var(--border-light) !important;
+  background: var(--bg-input) !important;
+  border: 1.5px solid var(--border-light) !important;
   box-shadow: none !important;
-  border-radius: var(--radius-sm) !important;
+  border-radius: 8px !important;
 }
 :deep(.el-select .el-select__wrapper:hover) {
   border-color: var(--border-medium) !important;
 }
 :deep(.el-select .el-select__wrapper.is-focused) {
-  border-color: var(--purple) !important;
-  box-shadow: 0 0 0 2px var(--purple-glow) !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-glow) !important;
 }
 :deep(.el-select .el-select__placeholder),
 :deep(.el-select .el-select__selected-item span) {

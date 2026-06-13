@@ -13,12 +13,18 @@
     <div class="page-inner stagger-in">
       <!-- 欢迎横幅 -->
       <div class="welcome-banner">
-        <h3>👋 欢迎回来，{{ auth.username }}！</h3>
-        <p>NBA 数据管理仪表盘 — 查看球队战绩、球员数据和赛事资讯的最新概览。</p>
+        <div class="welcome-banner-header">
+          <div>
+            <h3>👋 欢迎回来，{{ auth.username }}！</h3>
+            <p>NBA 数据管理仪表盘 — 查看球队战绩、球员数据和赛事资讯的最新概览。</p>
+          </div>
+          <ThemeToggle />
+        </div>
         <div class="welcome-tags">
           <span class="welcome-tag">📊 实时数据</span>
           <span class="welcome-tag">🏆 赛季追踪</span>
           <span class="welcome-tag">⚡ 快速分析</span>
+          <span v-if="lastUpdated" class="welcome-tag welcome-tag--muted">🕐 更新于 {{ lastUpdated }}</span>
         </div>
       </div>
 
@@ -111,12 +117,15 @@ import { fetchDashboardStats } from '@/api/dashboard'
 import type { DashboardStats } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 
 use([CanvasRenderer, BarChart, LineChart, GridComponent, TooltipComponent, LegendComponent])
 
 const auth = useAuthStore()
 const stats = ref<DashboardStats | null>(null)
 const loaded = ref(false)
+const lastUpdated = ref<string>('')
+const isLight = computed(() => document.documentElement.getAttribute('data-theme') === 'light')
 
 const teamCount = computed(() => stats.value?.teamCount ?? 0)
 const playerCount = computed(() => stats.value?.playerCount ?? 0)
@@ -128,9 +137,9 @@ const winsOption = computed(() => {
   return {
     tooltip: {
       trigger: 'axis',
-      backgroundColor: '#1C2333',
-      borderColor: '#30363D',
-      textStyle: { color: '#E6EDF3', fontSize: 12 },
+      backgroundColor: isLight.value ? '#FFFFFF' : '#1C2333',
+      borderColor: isLight.value ? '#E8E5E0' : '#30363D',
+      textStyle: { color: isLight.value ? '#1A1A1A' : '#E6EDF3', fontSize: 12 },
     },
     grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
     xAxis: {
@@ -145,7 +154,7 @@ const winsOption = computed(() => {
       name: '场次',
       nameTextStyle: { color: '#6E7681', fontSize: 11 },
       axisLabel: { color: '#6E7681', fontSize: 11 },
-      splitLine: { lineStyle: { color: '#1C2333', type: 'dashed' } },
+      splitLine: { lineStyle: { color: isLight.value ? '#E8E5E0' : '#1C2333', type: 'dashed' } },
       axisLine: { show: false },
       axisTick: { show: false },
     },
@@ -204,7 +213,7 @@ const ppgOption = computed(() => {
       name: 'PPG',
       nameTextStyle: { color: '#6E7681', fontSize: 11 },
       axisLabel: { color: '#6E7681', fontSize: 11 },
-      splitLine: { lineStyle: { color: '#1C2333', type: 'dashed' } },
+      splitLine: { lineStyle: { color: isLight.value ? '#E8E5E0' : '#1C2333', type: 'dashed' } },
       axisLine: { show: false },
       axisTick: { show: false },
     },
@@ -245,6 +254,7 @@ onMounted(async () => {
   try {
     const { data } = await fetchDashboardStats()
     stats.value = data
+    lastUpdated.value = new Date().toLocaleString('zh-CN')
   } catch {
     ElMessage.error('加载看板数据失败')
   } finally {
@@ -266,6 +276,23 @@ onMounted(async () => {
 @keyframes pageFadeIn { to { opacity: 1; transform: translateY(0); } }
 
 /* 欢迎横幅 */
+.welcome-banner-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.welcome-banner-header h3 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.welcome-banner-header p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
 .welcome-banner .welcome-tags {
   display: flex;
   gap: 8px;
@@ -285,6 +312,11 @@ onMounted(async () => {
   font-family: var(--font-heading);
   letter-spacing: 0.5px;
   transition: all var(--duration-fast) var(--ease-smooth);
+}
+.welcome-tag--muted {
+  background: var(--bg-secondary);
+  border-color: var(--border-light);
+  color: var(--text-dim);
 }
 .welcome-tag:hover {
   background: rgba(0, 255, 136, 0.15);

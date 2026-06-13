@@ -37,6 +37,14 @@ public class Player {
     @Column(nullable = false, length = 80)
     private String name;
 
+    /** 英文原名 */
+    @Column(name = "name_en", length = 80)
+    private String nameEn;
+
+    /** 翻译状态：MAPPED/API_TRANSLATED/UNTRANSLATED */
+    @Column(name = "translation_status", length = 20)
+    private String translationStatus = "UNTRANSLATED";
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "team_id", nullable = false)
     private Team team;
@@ -97,4 +105,24 @@ public class Player {
 
     @Column(nullable = false, length = 64)
     private String country;
+
+    @Column(nullable = false)
+    private Double per = 0.0;
+
+    @Column(nullable = false)
+    private Double winShares = 0.0;
+
+    @Column(nullable = false)
+    private Double vorp = 0.0;
+
+    @Column(nullable = false)
+    private Double bpm = 0.0;
+
+    @Column(nullable = false)
+    private Double offensiveRating = 0.0;
+
+    @Column(nullable = false)
+    private Double defensiveRating = 0.0;
+
+
 }

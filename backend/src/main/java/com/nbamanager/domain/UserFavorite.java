@@ -39,4 +39,6 @@ public class UserFavorite {
     protected void onCreate() {
         createTime = LocalDateTime.now();
     }
+
+
 }

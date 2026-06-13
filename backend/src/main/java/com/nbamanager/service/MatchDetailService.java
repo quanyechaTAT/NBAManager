@@ -31,21 +31,27 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class MatchDetailService {
 
+
     private final GameBoxScoreRepository gameBoxScoreRepository;
     private final PlayByPlayRepository playByPlayRepository;
+    private final GameIdMappingService gameIdMappingService;
 
     @Cacheable(value = "boxScore", key = "#gameId", unless = "#result.homeTeam.isEmpty()")
     @Transactional
     public BoxScoreDto getBoxScore(String gameId) {
-        List<GameBoxScore> records = gameBoxScoreRepository.findByGameId(gameId);
+        // 转换gameId（ESPN格式 -> NBA格式）
+        String nbaGameId = gameIdMappingService.getNbaGameId(gameId);
+        log.info("获取BoxScore: 原始gameId={}, 转换后gameId={}", gameId, nbaGameId);
+
+        List<GameBoxScore> records = gameBoxScoreRepository.findByGameId(nbaGameId);
 
         if (records.isEmpty()) {
-            fetchFromPython("boxscore", gameId);
-            records = gameBoxScoreRepository.findByGameId(gameId);
+            fetchFromPython("boxscore", nbaGameId);
+            records = gameBoxScoreRepository.findByGameId(nbaGameId);
         }
 
         if (records.isEmpty()) {
-            return new BoxScoreDto(gameId, "", "", List.of(), List.of(), List.of());
+            return new BoxScoreDto(nbaGameId, "", "", List.of(), List.of(), List.of());
         }
 
         // 翻译未翻译的球员名
@@ -211,13 +217,17 @@ public class MatchDetailService {
     @Cacheable(value = "quarterScores", key = "#gameId", unless = "#result.isEmpty()")
     @Transactional
     public List<QuarterScoreDto> getQuarterScores(String gameId) {
+        // 转换gameId（ESPN格式 -> NBA格式）
+        String nbaGameId = gameIdMappingService.getNbaGameId(gameId);
+        log.info("获取逐节比分: 原始gameId={}, 转换后gameId={}", gameId, nbaGameId);
+
         // 先从数据库获取Play-by-Play数据
-        List<PlayByPlay> allEvents = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId);
+        List<PlayByPlay> allEvents = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(nbaGameId);
 
         // 如果数据库没有数据，调用Python脚本获取
         if (allEvents.isEmpty()) {
-            fetchFromPython("playbyplay", gameId);
-            allEvents = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId);
+            fetchFromPython("playbyplay", nbaGameId);
+            allEvents = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(nbaGameId);
         }
 
         // 从Play-by-Play数据计算逐节比分
@@ -232,7 +242,7 @@ public class MatchDetailService {
 
         // 如果Play-by-Play没有数据，尝试从ScoreboardV3获取
         if (result.isEmpty()) {
-            result = fetchQuarterScoresFromScoreboard(gameId);
+            result = fetchQuarterScoresFromScoreboard(nbaGameId);
         }
 
         return result;
@@ -372,10 +382,19 @@ public class MatchDetailService {
             }
 
             JSONObject data = new JSONObject(jsonStr);
-            if ("boxscore".equals(dataType) && data.has("boxscore") && !data.isNull("boxscore")) {
-                JSONObject boxscore = data.getJSONObject("boxscore");
-                if (boxscore.has("players") && !boxscore.isNull("players")) {
-                    saveBoxScore(boxscore.getJSONArray("players"), gameId);
+            if ("boxscore".equals(dataType)) {
+                // 支持两种格式：{boxscore: {players: [...]}} 或 {players: [...]}
+                JSONArray playersArray = null;
+                if (data.has("boxscore") && !data.isNull("boxscore")) {
+                    JSONObject boxscore = data.getJSONObject("boxscore");
+                    if (boxscore.has("players") && !boxscore.isNull("players")) {
+                        playersArray = boxscore.getJSONArray("players");
+                    }
+                } else if (data.has("players") && !data.isNull("players")) {
+                    playersArray = data.getJSONArray("players");
+                }
+                if (playersArray != null) {
+                    saveBoxScore(playersArray, gameId);
                 }
             } else if ("playbyplay".equals(dataType) && data.has("playByPlay") && !data.isNull("playByPlay")) {
                 savePlayByPlay(data.getJSONArray("playByPlay"), gameId);

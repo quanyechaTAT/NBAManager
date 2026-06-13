@@ -116,7 +116,7 @@ public class TeamService {
     }
 
     private TeamDto toDto(Team t) {
-        return new TeamDto(t.getId(), t.getName(), t.getCity(), t.getConference(), t.getWins(), t.getLosses(), t.getLogoUrl());
+        return new TeamDto(t.getId(), t.getName(), t.getNameEn(), t.getAbbreviation(), t.getCity(), t.getConference(), t.getWins(), t.getLosses(), t.getLogoUrl());
     }
 
     private static ApiException notFound(Long id) {

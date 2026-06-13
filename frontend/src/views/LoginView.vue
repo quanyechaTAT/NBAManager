@@ -1,5 +1,10 @@
 <template>
   <div class="wrap">
+    <!-- 主题切换按钮 -->
+    <div class="theme-toggle-wrapper">
+      <ThemeToggle />
+    </div>
+
     <div class="hero">
       <p class="eyebrow">NBA DATA CENTER</p>
       <h1>NBA 数据分析系统</h1>
@@ -48,6 +53,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { loginApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -88,6 +94,13 @@ async function submit() {
 </script>
 
 <style scoped>
+.theme-toggle-wrapper {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  z-index: 10;
+}
+
 .wrap {
   min-height: 100%;
   display: flex;
@@ -215,9 +228,9 @@ h1 {
   font-weight: 500;
 }
 :deep(.el-input__wrapper) {
-  background: #1C2333 !important;
-  border: 1px solid var(--border-light) !important;
-  border-radius: var(--radius-sm) !important;
+  background: var(--bg-input) !important;
+  border: 1.5px solid var(--border-light) !important;
+  border-radius: 8px !important;
   box-shadow: none !important;
   transition: all var(--duration-fast) var(--ease-smooth);
 }
@@ -239,21 +252,19 @@ h1 {
   width: 100%;
   margin-top: 8px;
   height: 44px !important;
-  border-radius: var(--radius-md) !important;
+  border-radius: 8px !important;
   font-size: 15px !important;
   font-weight: 700 !important;
   font-family: var(--font-body);
   letter-spacing: 0.5px;
-  background: linear-gradient(135deg, var(--accent) 0%, #00C868 100%) !important;
+  background: var(--accent) !important;
   border-color: var(--accent) !important;
-  color: #0D1117 !important;
+  color: #FFFFFF !important;
   transition: all var(--duration-fast) var(--ease-smooth) !important;
   box-shadow: 0 2px 12px var(--accent-glow);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 .login-btn:hover {
-  background: linear-gradient(135deg, #33EB91 0%, #00E676 100%) !important;
-  border-color: #33EB91 !important;
+  opacity: 0.9;
   box-shadow: 0 6px 24px var(--accent-glow-strong);
   transform: translateY(-2px);
 }
@@ -280,7 +291,7 @@ h1 {
   font-weight: 500;
 }
 .link-row a:hover {
-  color: #33EB91;
+  opacity: 0.8;
 }
 @media (max-width: 960px) {
   .wrap {
@@ -301,5 +312,50 @@ h1 {
   h1 {
     font-size: 32px;
   }
+}
+
+/* ===== 亮色主题登录页覆盖 ===== */
+[data-theme="light"] .wrap::before {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(245, 243, 240, 0.92) 100%) !important;
+}
+[data-theme="light"] .hero { color: #1A1A1A; }
+[data-theme="light"] h1 { color: #1A1A1A; }
+[data-theme="light"] .eyebrow { color: #E85D26; }
+[data-theme="light"] .desc { color: #4A4540; }
+[data-theme="light"] .features span {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: #E8E5E0;
+  color: #4A4540;
+}
+[data-theme="light"] .features span:hover {
+  border-color: #E85D26;
+  color: #E85D26;
+  background: rgba(232, 93, 38, 0.05);
+}
+[data-theme="light"] .card {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-color: #E8E5E0 !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.04) !important;
+}
+[data-theme="light"] .card::before {
+  background: linear-gradient(90deg, #E85D26, #F47B51, #E85D26);
+}
+[data-theme="light"] .card::after {
+  background: linear-gradient(180deg, rgba(232, 93, 38, 0.03) 0%, transparent 100%);
+}
+[data-theme="light"] .card-head h2 { color: #1A1A1A; }
+[data-theme="light"] .card-head p { color: #78716C; }
+[data-theme="light"] .link-row span { color: #78716C; }
+[data-theme="light"] .link-row a { color: #E85D26; }
+[data-theme="light"] .login-btn {
+  background: #E85D26 !important;
+  border-color: #E85D26 !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 2px 12px rgba(232, 93, 38, 0.25);
+}
+[data-theme="light"] .login-btn:hover {
+  background: #D14E1F !important;
+  border-color: #D14E1F !important;
+  box-shadow: 0 6px 24px rgba(232, 93, 38, 0.3);
 }
 </style>

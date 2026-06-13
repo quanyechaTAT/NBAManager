@@ -55,6 +55,12 @@ const router = createRouter({
           meta: { title: '球员详情', requiresAuth: true },
         },
         {
+          path: 'players/compare',
+          name: 'player-compare',
+          component: () => import('@/views/PlayerCompareView.vue'),
+          meta: { title: '球员对比' },
+        },
+        {
           path: 'news',
           name: 'news',
           component: () => import('@/views/NewsView.vue'),
@@ -79,10 +85,34 @@ const router = createRouter({
           meta: { title: '帖子详情' },
         },
         {
+          path: 'drafts',
+          name: 'drafts',
+          component: () => import('@/views/DraftView.vue'),
+          meta: { title: '选秀数据库' },
+        },
+        {
+          path: 'playoff',
+          name: 'playoff',
+          component: () => import('@/views/PlayoffView.vue'),
+          meta: { title: '季后赛' },
+        },
+        {
+          path: 'history',
+          name: 'history',
+          component: () => import('@/views/HistoricalDataView.vue'),
+          meta: { title: '历史数据' },
+        },
+        {
           path: 'profile',
           name: 'profile',
           component: () => import('@/views/ProfileView.vue'),
           meta: { title: '个人主页' },
+        },
+        {
+          path: 'admin/sync',
+          name: 'admin-sync',
+          component: () => import('@/views/admin/DataSyncView.vue'),
+          meta: { title: '数据管理', requiresAdmin: true },
         },
       ],
     },
@@ -103,6 +133,12 @@ router.beforeEach((to) => {
   if (to.meta.requiresAuth && !getToken()) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
+
+  // 管理员路由守卫
+  if (to.meta.requiresAdmin && !auth.isAdmin) {
+    return { path: '/dashboard' }
+  }
+
   return true
 })
 

@@ -43,6 +43,7 @@ export interface PostRequest {
 export interface CommentRequest {
   content: string
   parentId?: number
+  gameId?: string
 }
 
 export function fetchPosts(params: { page: number; size: number; category?: string; q?: string }) {
@@ -77,7 +78,11 @@ export function fetchComments(postId: number) {
   return request.get<Comment[]>(`/comments/post/${postId}`)
 }
 
-export function createComment(data: CommentRequest & { postId: number }) {
+export function fetchGameComments(gameId: string) {
+  return request.get<Comment[]>(`/comments/game/${gameId}`)
+}
+
+export function createComment(data: CommentRequest & { postId?: number; gameId?: string }) {
   return request.post<Comment>('/comments', data)
 }
 

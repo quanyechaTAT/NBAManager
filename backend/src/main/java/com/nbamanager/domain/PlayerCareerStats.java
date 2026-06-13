@@ -61,4 +61,6 @@ public class PlayerCareerStats {
     private Double ftPct;
 
     private Double efficiency;
+
+
 }
