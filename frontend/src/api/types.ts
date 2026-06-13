@@ -143,3 +143,58 @@ export interface QuarterScore {
   homeScore: number
   awayScore: number
 }
+
+export interface PlayerComparison {
+  player1: Player
+  player2: Player
+}
+
+export interface ShotData {
+  x: number
+  y: number
+  made: boolean
+  period?: number
+}
+
+export interface Trade {
+  id: number
+  tradeDate: string
+  season: string
+  team1Name: string
+  team2Name: string
+  playersInvolved: string
+  draftPicksInvolved: string
+  details: string
+  detailsCn: string
+  createTime: string
+}
+
+export interface TradeRequest {
+  tradeDate: string
+  season: string
+  team1Name: string
+  team2Name: string
+  playersInvolved: string
+  draftPicksInvolved: string
+  details: string
+}
+
+export interface DraftPick {
+  id: number
+  year: number
+  round: number
+  pickNumber: number
+  teamName: string
+  playerName: string
+  notes: string
+  createTime: string
+}
+
+export interface DraftPickRequest {
+  year: number
+  round: number
+  pickNumber: number
+  teamName: string
+  playerName: string
+  notes: string
+}

@@ -14,5 +14,6 @@ public record PostDto(
         Integer commentCount,
         Integer favoriteCount,
         Boolean isTop,
+        Boolean hasPoll,
         boolean likedByMe,
         LocalDateTime createTime) {}

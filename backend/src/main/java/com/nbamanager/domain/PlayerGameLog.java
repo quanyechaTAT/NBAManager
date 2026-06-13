@@ -74,4 +74,6 @@ public class PlayerGameLog {
 
     @Column(nullable = false, length = 16)
     private String season;
+
+
 }

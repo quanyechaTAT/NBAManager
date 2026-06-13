@@ -1,9 +1,11 @@
 package com.nbamanager.service;
 
+import com.nbamanager.domain.Poll;
 import com.nbamanager.domain.Post;
 import com.nbamanager.domain.PostLike;
 import com.nbamanager.exception.ApiException;
 import com.nbamanager.repository.CommentRepository;
+import com.nbamanager.repository.PollRepository;
 import com.nbamanager.repository.PostLikeRepository;
 import com.nbamanager.repository.PostRepository;
 import com.nbamanager.repository.UserBrowseHistoryRepository;
@@ -36,6 +38,7 @@ public class PostService {
     private final UserFavoriteRepository userFavoriteRepository;
     private final UserBrowseHistoryRepository userBrowseHistoryRepository;
     private final NotificationService notificationService;
+    private final PollRepository pollRepository;
     private final com.nbamanager.repository.UserAccountRepository userAccountRepository;
 
     @Transactional(readOnly = true)
@@ -85,13 +88,33 @@ public class PostService {
     @CacheEvict(value = {"posts", "dashboard"}, allEntries = true)
     @Transactional
     public PostDto create(Long userId, PostRequest req) {
+        return create(userId, req, null);
+    }
+
+    @CacheEvict(value = {"posts", "dashboard"}, allEntries = true)
+    @Transactional
+    public PostDto create(Long userId, PostRequest req, com.nbamanager.web.dto.PollRequest pollReq) {
         Post post = new Post();
         post.setUserId(userId);
         post.setTitle(req.title());
         post.setContent(req.content());
         post.setCategory(req.category());
         post.setTags(req.tags());
-        return toDto(postRepository.save(post), userId);
+        if (pollReq != null) {
+            post.setHasPoll(true);
+        }
+        Post saved = postRepository.save(post);
+        if (pollReq != null) {
+            Poll poll = new Poll();
+            poll.setPostId(saved.getId());
+            poll.setQuestion(pollReq.question());
+            poll.setOption1(pollReq.option1());
+            poll.setOption2(pollReq.option2());
+            poll.setOption3(pollReq.option3());
+            poll.setOption4(pollReq.option4());
+            pollRepository.save(poll);
+        }
+        return toDto(saved, userId);
     }
 
     @CacheEvict(value = {"posts", "dashboard"}, allEntries = true)
@@ -195,6 +218,7 @@ public class PostService {
                 post.getCommentCount(),
                 (int) favoriteCount,
                 post.getIsTop(),
+                post.getHasPoll(),
                 likedByMe,
                 post.getCreateTime());
     }
@@ -217,6 +241,7 @@ public class PostService {
                 post.getCommentCount(),
                 (int) favoriteCount,
                 post.getIsTop(),
+                post.getHasPoll(),
                 likedByMe,
                 post.getCreateTime());
     }

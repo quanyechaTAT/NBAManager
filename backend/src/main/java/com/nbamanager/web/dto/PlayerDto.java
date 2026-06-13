@@ -4,6 +4,8 @@ public record PlayerDto(
         Long id,
         Long nbaPlayerId,
         String name,
+        String nameEn,
+        String translationStatus,
         Long teamId,
         String teamName,
         String position,
@@ -24,4 +26,10 @@ public record PlayerDto(
         String jerseyNumber,
         String height,
         Integer weight,
-        String country) {}
+        String country,
+        Double per,
+        Double winShares,
+        Double vorp,
+        Double bpm,
+        Double offensiveRating,
+        Double defensiveRating) {}

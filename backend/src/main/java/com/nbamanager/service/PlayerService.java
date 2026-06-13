@@ -118,6 +118,8 @@ public class PlayerService {
                 p.getId(),
                 p.getNbaPlayerId(),
                 p.getName(),
+                p.getNameEn(),
+                p.getTranslationStatus(),
                 t.getId(),
                 t.getName(),
                 p.getPosition(),
@@ -138,7 +140,13 @@ public class PlayerService {
                 p.getJerseyNumber(),
                 p.getHeight(),
                 p.getWeight(),
-                p.getCountry());
+                p.getCountry(),
+                p.getPer(),
+                p.getWinShares(),
+                p.getVorp(),
+                p.getBpm(),
+                p.getOffensiveRating(),
+                p.getDefensiveRating());
     }
 
     private static ApiException notFound(Long id) {

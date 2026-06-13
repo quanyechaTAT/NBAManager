@@ -10,6 +10,8 @@ public interface UserFavoriteRepository extends JpaRepository<UserFavorite, Long
 
     List<UserFavorite> findByUserIdAndTargetType(Long userId, String targetType);
 
+    List<UserFavorite> findByTargetTypeAndTargetId(String targetType, Long targetId);
+
     boolean existsByUserIdAndTargetTypeAndTargetId(Long userId, String targetType, Long targetId);
 
     void deleteByUserIdAndTargetTypeAndTargetId(Long userId, String targetType, Long targetId);

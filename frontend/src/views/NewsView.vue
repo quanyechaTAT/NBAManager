@@ -18,7 +18,7 @@
         <span class="date">{{ todayStr }}</span>
       </div>
       <div class="section-header-right">
-        <el-button type="primary" plain size="small" @click="loadToday" :loading="todayLoading">🔄 刷新</el-button>
+        <el-button type="primary" plain size="small" @click="refreshAll" :loading="refreshing">🔄 刷新</el-button>
         <el-button v-if="auth.isAdmin" type="primary" size="small" @click="openCreate">+ 新增资讯</el-button>
       </div>
     </div>
@@ -126,7 +126,7 @@
     </el-card>
 
     <!-- 详情对话框 -->
-    <el-dialog v-model="dialogVisible" :title="current?.title" width="680px">
+    <el-dialog v-model="dialogVisible" :title="current?.title" width="680px" class="dialog-light" destroy-on-close>
       <template v-if="current">
         <div class="detail-meta">
           <el-tag :type="statusType(current.status)">{{ statusLabel(current.status) }}</el-tag>
@@ -145,7 +145,7 @@
           <span class="detail-team">{{ current.homeTeam }}</span><span class="detail-vs-text">VS</span><span class="detail-team">{{ current.awayTeam }}</span>
         </div>
         <el-divider />
-        <div class="detail-content">{{ current.content }}</div>
+        <div class="detail-content news-content" v-html="sanitizeHtml(current.content)"></div>
         <div class="detail-stats">
           <span>👁 浏览量：{{ current.viewCount || 0 }}</span>
           <span>❤️ 收藏量：{{ current.favoriteCount || 0 }}</span>
@@ -154,6 +154,7 @@
           <el-button v-if="auth.token" :type="current.favoritedByMe ? 'danger' : ''" plain size="small" @click="toggleFav(current)">
             {{ current.favoritedByMe ? '★ 已收藏' : '☆ 收藏' }}
           </el-button>
+          <ShareButton :url="newsUrl" :title="current.title" :description="current.summary" />
           <el-button v-if="current.sourceUrl" type="success" plain size="small" @click="openSource(current.sourceUrl)">🔗 查看原文</el-button>
           <el-button v-if="current.nbaGameId" type="primary" size="small" @click="goToMatchDetail(current)">📊 查看比赛详细数据</el-button>
           <el-tooltip v-else content="该新闻未关联NBA比赛ID，无法查看比赛详情" placement="top">
@@ -164,7 +165,7 @@
     </el-dialog>
 
     <!-- 新增/编辑对话框（管理员） -->
-    <el-dialog v-model="formVisible" :title="formTitle" width="680px" destroy-on-close @closed="resetForm">
+    <el-dialog v-model="formVisible" :title="formTitle" width="680px" destroy-on-close @closed="resetForm" class="dialog-light">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
         <el-form-item label="标题" prop="title">
           <el-input v-model="form.title" maxlength="120" show-word-limit />
@@ -246,13 +247,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { fetchNews, fetchNewsDetail, fetchTodayNews, createNews, updateNews, deleteNews, toggleNewsFavorite, type GameNewsPayload } from '@/api/news'
 import { recordBrowse } from '@/api/browseHistory'
 import { useAuthStore } from '@/stores/auth'
+import { sanitizeHtml } from '@/utils/sanitize'
+import ShareButton from '@/components/ShareButton.vue'
 import type { GameNews } from '@/api/types'
+import request from '@/utils/request'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -263,10 +267,13 @@ const size = ref(10)
 const total = ref(0)
 const list = ref<GameNews[]>([])
 const loading = ref(false)
+const newsLoading = ref(false)
+const refreshing = ref(false)
 const todayNews = ref<GameNews[]>([])
 const todayLoading = ref(false)
 const dialogVisible = ref(false)
 const current = ref<GameNews | null>(null)
+const newsUrl = computed(() => `${window.location.origin}/news?newsId=${current.value?.id || ''}`)
 
 // 表单相关
 const formVisible = ref(false)
@@ -343,7 +350,7 @@ function formatTimeRange(start: string, end: string) {
 }
 
 async function load() {
-  loading.value = true
+  newsLoading.value = true
   try {
     const res = await fetchNews({ q: q.value || '', page: page.value - 1, size: size.value })
     list.value = res.data.content
@@ -351,7 +358,7 @@ async function load() {
   } catch {
     ElMessage.error('加载赛事资讯失败')
   } finally {
-    loading.value = false
+    newsLoading.value = false
   }
 }
 
@@ -373,6 +380,34 @@ async function loadToday() {
     // ignore
   } finally {
     todayLoading.value = false
+  }
+}
+
+// 刷新所有数据（从API同步最新数据）
+async function refreshAll() {
+  refreshing.value = true
+  try {
+    // 同时触发新闻和比赛同步
+    await Promise.all([
+      request.post('/admin/sync/news'),
+      request.post('/admin/sync/matches')
+    ])
+    ElMessage.success('数据同步已启动')
+
+    // 等待后端同步完成后重新加载（轮询最多10秒）
+    for (let i = 0; i < 5; i++) {
+      await new Promise(r => setTimeout(r, 2000))
+      await Promise.all([loadToday(), load()])
+      // 如果今日赛事已加载，提前退出
+      if (todayNews.value.length > 0) break
+    }
+    refreshing.value = false
+  } catch (error: any) {
+    console.error('同步失败:', error)
+    const msg = error.response?.data?.message || error.message || '同步失败'
+    ElMessage.error(`同步失败: ${msg}`)
+    await Promise.all([loadToday(), load()])
+    refreshing.value = false
   }
 }
 
@@ -893,8 +928,8 @@ onMounted(async () => {
   border-radius: var(--radius-lg) !important;
 }
 :deep(.el-input__wrapper) {
-  background: #1C2333 !important;
-  border: 1px solid var(--border-light) !important;
+  background: var(--bg-input) !important;
+  border: 1.5px solid var(--border-light) !important;
   box-shadow: none !important;
   border-radius: var(--radius-sm) !important;
 }

@@ -28,6 +28,14 @@ public class Team {
     @Column(nullable = false, length = 80)
     private String name;
 
+    /** 英文名 */
+    @Column(name = "name_en", length = 80)
+    private String nameEn;
+
+    /** 球队缩写，如 LAL */
+    @Column(length = 8)
+    private String abbreviation;
+
     @Column(nullable = false, length = 64)
     private String city;
 
@@ -43,4 +51,5 @@ public class Team {
 
     @Column(length = 500)
     private String logoUrl;
+
 }

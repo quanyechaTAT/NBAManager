@@ -1,5 +1,10 @@
 <template>
   <div class="wrap animated-bg">
+    <!-- 主题切换按钮 -->
+    <div class="theme-toggle-wrapper">
+      <ThemeToggle />
+    </div>
+
     <!-- 浮动光晕粒子 -->
     <div class="bg-particles">
       <div class="particle"></div>
@@ -66,6 +71,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { registerApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -123,6 +129,13 @@ async function submit() {
 </script>
 
 <style scoped>
+.theme-toggle-wrapper {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  z-index: 10;
+}
+
 .wrap {
   min-height: 100%;
   display: flex;
@@ -249,9 +262,9 @@ h1 {
   font-weight: 500;
 }
 :deep(.el-input__wrapper) {
-  background: #1C2333 !important;
-  border: 1px solid var(--border-light) !important;
-  border-radius: var(--radius-sm) !important;
+  background: var(--bg-input) !important;
+  border: 1.5px solid var(--border-light) !important;
+  border-radius: 8px !important;
   box-shadow: none !important;
   transition: all var(--duration-fast) var(--ease-smooth);
 }
@@ -278,9 +291,9 @@ h1 {
   font-weight: 700 !important;
   font-family: var(--font-body);
   letter-spacing: 0.5px;
-  background: linear-gradient(135deg, var(--accent) 0%, #00C868 100%) !important;
+  background: var(--accent) !important;
   border-color: var(--accent) !important;
-  color: #0D1117 !important;
+  color: #FFFFFF !important;
   transition: all var(--duration-fast) var(--ease-smooth) !important;
   box-shadow: 0 2px 12px var(--accent-glow);
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.15);

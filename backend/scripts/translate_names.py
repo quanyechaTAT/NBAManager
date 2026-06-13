@@ -72,8 +72,14 @@ def translate_names(names):
 
 def main():
     if len(sys.argv) > 1:
-        # 从命令行参数读取
-        names = sys.argv[1:]
+        arg = sys.argv[1]
+        # 检查是否是文件路径
+        if os.path.isfile(arg):
+            with open(arg, 'r', encoding='utf-8') as f:
+                names = json.load(f)
+        else:
+            # 作为命令行参数列表
+            names = sys.argv[1:]
     else:
         # 从stdin读取JSON
         raw = sys.stdin.read().strip()
@@ -83,16 +89,13 @@ def main():
             names = []
 
     if not names:
-        print('{}')
+        print('[]')
         return
 
     result = translate_names(names)
-    # 输出到文件避免编码问题
-    output_file = os.path.join(os.path.dirname(__file__), 'names_output.json')
-    with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
-    # 也输出到stdout
-    print(json.dumps(result, ensure_ascii=False))
+    # 输出JSON数组（保持输入顺序）
+    output = [result.get(name, '') for name in names]
+    print(json.dumps(output, ensure_ascii=False))
 
 
 if __name__ == '__main__':

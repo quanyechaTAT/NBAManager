@@ -11,9 +11,9 @@
     <div class="page-inner stagger-in">
       <!-- 返回按钮 -->
       <div class="back-row">
-        <el-button class="back-btn" link @click="router.push('/teams')">
+        <el-button class="back-btn" link @click="goBack">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="m15 18-6-6 6-6"/></svg>
-          返回球队战绩
+          返回
         </el-button>
       </div>
 
@@ -56,7 +56,10 @@
       <div class="section-header">
         <div class="section-header-left">
           <h2>⚔️ 对战记录</h2>
-          <span class="section-sub">共 {{ matchRecords.length }} 场比赛</span>
+          <span class="section-sub">共 {{ allMatchRecords.length }} 场比赛</span>
+        </div>
+        <div class="section-header-right">
+          <SyncButton v-if="auth.isAdmin" module="matches" label="同步比赛" compact @sync-success="loadMatchRecords" />
         </div>
       </div>
 
@@ -143,14 +146,26 @@ import { fetchMatchRecords } from '@/api/matchRecord'
 import type { Team, MatchRecord } from '@/api/types'
 import { toggleFavorite, fetchFollowedTeamIds } from '@/api/favorite'
 import { useAuthStore } from '@/stores/auth'
+import SyncButton from '@/components/common/SyncButton.vue'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
+// 返回上一页
+function goBack() {
+  const returnTo = route.query.returnTo as string
+  if (returnTo) {
+    router.push(returnTo)
+  } else {
+    router.back()
+  }
+}
+
 const teamName = computed(() => (route.query.name as string) || '')
 const teamInfo = ref<Team | null>(null)
 const teamLoading = ref(false)
+const allMatchRecords = ref<MatchRecord[]>([])
 const matchRecords = ref<MatchRecord[]>([])
 const isFollowed = ref(false)
 const matchLoading = ref(false)
@@ -173,13 +188,11 @@ async function loadMatchRecords() {
   matchLoading.value = true
   try {
     const { data } = await fetchMatchRecords(teamName.value)
-    // 过滤掉无效比赛（0:0比分）并限制为最近10场、1个月内
-    const now = new Date()
-    const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-    matchRecords.value = data
+    // 过滤掉无效比赛（0:0比分），显示所有有效记录
+    allMatchRecords.value = data
       .filter((m: MatchRecord) => !(m.homeScore === 0 && m.awayScore === 0 && m.status === 'FINISHED'))
-      .filter((m: MatchRecord) => new Date(m.matchDate) >= oneMonthAgo)
-      .slice(0, 10)
+    // 显示最近10场用于表格
+    matchRecords.value = allMatchRecords.value.slice(0, 10)
   } catch {
     ElMessage.error('加载对战记录失败')
   } finally {
@@ -198,6 +211,7 @@ function winPct(w: number, l: number) {
 }
 
 function getResultType(row: MatchRecord) {
+  if (row.homeScore === row.awayScore) return 'info'
   if (row.homeTeam === teamName.value) {
     return row.homeScore > row.awayScore ? 'success' : 'danger'
   }
@@ -205,6 +219,7 @@ function getResultType(row: MatchRecord) {
 }
 
 function getResultLabel(row: MatchRecord) {
+  if (row.homeScore === row.awayScore) return '平'
   const isHome = row.homeTeam === teamName.value
   const won = isHome ? row.homeScore > row.awayScore : row.awayScore > row.homeScore
   return won ? '胜' : '负'
@@ -229,10 +244,10 @@ function goToMatchDetail(row: MatchRecord) {
   })
 }
 
-/* 交锋统计 */
+/* 交锋统计 — 使用全部历史记录 */
 const headToHeadStats = computed(() => {
   const map = new Map<string, { wins: number; losses: number; totalScore: number; games: number }>()
-  for (const m of matchRecords.value) {
+  for (const m of allMatchRecords.value) {
     const isHome = m.homeTeam === teamName.value
     const opponent = isHome ? m.awayTeam : m.homeTeam
     const myScore = isHome ? m.homeScore : m.awayScore
@@ -458,6 +473,11 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.section-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .section-header h2 {
   margin: 0;

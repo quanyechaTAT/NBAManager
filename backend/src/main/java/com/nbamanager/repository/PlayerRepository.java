@@ -9,6 +9,10 @@ public interface PlayerRepository extends JpaRepository<Player, Long> {
 
     Player findByNbaPlayerId(Long nbaPlayerId);
 
+    Player findByNameAndTeamId(String name, Long teamId);
+
+    Player findByName(String name);
+
     Page<Player> findByNameContainingIgnoreCase(String name, Pageable pageable);
 
     Page<Player> findByTeamId(Long teamId, Pageable pageable);

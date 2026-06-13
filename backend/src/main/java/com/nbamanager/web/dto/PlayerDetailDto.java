@@ -24,4 +24,10 @@ public record PlayerDetailDto(
         Double freeThrowPct,
         Double efficiency,
         Double trueShootingPct,
-        Double usagePct) {}
+        Double usagePct,
+        Double per,
+        Double winShares,
+        Double vorp,
+        Double bpm,
+        Double offensiveRating,
+        Double defensiveRating) {}

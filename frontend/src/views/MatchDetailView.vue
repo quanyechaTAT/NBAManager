@@ -13,7 +13,7 @@
       <div class="back-row">
         <el-button class="back-btn" link @click="goBack">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="m15 18-6-6 6-6"/></svg>
-          {{ returnTo ? '返回球队详情' : '返回' }}
+          返回
         </el-button>
       </div>
 
@@ -55,38 +55,41 @@
         </div>
       </div>
 
-      <!-- 逐节比分 -->
-      <div class="section-header">
-        <div class="section-header-left">
-          <h2>📊 逐节比分</h2>
-        </div>
-      </div>
-      <el-card shadow="never" class="quarter-card">
-        <el-table :data="quarterScores" stripe v-loading="quarterLoading" empty-text="暂无逐节比分数据">
-          <el-table-column label="节次" width="120" align="center">
-            <template #default="{ row }">
-              <span class="period-label">{{ periodLabel(row.period) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column :label="boxScore?.homeTeam || '主队'" align="center">
-            <template #default="{ row }">
-              <span class="quarter-score" :class="{ 'quarter-score--win': row.homeScore > row.awayScore }">{{ row.homeScore }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column :label="boxScore?.awayTeam || '客队'" align="center">
-            <template #default="{ row }">
-              <span class="quarter-score" :class="{ 'quarter-score--win': row.awayScore > row.homeScore }">{{ row.awayScore }}</span>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-card>
+      <!-- Tabs: 统计 + 评论区 -->
+      <el-tabs v-model="activeTab" class="detail-tabs">
+        <el-tab-pane label="统计" name="stats">
+          <!-- 逐节比分 -->
+          <div class="section-header">
+            <div class="section-header-left">
+              <h2>📊 逐节比分</h2>
+            </div>
+          </div>
+          <el-card shadow="never" class="quarter-card">
+            <el-table :data="quarterScores" stripe v-loading="quarterLoading" empty-text="暂无逐节比分数据">
+              <el-table-column label="节次" width="120" align="center">
+                <template #default="{ row }">
+                  <span class="period-label">{{ periodLabel(row.period) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column :label="boxScore?.homeTeam || '主队'" align="center">
+                <template #default="{ row }">
+                  <span class="quarter-score" :class="{ 'quarter-score--win': row.homeScore > row.awayScore }">{{ row.homeScore }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column :label="boxScore?.awayTeam || '客队'" align="center">
+                <template #default="{ row }">
+                  <span class="quarter-score" :class="{ 'quarter-score--win': row.awayScore > row.homeScore }">{{ row.awayScore }}</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-card>
 
-      <!-- 球员统计 -->
-      <div class="section-header">
-        <div class="section-header-left">
-          <h3 class="team-table-title">{{ boxScore?.homeTeam || '主队' }}</h3>
-        </div>
-      </div>
+          <!-- 球员统计 -->
+          <div class="section-header">
+            <div class="section-header-left">
+              <h3 class="team-table-title">{{ boxScore?.homeTeam || '主队' }}</h3>
+            </div>
+          </div>
           <el-card shadow="never" class="boxscore-card">
             <el-table :data="sortedHomePlayers" stripe v-loading="boxscoreLoading" empty-text="暂无数据" size="small">
               <el-table-column label="球员" min-width="140" fixed="left">
@@ -159,6 +162,77 @@
               </el-table-column>
             </el-table>
           </el-card>
+        </el-tab-pane>
+
+        <el-tab-pane label="评论区" name="comments">
+          <!-- 评论区 -->
+          <div class="comment-section">
+            <!-- 发表评论 -->
+            <div class="comment-input">
+              <el-input v-model="newComment" type="textarea" :rows="3" placeholder="写下你的评论..." maxlength="2000" show-word-limit />
+              <div class="comment-input-actions">
+                <div ref="emojiBtnRef" class="emoji-trigger" @click="showEmojiPicker = !showEmojiPicker">
+                  <span class="emoji-icon">😀</span>
+                </div>
+                <EmojiPicker :visible="showEmojiPicker" :anchor="emojiBtnRef" @select="insertEmoji" @close="showEmojiPicker = false" />
+                <el-button type="primary" size="small" :loading="commentSubmitting" @click="submitComment" :disabled="!newComment.trim()">发表评论</el-button>
+              </div>
+            </div>
+
+            <!-- 评论列表 -->
+            <div v-for="comment in comments" :key="comment.id" class="comment-item">
+              <div class="comment-main">
+                <div class="comment-body">
+                  <div class="comment-meta">
+                    <span class="comment-user">{{ comment.username }}</span>
+                    <span class="comment-time">{{ formatCommentTime(comment.createTime) }}</span>
+                  </div>
+                  <p class="comment-text">{{ comment.content }}</p>
+                  <div class="comment-actions">
+                    <el-button :type="comment.likedByMe ? 'primary' : ''" link size="small" @click="toggleCommentLikeItem(comment)">
+                      {{ comment.likedByMe ? '👍 已赞' : '👍' }} {{ comment.likeCount || '' }}
+                    </el-button>
+                    <el-button link size="small" @click="replyTo(comment.id)">回复</el-button>
+                    <el-button v-if="auth.isAdmin" link size="small" type="danger" @click="deleteCommentItem(comment.id)">删除</el-button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 子评论 -->
+              <div v-if="comment.replies && comment.replies.length > 0" class="comment-replies">
+                <div v-for="reply in comment.replies" :key="reply.id" class="comment-reply">
+                  <div class="comment-meta">
+                    <span class="comment-user">{{ reply.username }}</span>
+                    <span class="comment-time">{{ formatCommentTime(reply.createTime) }}</span>
+                  </div>
+                  <p class="comment-text">{{ reply.content }}</p>
+                  <div class="comment-actions">
+                    <el-button :type="reply.likedByMe ? 'primary' : ''" link size="small" @click="toggleCommentLikeItem(reply)">
+                      {{ reply.likedByMe ? '👍 已赞' : '👍' }} {{ reply.likeCount || '' }}
+                    </el-button>
+                    <el-button v-if="auth.isAdmin" link size="small" type="danger" @click="deleteCommentItem(reply.id)">删除</el-button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 回复输入框 -->
+              <div v-if="replyingTo === comment.id" class="reply-input">
+                <el-input v-model="replyContent" type="textarea" :rows="2" placeholder="回复..." maxlength="1000" size="small" />
+                <div class="reply-actions">
+                  <div ref="replyEmojiBtnRef" class="emoji-trigger" @click="showReplyEmojiPicker = !showReplyEmojiPicker">
+                    <span class="emoji-icon">😀</span>
+                  </div>
+                  <EmojiPicker :visible="showReplyEmojiPicker" :anchor="replyEmojiBtnRef" @select="insertReplyEmoji" @close="showReplyEmojiPicker = false" />
+                  <el-button size="small" @click="replyingTo = null">取消</el-button>
+                  <el-button type="primary" size="small" :loading="commentSubmitting" @click="submitReply(comment.id)">回复</el-button>
+                </div>
+              </div>
+            </div>
+
+            <el-empty v-if="comments.length === 0" description="暂无评论，来说两句吧" :image-size="60" />
+          </div>
+        </el-tab-pane>
+      </el-tabs>
     </div>
   </div>
 </template>
@@ -166,13 +240,18 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { fetchBoxScore, fetchQuarterScores } from '@/api/matchDetail'
+import { fetchGameComments, createComment, deleteComment, toggleCommentLike } from '@/api/community'
+import EmojiPicker from '@/components/EmojiPicker.vue'
 import type { BoxScore, BoxScorePlayer, QuarterScore } from '@/api/types'
+import type { Comment } from '@/api/community'
 import { getTeamLogo } from '@/utils/teamLogos'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 
 const gameId = computed(() => (route.query.gameId as string) || '')
 const status = computed(() => (route.query.status as string) || 'FINISHED')
@@ -197,6 +276,18 @@ function goBack() {
 }
 
 const boxScore = ref<BoxScore | null>(null)
+const activeTab = ref('stats')
+
+// 评论相关
+const comments = ref<Comment[]>([])
+const newComment = ref('')
+const replyContent = ref('')
+const replyingTo = ref<number | null>(null)
+const commentSubmitting = ref(false)
+const showEmojiPicker = ref(false)
+const showReplyEmojiPicker = ref(false)
+const emojiBtnRef = ref<HTMLElement | null>(null)
+const replyEmojiBtnRef = ref<HTMLElement | null>(null)
 
 // 当boxScore加载完成后，如果quarterScores为空，则从boxScore中获取
 watch(boxScore, (newVal) => {
@@ -300,12 +391,87 @@ async function loadQuarterScores() {
   }
 }
 
+// 评论功能
+async function loadComments() {
+  if (!gameId.value) return
+  try {
+    const { data } = await fetchGameComments(gameId.value)
+    comments.value = data
+  } catch { /* ignore */ }
+}
+
+async function submitComment() {
+  if (!auth.token) { ElMessage.warning('请先登录'); return }
+  if (!newComment.value.trim()) return
+  commentSubmitting.value = true
+  try {
+    await createComment({ gameId: gameId.value, content: newComment.value })
+    newComment.value = ''
+    ElMessage.success('评论成功')
+    loadComments()
+  } catch { ElMessage.error('评论失败') }
+  finally { commentSubmitting.value = false }
+}
+
+function replyTo(parentId: number) { replyingTo.value = parentId; replyContent.value = '' }
+
+async function submitReply(parentId: number) {
+  if (!replyContent.value.trim()) return
+  commentSubmitting.value = true
+  try {
+    await createComment({ gameId: gameId.value, content: replyContent.value, parentId })
+    replyContent.value = ''
+    replyingTo.value = null
+    ElMessage.success('回复成功')
+    loadComments()
+  } catch { ElMessage.error('回复失败') }
+  finally { commentSubmitting.value = false }
+}
+
+async function deleteCommentItem(id: number) {
+  try {
+    await ElMessageBox.confirm('确定删除该评论？', '提示', { type: 'warning' })
+    await deleteComment(id)
+    ElMessage.success('已删除')
+    loadComments()
+  } catch { /* cancel */ }
+}
+
+async function toggleCommentLikeItem(comment: Comment) {
+  if (!auth.token) { ElMessage.warning('请先登录'); return }
+  try {
+    await toggleCommentLike(comment.id)
+    loadComments()
+  } catch { /* ignore */ }
+}
+
+function formatCommentTime(t: string) {
+  if (!t) return ''
+  const d = new Date(t)
+  const now = new Date()
+  const diff = now.getTime() - d.getTime()
+  if (diff < 60000) return '刚刚'
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`
+  return d.toLocaleDateString('zh-CN')
+}
+
+function insertEmoji(emoji: string) {
+  newComment.value += emoji
+  showEmojiPicker.value = false
+}
+
+function insertReplyEmoji(emoji: string) {
+  replyContent.value += emoji
+  showReplyEmojiPicker.value = false
+}
 
 onMounted(async () => {
   // 并行加载数据
   await Promise.all([
     loadBoxScore(),
-    loadQuarterScores()
+    loadQuarterScores(),
+    loadComments()
   ])
 })
 </script>
@@ -705,5 +871,98 @@ onMounted(async () => {
 .pbp-score-sep {
   color: var(--text-dim);
   font-weight: 300;
+}
+
+/* 评论区 */
+.comment-section {
+  padding: 8px 0;
+}
+.comment-input {
+  margin-bottom: 20px;
+}
+.comment-input-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  position: relative;
+}
+.emoji-trigger {
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+.emoji-trigger:hover {
+  background: var(--bg-hover);
+  transform: scale(1.1);
+}
+.emoji-icon {
+  font-size: 20px;
+}
+.comment-item {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-light);
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+.comment-item:hover {
+  background: rgba(108, 92, 231, 0.02);
+  border-radius: var(--radius-md);
+  padding-left: 8px;
+}
+.comment-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.comment-user {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--purple);
+  transition: color var(--duration-fast) var(--ease-smooth);
+}
+.comment-item:hover .comment-user {
+  color: var(--purple-light);
+}
+.comment-time {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.comment-text {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.comment-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.comment-replies {
+  margin-left: 32px;
+  padding-left: 16px;
+  border-left: 2px solid var(--purple-dim);
+}
+.comment-reply {
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--border-light);
+}
+.comment-reply:last-child {
+  border-bottom: none;
+}
+.reply-input {
+  margin-top: 10px;
+  margin-left: 32px;
+}
+.reply-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 6px;
+  position: relative;
 }
 </style>

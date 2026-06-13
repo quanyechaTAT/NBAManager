@@ -3,6 +3,7 @@ package com.nbamanager.service;
 import com.nbamanager.domain.MatchRecord;
 import com.nbamanager.domain.Player;
 import com.nbamanager.domain.Team;
+import com.nbamanager.repository.DraftPickRepository;
 import com.nbamanager.repository.MatchRecordRepository;
 import com.nbamanager.repository.PlayerRepository;
 import com.nbamanager.repository.TeamRepository;
@@ -24,6 +25,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 @Service
@@ -31,12 +34,14 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class NbaDataSyncService {
 
+
     private final TeamRepository teamRepository;
     private final PlayerRepository playerRepository;
     private final MatchRecordRepository matchRecordRepository;
+    private final DraftPickRepository draftPickRepository;
 
-    // 同步状态管理
-    private volatile boolean syncing = false;
+    // 同步状态管理 - 使用AtomicBoolean保证原子性
+    private final AtomicBoolean syncing = new AtomicBoolean(false);
     private volatile LocalDateTime lastSyncTime = null;
     private volatile String lastSyncStatus = "未同步";
     private final Map<String, Object> syncResult = new ConcurrentHashMap<>();
@@ -47,14 +52,13 @@ public class NbaDataSyncService {
     @Async("taskExecutor")
     @Transactional
     @CacheEvict(value = {"teams", "players", "rankings", "dashboard", "news", "todayGames",
-            "matchRecords", "matchRecordsByTeam", "headToHead"}, allEntries = true, beforeInvocation = false)
+            "matchRecords", "matchRecordsByTeam", "headToHead"}, allEntries = true, beforeInvocation = true)
     public void syncAll() {
-        if (syncing) {
+        // 使用compareAndSet保证原子性，防止重复执行
+        if (!syncing.compareAndSet(false, true)) {
             log.info("数据同步正在进行中，跳过本次同步");
             return;
         }
-
-        syncing = true;
         lastSyncStatus = "同步中...";
         long startTime = System.currentTimeMillis();
 
@@ -99,7 +103,14 @@ public class NbaDataSyncService {
                 gamesAdded = updateGames(games);
             }
 
-            // 5. 记录同步结果
+            // 5. 更新选秀记录
+            int draftsAdded = 0;
+            if (data.has("draftPicks")) {
+                JSONArray drafts = data.getJSONArray("draftPicks");
+                draftsAdded = updateDrafts(drafts);
+            }
+
+            // 7. 记录同步结果
             long duration = System.currentTimeMillis() - startTime;
             lastSyncTime = LocalDateTime.now();
             lastSyncStatus = "同步成功";
@@ -109,11 +120,12 @@ public class NbaDataSyncService {
             syncResult.put("playersUpdated", playersUpdated);
             syncResult.put("playersAdded", playersAdded);
             syncResult.put("gamesAdded", gamesAdded);
+            syncResult.put("draftsAdded", draftsAdded);
             syncResult.put("duration", duration);
             syncResult.put("timestamp", lastSyncTime.toString());
 
-            log.info("同步完成: 球队(更新{},新增{}), 球员(更新{},新增{}), 比赛(新增{})",
-                    teamsUpdated, teamsAdded, playersUpdated, playersAdded, gamesAdded);
+            log.info("同步完成: 球队(更新{},新增{}), 球员(更新{},新增{}), 比赛(新增{}), 选秀(新增{})",
+                    teamsUpdated, teamsAdded, playersUpdated, playersAdded, gamesAdded, draftsAdded);
             log.info("耗时: {}ms", duration);
             log.info("========== NBA数据同步结束 ==========");
 
@@ -122,7 +134,7 @@ public class NbaDataSyncService {
             lastSyncStatus = "同步失败: " + e.getMessage();
             syncResult.put("error", e.getMessage());
         } finally {
-            syncing = false;
+            syncing.set(false);
         }
     }
 
@@ -137,7 +149,7 @@ public class NbaDataSyncService {
 
             // 构建进程
             ProcessBuilder pb = new ProcessBuilder("python", scriptPath, "all");
-            pb.redirectErrorStream(false);
+            pb.redirectErrorStream(true); // 合并stdout和stderr，避免死锁
             pb.directory(new File(scriptPath).getParentFile());
             // 强制Python使用UTF-8编码输出，防止Windows下GBK乱码
             pb.environment().put("PYTHONIOENCODING", "utf-8");
@@ -164,7 +176,7 @@ public class NbaDataSyncService {
             // 执行脚本
             Process process = pb.start();
 
-            // 读取stdout（避免缓冲区满导致死锁）
+            // 读取合并后的输出（stdout+stderr）
             StringBuilder output = new StringBuilder();
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
@@ -174,24 +186,21 @@ public class NbaDataSyncService {
                 }
             }
 
-            // 读取错误输出（用于日志）
-            StringBuilder errorOutput = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    errorOutput.append(line).append("\n");
-                }
-            }
-
-            // 等待进程完成
-            int exitCode = process.waitFor();
-            if (exitCode != 0) {
-                log.error("Python脚本执行失败, exitCode={}, error={}", exitCode, errorOutput.toString());
+            // 带超时等待进程完成
+            boolean finished = process.waitFor(120, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                log.error("Python脚本执行超时(120s)");
                 return null;
             }
 
-            log.info("Python脚本输出: {}", errorOutput.toString().trim());
+            int exitCode = process.exitValue();
+            if (exitCode != 0) {
+                log.error("Python脚本执行失败, exitCode={}, output={}", exitCode, output.toString().trim());
+                return null;
+            }
+
+            log.info("Python脚本输出: {}", output.toString().trim());
 
             // 从文件读取JSON（避免Windows编码问题）
             File outputFile = new File(new File(scriptPath).getParentFile(), "output.json");
@@ -250,6 +259,8 @@ public class NbaDataSyncService {
         for (int i = 0; i < teams.length(); i++) {
             JSONObject teamData = teams.getJSONObject(i);
             String name = teamData.getString("name");
+            String nameEn = teamData.optString("nameEn", "");
+            String abbreviation = teamData.optString("abbreviation", "");
             String city = teamData.getString("city");
             String conference = teamData.getString("conference");
             int wins = teamData.getInt("wins");
@@ -258,6 +269,8 @@ public class NbaDataSyncService {
             Team existingTeam = teamRepository.findByName(name);
             if (existingTeam != null) {
                 // 更新现有球队
+                existingTeam.setNameEn(nameEn);
+                existingTeam.setAbbreviation(abbreviation);
                 existingTeam.setCity(city);
                 existingTeam.setConference(conference);
                 existingTeam.setWins(wins);
@@ -268,6 +281,8 @@ public class NbaDataSyncService {
                 // 添加新球队
                 Team newTeam = new Team();
                 newTeam.setName(name);
+                newTeam.setNameEn(nameEn);
+                newTeam.setAbbreviation(abbreviation);
                 newTeam.setCity(city);
                 newTeam.setConference(conference);
                 newTeam.setWins(wins);
@@ -353,6 +368,8 @@ public class NbaDataSyncService {
             JSONObject playerData = players.getJSONObject(i);
             long nbaPlayerId = playerData.optLong("nbaPlayerId", 0);
             String name = playerData.getString("name");
+            String nameEn = playerData.optString("nameEn", "");
+            String translationStatus = playerData.optString("translationStatus", "UNTRANSLATED");
             String teamName = playerData.getString("team");
             String position = playerData.getString("position");
             double ppg = playerData.getDouble("ppg");
@@ -395,7 +412,9 @@ public class NbaDataSyncService {
             if (existingPlayer != null) {
                 // 更新现有球员
                 existingPlayer.setNbaPlayerId(nbaPlayerId > 0 ? nbaPlayerId : existingPlayer.getNbaPlayerId());
-                existingPlayer.setName(name);  // 更新为中文名
+                existingPlayer.setName(name);
+                existingPlayer.setNameEn(nameEn);
+                existingPlayer.setTranslationStatus(translationStatus);
                 existingPlayer.setPosition(position);
                 existingPlayer.setPointsPerGame(ppg);
                 existingPlayer.setReboundsPerGame(rpg);
@@ -419,6 +438,8 @@ public class NbaDataSyncService {
                 Player newPlayer = new Player();
                 newPlayer.setNbaPlayerId(nbaPlayerId > 0 ? nbaPlayerId : null);
                 newPlayer.setName(name);
+                newPlayer.setNameEn(nameEn);
+                newPlayer.setTranslationStatus(translationStatus);
                 newPlayer.setTeam(team);
                 newPlayer.setPosition(position);
                 newPlayer.setPointsPerGame(ppg);
@@ -452,20 +473,14 @@ public class NbaDataSyncService {
      * 根据名字和球队查找球员
      */
     private Player findPlayerByNameAndTeam(String name, Team team) {
-        return playerRepository.findAll().stream()
-                .filter(p -> p.getName().equals(name) && p.getTeam().getId().equals(team.getId()))
-                .findFirst()
-                .orElse(null);
+        return playerRepository.findByNameAndTeamId(name, team.getId());
     }
 
     /**
      * 根据名字查找球员（处理转会情况）
      */
     private Player findPlayerByName(String name) {
-        return playerRepository.findAll().stream()
-                .filter(p -> p.getName().equals(name))
-                .findFirst()
-                .orElse(null);
+        return playerRepository.findByName(name);
     }
 
     /**
@@ -477,7 +492,9 @@ public class NbaDataSyncService {
         for (int i = 0; i < games.length(); i++) {
             JSONObject gameData = games.getJSONObject(i);
             String homeTeam = gameData.getString("homeTeam");
+            String homeTeamEn = gameData.optString("homeTeamEn", "");
             String awayTeam = gameData.getString("awayTeam");
+            String awayTeamEn = gameData.optString("awayTeamEn", "");
             int homeScore = gameData.getInt("homeScore");
             int awayScore = gameData.getInt("awayScore");
             String dateStr = gameData.getString("date");
@@ -487,11 +504,8 @@ public class NbaDataSyncService {
             LocalDate matchDate = LocalDate.parse(dateStr);
 
             // 检查是否已存在相同比赛
-            MatchRecord existing = matchRecordRepository.findAll().stream()
-                    .filter(m -> m.getHomeTeam().equals(homeTeam)
-                            && m.getAwayTeam().equals(awayTeam)
-                            && m.getMatchDate().equals(matchDate))
-                    .findFirst()
+            MatchRecord existing = matchRecordRepository
+                    .findByHomeTeamAndAwayTeamAndMatchDate(homeTeam, awayTeam, matchDate)
                     .orElse(null);
 
             if (existing != null) {
@@ -503,11 +517,13 @@ public class NbaDataSyncService {
             } else {
                 MatchRecord record = new MatchRecord();
                 record.setHomeTeam(homeTeam);
+                record.setHomeTeamEn(homeTeamEn);
                 record.setAwayTeam(awayTeam);
+                record.setAwayTeamEn(awayTeamEn);
                 record.setHomeScore(homeScore);
                 record.setAwayScore(awayScore);
                 record.setMatchDate(matchDate);
-                record.setSeason("2025-26");
+                record.setSeason(getCurrentSeason());
                 record.setStatus(status);
                 record.setNbaGameId(nbaGameId);
                 matchRecordRepository.save(record);
@@ -519,10 +535,66 @@ public class NbaDataSyncService {
         return added;
     }
 
+
+    /**
+     * 更新选秀记录
+     */
+    private int updateDrafts(JSONArray drafts) {
+        int added = 0;
+
+        for (int i = 0; i < drafts.length(); i++) {
+            JSONObject draftData = drafts.getJSONObject(i);
+            int year = draftData.optInt("year", 2024);
+            int round = draftData.optInt("round", 1);
+            int pickNumber = draftData.optInt("pickNumber", i + 1);
+            String teamName = draftData.optString("teamName", "");
+            String teamNameEn = draftData.optString("teamNameEn", "");
+            String playerName = draftData.optString("playerName", "");
+            String playerNameEn = draftData.optString("playerNameEn", "");
+            String playerPosition = draftData.optString("playerPosition", "");
+            String fromTeamName = draftData.optString("fromTeamName", "");
+            String notes = draftData.optString("notes", "");
+
+            // 检查是否已存在（按年份+轮次+顺位去重）
+            boolean exists = draftPickRepository.existsByYearAndRoundAndPickNumber(year, round, pickNumber);
+
+            if (!exists) {
+                com.nbamanager.domain.DraftPick pick = new com.nbamanager.domain.DraftPick();
+                pick.setYear(year);
+                pick.setRound(round);
+                pick.setPickNumber(pickNumber);
+                pick.setTeamName(teamName);
+                pick.setTeamNameEn(teamNameEn);
+                if (!playerName.isEmpty()) pick.setPlayerName(playerName);
+                if (!playerNameEn.isEmpty()) pick.setPlayerNameEn(playerNameEn);
+                if (!notes.isEmpty()) pick.setNotes(notes);
+                draftPickRepository.save(pick);
+                added++;
+            }
+        }
+
+        log.info("选秀记录更新完成: 新增{}", added);
+        return added;
+    }
+
+    /**
+     * 获取当前赛季（10月前为上赛季，10月后为本赛季）
+     */
+    private String getCurrentSeason() {
+        LocalDate now = LocalDate.now();
+        int year = now.getYear();
+        int month = now.getMonthValue();
+        if (month >= 10) {
+            return year + "-" + String.valueOf(year + 1).substring(2);
+        } else {
+            return (year - 1) + "-" + String.valueOf(year).substring(2);
+        }
+    }
+
     // ========== 状态查询方法 ==========
 
     public boolean isSyncing() {
-        return syncing;
+        return syncing.get();
     }
 
     public LocalDateTime getLastSyncTime() {

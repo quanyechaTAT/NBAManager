@@ -96,4 +96,5 @@ public class GameBoxScore {
 
     @Column(nullable = false)
     private Boolean starter;
+
 }

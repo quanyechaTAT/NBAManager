@@ -43,6 +43,16 @@ public class CommentService {
         Post post = postRepository.findById(postId).orElse(null);
         Long postAuthorId = post != null ? post.getUserId() : null;
 
+        return buildCommentTree(all, currentUserId, postAuthorId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CommentDto> listByGameId(String gameId, Long currentUserId) {
+        List<Comment> all = commentRepository.findByGameIdOrderByCreateTimeAsc(gameId);
+        return buildCommentTree(all, currentUserId, null);
+    }
+
+    private List<CommentDto> buildCommentTree(List<Comment> all, Long currentUserId, Long postAuthorId) {
         // 批量获取用户名
         Map<Long, String> usernameMap = loadUsernames(all);
 
@@ -173,6 +183,33 @@ public class CommentService {
         return toDto(saved);
     }
 
+    @Transactional
+    public CommentDto createForGame(Long userId, CommentRequest req) {
+        String gameId = req.gameId();
+        if (gameId == null || gameId.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "比赛ID不能为空");
+        }
+        Comment comment = new Comment();
+        comment.setGameId(gameId);
+        comment.setUserId(userId);
+        comment.setContent(req.content());
+        comment.setParentId(req.parentId());
+        Comment saved = commentRepository.save(comment);
+
+        // 通知被回复的评论作者
+        if (req.parentId() != null) {
+            String senderName = userAccountRepository.findById(userId)
+                    .map(UserAccount::getUsername).orElse("用户");
+            Comment parentComment = commentRepository.findById(req.parentId()).orElse(null);
+            if (parentComment != null) {
+                notificationService.notifyCommentAuthorReply(
+                        parentComment.getUserId(), userId, senderName, "比赛评论", null);
+            }
+        }
+
+        return toDto(saved);
+    }
+
     @CacheEvict(value = {"posts", "dashboard"}, allEntries = true)
     @Transactional
     public void togglePin(Long id, Long userId) {
@@ -195,17 +232,21 @@ public class CommentService {
         boolean isCommentAuthor = comment.getUserId().equals(userId);
         boolean isPostAuthor = false;
         if (!isCommentAuthor && !isAdmin()) {
-            Post post = postRepository.findById(comment.getPostId()).orElse(null);
-            isPostAuthor = post != null && post.getUserId().equals(userId);
+            if (comment.getPostId() != null) {
+                Post post = postRepository.findById(comment.getPostId()).orElse(null);
+                isPostAuthor = post != null && post.getUserId().equals(userId);
+            }
         }
         if (!isCommentAuthor && !isPostAuthor && !isAdmin()) {
             throw new ApiException(HttpStatus.FORBIDDEN, "无权删除此评论");
         }
         commentRepository.deleteById(id);
-        Post post = postRepository.findById(comment.getPostId()).orElse(null);
-        if (post != null) {
-            post.setCommentCount(Math.max(0, post.getCommentCount() - 1));
-            postRepository.save(post);
+        if (comment.getPostId() != null) {
+            Post post = postRepository.findById(comment.getPostId()).orElse(null);
+            if (post != null) {
+                post.setCommentCount(Math.max(0, post.getCommentCount() - 1));
+                postRepository.save(post);
+            }
         }
     }
 

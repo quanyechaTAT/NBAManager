@@ -49,13 +49,28 @@ public class AuthController {
         UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
         String token = jwtService.generateToken(principal.getUsername(), principal.getRole(), principal.getId());
 
-        // 管理员登录时触发数据同步
+        // 管理员登录时不自动触发同步，避免阻塞其他同步任务
+        // 管理员可以通过数据管理页面手动触发同步
         if (principal.getRole() == Role.ADMIN) {
-            log.info("管理员 {} 登录成功，触发NBA数据同步", principal.getUsername());
-            dataSyncService.syncAll(); // 异步执行，不会阻塞登录
+            log.info("管理员 {} 登录成功", principal.getUsername());
         }
 
         return new LoginResponse(token, principal.getUsername(), principal.getRole());
+    }
+
+    /**
+     * 通过API触发全量同步（支持进度追踪和取消）
+     */
+    private void triggerFullSyncViaApi() {
+        new Thread(() -> {
+            try {
+                // 等待1秒，确保登录响应已返回
+                Thread.sleep(1000);
+                dataSyncService.syncAll();
+            } catch (Exception e) {
+                log.warn("自动同步失败: {}", e.getMessage());
+            }
+        }).start();
     }
 
     @PostMapping("/register")

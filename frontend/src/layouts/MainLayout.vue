@@ -31,6 +31,22 @@
           <el-icon><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></el-icon>
           <span>社区</span>
         </el-menu-item>
+        <el-menu-item index="/drafts">
+          <el-icon><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></el-icon>
+          <span>选秀数据库</span>
+        </el-menu-item>
+        <el-menu-item index="/playoff">
+          <el-icon><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></el-icon>
+          <span>季后赛</span>
+        </el-menu-item>
+        <el-menu-item index="/history">
+          <el-icon><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></el-icon>
+          <span>历史数据</span>
+        </el-menu-item>
+        <el-menu-item v-if="auth.isAdmin" index="/admin/sync">
+          <el-icon><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/></svg></el-icon>
+          <span>数据管理</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
@@ -38,7 +54,9 @@
         <div class="header-left">
           <span class="title">{{ detailTeamName || pageTitle }}</span>
         </div>
+        <GlobalSearch />
         <div class="right">
+          <ThemeToggle />
           <NotificationBell />
           <el-tag :type="auth.isAdmin ? 'warning' : 'info'" effect="light" class="role-tag">{{ roleLabel }}</el-tag>
           <div class="user-avatar" @click="router.push('/profile')" style="cursor:pointer">
@@ -67,7 +85,7 @@
   </el-container>
 
   <!-- 修改密码弹窗 -->
-  <el-dialog v-model="showPwdDialog" title="修改密码" width="420px" :close-on-click-modal="false" @closed="resetPwdForm">
+  <el-dialog v-model="showPwdDialog" title="修改密码" width="420px" :close-on-click-modal="false" @closed="resetPwdForm" class="dialog-light" destroy-on-close>
     <el-form ref="pwdFormRef" :model="pwdForm" :rules="pwdRules" label-width="80px" label-position="right">
       <el-form-item label="原密码" prop="oldPassword">
         <el-input v-model="pwdForm.oldPassword" type="password" show-password placeholder="请输入原密码" />
@@ -86,7 +104,7 @@
   </el-dialog>
 
   <!-- 修改用户名弹窗 -->
-  <el-dialog v-model="showUsernameDialog" title="修改用户名" width="420px" :close-on-click-modal="false" @closed="resetUsernameForm">
+  <el-dialog v-model="showUsernameDialog" title="修改用户名" width="420px" :close-on-click-modal="false" @closed="resetUsernameForm" class="dialog-light" destroy-on-close>
     <el-form ref="usernameFormRef" :model="usernameForm" :rules="usernameRules" label-width="80px" label-position="right">
       <el-form-item label="当前用户">
         <el-input :model-value="auth.username" disabled />
@@ -111,6 +129,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
 import { changePasswordApi, changeUsernameApi } from '@/api/auth'
 import NotificationBell from '@/components/NotificationBell.vue'
+import ThemeToggle from '@/components/ThemeToggle.vue'
+import GlobalSearch from '@/components/GlobalSearch.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -134,6 +154,9 @@ const active = computed(() => {
   if (route.path.startsWith('/players')) return '/players'
   if (route.path.startsWith('/news')) return '/news'
   if (route.path.startsWith('/community')) return '/community'
+  if (route.path.startsWith('/trades')) return '/trades'
+  if (route.path.startsWith('/drafts')) return '/drafts'
+  if (route.path.startsWith('/history')) return '/history'
   return '/dashboard'
 })
 

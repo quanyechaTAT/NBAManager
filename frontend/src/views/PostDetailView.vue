@@ -11,9 +11,9 @@
     <div class="page-inner stagger-in">
       <!-- 返回 -->
       <div class="back-row">
-        <el-button class="back-btn" link @click="router.push('/community')">
+        <el-button class="back-btn" link @click="router.back()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="m15 18-6-6 6-6"/></svg>
-          返回社区
+          返回
         </el-button>
       </div>
 
@@ -36,6 +36,7 @@
             <el-button v-if="auth.token" :type="isFavorited ? 'danger' : ''" plain size="small" @click="toggleFavoritePost">
               {{ isFavorited ? '★ 已收藏' : '☆ 收藏' }}
             </el-button>
+            <ShareButton :url="postUrl" :title="post.title" :description="post.content" />
             <span class="post-stats">👁 {{ post.viewCount }} · 💬 {{ post.commentCount }} · ❤️ {{ post.likeCount }} · ⭐ {{ post.favoriteCount || 0 }}</span>
             <div class="post-manage" v-if="auth.isAdmin || isPostAuthor">
               <el-button link type="primary" size="small" @click="editPost">编辑</el-button>
@@ -128,7 +129,7 @@
     </div>
 
     <!-- 编辑帖子弹窗 -->
-    <el-dialog v-model="editVisible" title="编辑帖子" width="600px" destroy-on-close>
+    <el-dialog v-model="editVisible" title="编辑帖子" width="600px" destroy-on-close class="dialog-light">
       <el-form :model="editForm" label-width="80px">
         <el-form-item label="标题">
           <el-input v-model="editForm.title" maxlength="200" show-word-limit placeholder="请输入帖子标题" />
@@ -142,7 +143,13 @@
           </el-select>
         </el-form-item>
         <el-form-item label="内容">
-          <el-input v-model="editForm.content" type="textarea" :rows="8" maxlength="5000" show-word-limit placeholder="分享你的观点..." />
+          <div style="position: relative;">
+            <el-input v-model="editForm.content" type="textarea" :rows="8" maxlength="5000" show-word-limit placeholder="分享你的观点..." />
+            <div class="textarea-toolbar">
+              <button class="emoji-trigger" @click.prevent="showEditEmojiPicker = !showEditEmojiPicker" title="插入表情">😊</button>
+            </div>
+            <EmojiPicker :visible="showEditEmojiPicker" @select="insertEditEmoji" @close="showEditEmojiPicker = false" />
+          </div>
         </el-form-item>
         <el-form-item label="标签">
           <el-input v-model="editForm.tags" placeholder="用逗号分隔，如：湖人,季后赛" />
@@ -162,6 +169,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fetchPost, fetchComments, createComment, deleteComment, deletePost, updatePost, togglePostLike, toggleCommentLike, toggleCommentPin } from '@/api/community'
 import EmojiPicker from '@/components/EmojiPicker.vue'
+import ShareButton from '@/components/ShareButton.vue'
 import { toggleFavorite, fetchFavoritedPostIds } from '@/api/favorite'
 import { recordBrowse } from '@/api/browseHistory'
 import { useAuthStore } from '@/stores/auth'
@@ -181,6 +189,7 @@ const commentSubmitting = ref(false)
 const isFavorited = ref(false)
 const showEmojiPicker = ref(false)
 const showReplyEmojiPicker = ref(false)
+const showEditEmojiPicker = ref(false)
 const editVisible = ref(false)
 const editSubmitting = ref(false)
 const editForm = ref<PostRequest>({ title: '', content: '', category: 'DISCUSSION', tags: '' })
@@ -195,6 +204,7 @@ const currentUserId = computed(() => {
   } catch { return null }
 })
 const isPostAuthor = computed(() => post.value?.userId != null && currentUserId.value === post.value.userId)
+const postUrl = computed(() => `${window.location.origin}/community/post?id=${postId.value}`)
 
 const categoryMap: Record<string, string> = { DISCUSSION: '讨论', NEWS: '新闻', DEBATE: '辩论', PREDICTION: '预测' }
 const categoryTypeMap: Record<string, string> = { DISCUSSION: '', NEWS: 'success', DEBATE: 'warning', PREDICTION: 'info' }
@@ -335,6 +345,11 @@ function insertEmoji(emoji: string) {
 function insertReplyEmoji(emoji: string) {
   replyContent.value += emoji
   showReplyEmojiPicker.value = false
+}
+
+function insertEditEmoji(emoji: string) {
+  editForm.value.content += emoji
+  showEditEmojiPicker.value = false
 }
 
 function editPost() {

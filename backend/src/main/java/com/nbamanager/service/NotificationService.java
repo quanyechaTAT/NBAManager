@@ -1,8 +1,12 @@
 package com.nbamanager.service;
 
 import com.nbamanager.domain.Notification;
+import com.nbamanager.domain.Team;
+import com.nbamanager.domain.UserFavorite;
 import com.nbamanager.exception.ApiException;
 import com.nbamanager.repository.NotificationRepository;
+import com.nbamanager.repository.TeamRepository;
+import com.nbamanager.repository.UserFavoriteRepository;
 import com.nbamanager.web.dto.NotificationDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -11,11 +15,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
+    private final UserFavoriteRepository userFavoriteRepository;
+    private final TeamRepository teamRepository;
 
     @Transactional(readOnly = true)
     public Page<NotificationDto> list(Long userId, Pageable pageable) {
@@ -96,6 +104,30 @@ public class NotificationService {
         if (postAuthorId.equals(senderId)) return;
         create(postAuthorId, "POST_FAVORITE", "帖子被收藏",
                 senderName + " 收藏了你的帖子「" + postTitle + "」", postId);
+    }
+
+    /**
+     * 通知关注某球队的所有用户：球队有最新比赛记录
+     */
+    @Transactional
+    public void notifyTeamFollowersNewMatch(String teamName, String opponentTeam, int teamScore, int opponentScore, Long matchId) {
+        // 查找所有关注该球队的用户
+        List<UserFavorite> favorites = userFavoriteRepository.findByTargetTypeAndTargetId("TEAM", getTeamIdByName(teamName));
+        String result = teamScore > opponentScore ? "胜" : "负";
+        String content = String.format("您关注的%s有最新比赛记录：%s %d:%d %s",
+                teamName, teamName, teamScore, opponentScore, opponentTeam);
+
+        for (UserFavorite fav : favorites) {
+            create(fav.getUserId(), "TEAM_MATCH", "球队比赛更新", content, matchId);
+        }
+    }
+
+    /**
+     * 根据球队名获取球队ID
+     */
+    private Long getTeamIdByName(String teamName) {
+        Team team = teamRepository.findByName(teamName);
+        return team != null ? team.getId() : 0L;
     }
 
     @Transactional
