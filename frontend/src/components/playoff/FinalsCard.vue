@@ -77,10 +77,10 @@ const formatScore = (score?: number) => typeof score === 'number' ? score : '-'
 }
 
 .finals-matchup {
-  width: 250px;
+  width: 180px;
   background: var(--playoff-card-bg, #fff);
   border: 2px solid var(--playoff-gold, #D4A017);
-  border-radius: 14px; padding: 16px;
+  border-radius: 14px; padding: 12px;
   box-shadow: 0 8px 28px var(--playoff-gold-shadow, rgba(212,160,23,0.2));
 }
 

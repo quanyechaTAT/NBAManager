@@ -1,0 +1,30 @@
+- generic [ref=e102]:
+  - generic "切换到亮色主题" [ref=e104] [cursor=pointer]:
+    - img [ref=e105]
+  - generic [ref=e111]:
+    - paragraph [ref=e112]: NBA DATA CENTER
+    - heading "NBA 数据分析系统" [level=1] [ref=e113]
+    - paragraph [ref=e114]: 集中管理球队与球员基础数据，提供清晰的列表维护、权限控制和可视化看板。
+    - generic [ref=e115]:
+      - generic [ref=e116]: 球队管理
+      - generic [ref=e117]: 球员管理
+      - generic [ref=e118]: 数据看板
+  - generic [ref=e120]:
+    - generic [ref=e121]:
+      - heading "欢迎登录" [level=2] [ref=e122]
+      - paragraph [ref=e123]: 请输入账号信息进入系统
+    - generic [ref=e124]:
+      - generic [ref=e125]:
+        - generic [ref=e126]: "*用户名"
+        - textbox "*用户名" [ref=e130]:
+          - /placeholder: 请输入用户名
+      - generic [ref=e131]:
+        - generic [ref=e132]: "*密码"
+        - textbox "*密码" [ref=e136]:
+          - /placeholder: 请输入密码
+      - button "登录系统" [ref=e137] [cursor=pointer]:
+        - generic [ref=e138]: 登录系统
+      - generic [ref=e139]:
+        - text: 还没有账号？
+        - link "立即注册" [ref=e140] [cursor=pointer]:
+          - /url: /register

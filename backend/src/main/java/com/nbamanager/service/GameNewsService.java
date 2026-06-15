@@ -72,12 +72,14 @@ public class GameNewsService {
         }
     }
 
-    /** 查询今日赛事 */
+    /** 查询今日赛事（包含昨天的比赛，处理中美时差） */
     @Cacheable(value = "todayGames", key = "'today'")
     @Transactional(readOnly = true)
     public List<GameNewsDto> getTodayGames() {
         LocalDate today = LocalDate.now();
-        LocalDateTime start = today.atStartOfDay();
+        LocalDate yesterday = today.minusDays(1);
+        // 查询昨天到今天的所有比赛（覆盖美国时区的比赛）
+        LocalDateTime start = yesterday.atStartOfDay();
         LocalDateTime end = today.plusDays(1).atStartOfDay();
         return gameNewsRepository.findTodayGames(start, end).stream()
                 .map(g -> toDto(g, false))

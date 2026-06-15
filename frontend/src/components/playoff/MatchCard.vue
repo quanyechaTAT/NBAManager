@@ -38,10 +38,10 @@ const formatScore = (score?: number) => {
 
 <style scoped>
 .match-card {
-  width: 190px;
+  width: 100%;
   background: var(--playoff-card-bg, #ffffff);
   border: 1px solid var(--playoff-card-border, #e5e7eb);
-  border-radius: 10px;
+  border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 2px 8px var(--playoff-card-shadow, rgba(0, 0, 0, 0.06));
   transition: all 0.25s ease;
@@ -51,23 +51,22 @@ const formatScore = (score?: number) => {
 @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
 .match-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 24px var(--playoff-card-shadow-hover, rgba(0, 0, 0, 0.1));
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px var(--playoff-card-shadow-hover, rgba(0, 0, 0, 0.1));
 }
 .match-card.is-complete {
   border-color: var(--playoff-accent-dim, rgba(37, 99, 235, 0.15));
 }
 .match-card.is-finals {
-  width: 210px;
   border: 2px solid var(--playoff-gold, #D4A017);
 }
 
 .team-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  min-height: 46px;
+  gap: 4px;
+  padding: 6px 8px;
+  min-height: 36px;
   border-bottom: 1px solid var(--playoff-card-border, #f0f0f0);
   transition: background 0.2s ease;
 }
@@ -78,22 +77,22 @@ const formatScore = (score?: number) => {
 .team-row.is-winner .team-score { background: var(--playoff-accent, #2563eb); color: #fff; font-weight: 900; }
 
 .team-name {
-  flex: 1; min-width: 0; font-size: 13px; font-weight: 600;
+  flex: 1; min-width: 0; font-size: 11px; font-weight: 600;
   color: var(--text-primary, #1f2937);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .team-score {
   display: flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px;
-  background: var(--playoff-score-bg, #f1f5f9); border-radius: 6px;
+  width: 24px; height: 24px; flex-shrink: 0;
+  background: var(--playoff-score-bg, #f1f5f9); border-radius: 5px;
   color: var(--text-secondary, #475569);
-  font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums;
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
   transition: all 0.2s ease;
 }
 .team-score.score-win { background: var(--playoff-accent, #2563eb); color: #fff; }
 
-.match-card.is-finals .team-row { padding: 12px 14px; min-height: 56px; }
-.match-card.is-finals .team-name { font-size: 15px; font-weight: 700; }
-.match-card.is-finals .team-score { width: 34px; height: 34px; font-size: 16px; }
+.match-card.is-finals .team-row { padding: 8px 10px; min-height: 40px; }
+.match-card.is-finals .team-name { font-size: 12px; font-weight: 700; }
+.match-card.is-finals .team-score { width: 28px; height: 28px; font-size: 14px; }
 </style>

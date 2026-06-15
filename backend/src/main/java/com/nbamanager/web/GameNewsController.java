@@ -2,6 +2,7 @@ package com.nbamanager.web;
 
 import com.nbamanager.security.UserPrincipal;
 import com.nbamanager.service.GameNewsService;
+import com.nbamanager.service.SmartDataService;
 import com.nbamanager.web.dto.GameNewsDto;
 import com.nbamanager.web.dto.GameNewsRequest;
 import com.nbamanager.web.dto.PageResponse;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class GameNewsController {
 
     private final GameNewsService gameNewsService;
+    private final SmartDataService smartDataService;
 
     /** 分页列表 */
     @GetMapping
@@ -62,10 +64,18 @@ public class GameNewsController {
         return null;
     }
 
-    /** 今日赛事 */
+    /** 今日赛事（实时从API获取） */
     @GetMapping("/today")
     public List<GameNewsDto> today() {
-        return gameNewsService.getTodayGames();
+        return smartDataService.getTodayGamesRealtime();
+    }
+
+    /** 强制刷新新闻（从API获取） */
+    @PostMapping("/refresh")
+    @PreAuthorize("hasRole('ADMIN')")
+    public java.util.Map<String, Object> refreshNews() {
+        int added = smartDataService.refreshNewsFromApi();
+        return java.util.Map.of("added", added, "message", "新闻刷新完成");
     }
 
     /** 新增赛事资讯（仅管理员） */

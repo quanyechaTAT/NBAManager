@@ -399,19 +399,18 @@ onMounted(load)
 /* Bracket Layout */
 .bracket-container {
   width: 100%;
-  min-width: fit-content;
+  padding: 0 4px;
 }
 
 .bracket-layout {
-  display: grid;
-  grid-template-columns: minmax(360px, 1fr) minmax(240px, 280px) minmax(360px, 1fr);
-  gap: 16px;
-  align-items: start;
-  justify-items: center;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 8px;
   animation: fadeInUp 0.6s ease forwards;
   opacity: 0;
-  margin: 0 auto;
-  max-width: 1600px;
+  transform-origin: top center;
+  width: 100%;
 }
 
 @keyframes fadeInUp {
@@ -429,50 +428,40 @@ onMounted(load)
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 240px;
+  flex-shrink: 0;
+  width: 180px;
 }
 
-/* Responsive */
-@media (max-width: 1400px) {
-  .bracket-layout {
-    gap: 12px;
-    grid-template-columns: minmax(320px, 1fr) minmax(220px, 260px) minmax(320px, 1fr);
-  }
-
-  .finals-section {
-    min-width: 220px;
-  }
-}
-
-@media (max-width: 1200px) {
+/* 响应式：只在极小屏幕才切换垂直布局 */
+@media (max-width: 768px) {
   .header-content {
-    padding: 16px 24px;
+    flex-direction: column;
+    padding: 16px 16px;
+    gap: 12px;
   }
 
   .main-title {
-    font-size: 26px;
+    font-size: 22px;
   }
 
   .playoff-content {
-    padding: 32px 16px 60px;
+    padding: 20px 8px 40px;
   }
 
   .bracket-layout {
-    grid-template-columns: minmax(300px, 1fr) minmax(200px, 240px) minmax(300px, 1fr);
-    gap: 10px;
-  }
-}
-
-@media (max-width: 1100px) {
-  .bracket-layout {
-    grid-template-columns: 1fr;
-    gap: 48px;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
   }
 
   .finals-section {
     order: 0;
     width: 100%;
-    max-width: 500px;
+    max-width: 300px;
+  }
+
+  .bracket-container {
+    overflow-x: visible;
   }
 }
 

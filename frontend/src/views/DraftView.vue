@@ -120,7 +120,7 @@
       </el-card>
 
       <!-- 新建/编辑弹窗 -->
-      <el-dialog v-model="dialogVisible" :title="editingId ? '编辑选秀记录' : '新建选秀记录'" width="580px" destroy-on-close class="dialog-light">
+      <el-dialog v-model="dialogVisible" :title="editingId ? '编辑选秀记录' : '新建选秀记录'" width="580px" destroy-on-close class="dialog-light" :append-to-body="true" :center="true">
         <el-form :model="form" label-width="90px">
           <div class="form-row">
             <el-form-item label="年份" class="form-item-half">

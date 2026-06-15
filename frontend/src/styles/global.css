@@ -2415,14 +2415,36 @@ html, body {
 
 /* ===== 响应式布局 ===== */
 @media (max-width: 768px) {
-  .aside { display: none !important; }
   .header { padding: 0 12px !important; }
   .main { padding: 12px !important; }
   .global-search { max-width: 180px; }
-}
-@media (min-width: 769px) and (max-width: 1024px) {
-  .aside { width: 60px !important; }
-  .aside .el-menu-item span { display: none; }
+
+  /* 表格溢出修复 */
+  .el-table { font-size: 12px !important; }
+  .el-table .cell { padding: 0 6px !important; }
+
+  /* 分页器溢出修复 */
+  .el-pagination {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 0;
+  }
+  .el-pagination .el-pagination__total {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+  .el-pagination .el-pagination__sizes {
+    display: none !important;
+  }
+
+  /* 卡片和表单响应式 */
+  .el-card { margin-bottom: 12px; }
+  .el-dialog { width: 95% !important; margin: 16px auto !important; }
+
+  /* 搜索区域响应式 */
+  .el-form-item { margin-bottom: 12px !important; }
 }
 
 /* ====================================================================

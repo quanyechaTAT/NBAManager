@@ -656,6 +656,7 @@ public class NbaLiveSyncService {
 
                 // 更新MatchRecord
                 updateMatchRecord(homeTeam, awayTeam, homeScore, awayScore, status, gameId);
+                // 注意：季后赛比赛不影响常规赛战绩，战绩由每日全量同步更新
             }
 
             // 补充已有新闻的nbaGameId（从MatchRecord中匹配）
@@ -682,6 +683,7 @@ public class NbaLiveSyncService {
         }
     }
 
+    /**
     /**
      * 从MatchRecord中补充GameNews缺失的nbaGameId
      */
@@ -845,13 +847,20 @@ public class NbaLiveSyncService {
     private void updateMatchRecord(String homeTeam, String awayTeam,
                                     int homeScore, int awayScore, String status, String gameId) {
         LocalDate today = LocalDate.now();
+        LocalDate yesterday = today.minusDays(1);
 
-        // 查找今天的比赛记录
+        // 查找今天或昨天的比赛记录（处理时区差异）
         MatchRecord record = matchRecordRepository
                 .findByHomeTeamAndAwayTeamAndMatchDate(homeTeam, awayTeam, today)
                 .orElse(null);
+        if (record == null) {
+            record = matchRecordRepository
+                    .findByHomeTeamAndAwayTeamAndMatchDate(homeTeam, awayTeam, yesterday)
+                    .orElse(null);
+        }
 
         if (record != null) {
+            boolean wasFinished = "FINISHED".equals(record.getStatus());
             if ("LIVE".equals(status) || "FINISHED".equals(status)) {
                 record.setHomeScore(homeScore);
                 record.setAwayScore(awayScore);
@@ -862,12 +871,23 @@ public class NbaLiveSyncService {
             }
             matchRecordRepository.save(record);
 
-            // 比赛结束时通知关注球队的用户
-            if ("FINISHED".equals(status)) {
+            // 比赛刚结束时通知（避免重复通知）
+            if ("FINISHED".equals(status) && !wasFinished) {
                 notificationService.notifyTeamFollowersNewMatch(homeTeam, awayTeam, homeScore, awayScore, record.getId());
                 notificationService.notifyTeamFollowersNewMatch(awayTeam, homeTeam, awayScore, homeScore, record.getId());
             }
         } else if ("LIVE".equals(status) || "FINISHED".equals(status)) {
+            // 先用gameId查重，防止重复创建
+            if (gameId != null && !gameId.isEmpty()) {
+                MatchRecord byGameId = matchRecordRepository.findByNbaGameId(gameId).orElse(null);
+                if (byGameId != null) {
+                    byGameId.setHomeScore(homeScore);
+                    byGameId.setAwayScore(awayScore);
+                    byGameId.setStatus(status);
+                    matchRecordRepository.save(byGameId);
+                    return;
+                }
+            }
             MatchRecord newRecord = new MatchRecord();
             newRecord.setHomeTeam(homeTeam);
             newRecord.setAwayTeam(awayTeam);
@@ -878,12 +898,6 @@ public class NbaLiveSyncService {
             newRecord.setStatus(status);
             newRecord.setNbaGameId(gameId);
             matchRecordRepository.save(newRecord);
-
-            // 新比赛结束时通知关注球队的用户
-            if ("FINISHED".equals(status)) {
-                notificationService.notifyTeamFollowersNewMatch(homeTeam, awayTeam, homeScore, awayScore, newRecord.getId());
-                notificationService.notifyTeamFollowersNewMatch(awayTeam, homeTeam, awayScore, homeScore, newRecord.getId());
-            }
         }
     }
 

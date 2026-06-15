@@ -29,4 +29,7 @@ public interface MatchRecordRepository extends JpaRepository<MatchRecord, Long> 
 
     /** 查找某天所有比赛 */
     List<MatchRecord> findByMatchDate(LocalDate matchDate);
+
+    /** 按gameId查找比赛 */
+    Optional<MatchRecord> findByNbaGameId(String nbaGameId);
 }

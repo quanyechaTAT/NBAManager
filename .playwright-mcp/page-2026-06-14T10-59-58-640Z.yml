@@ -1,0 +1,159 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e7]
+      - generic [ref=e8]:
+        - strong [ref=e9]: 数据分析系统
+        - generic [ref=e10]: Manager Console
+    - menubar [ref=e11]:
+      - menuitem "数据看板" [ref=e12] [cursor=pointer]:
+        - img [ref=e14]
+        - generic [ref=e19]: 数据看板
+      - menuitem "球队战绩" [ref=e20] [cursor=pointer]:
+        - img [ref=e22]
+        - generic [ref=e25]: 球队战绩
+      - menuitem "球员数据" [ref=e26] [cursor=pointer]:
+        - img [ref=e28]
+        - generic [ref=e33]: 球员数据
+      - menuitem "赛事资讯" [ref=e34] [cursor=pointer]:
+        - img [ref=e36]
+        - generic [ref=e39]: 赛事资讯
+      - menuitem "社区" [ref=e40] [cursor=pointer]:
+        - img [ref=e42]
+        - generic [ref=e44]: 社区
+      - menuitem "选秀数据库" [ref=e45] [cursor=pointer]:
+        - img [ref=e47]
+        - generic [ref=e51]: 选秀数据库
+      - menuitem "季后赛" [ref=e52] [cursor=pointer]:
+        - img [ref=e54]
+        - generic [ref=e60]: 季后赛
+      - menuitem "历史数据" [ref=e61] [cursor=pointer]:
+        - img [ref=e63]
+        - generic [ref=e66]: 历史数据
+  - generic [ref=e67]:
+    - generic [ref=e68]:
+      - generic [ref=e69]: 球员详情
+      - generic [ref=e71]:
+        - img [ref=e72]
+        - textbox "搜索球员、球队、资讯..." [active] [ref=e75]
+      - generic [ref=e76]:
+        - generic "切换到暗色主题" [ref=e77] [cursor=pointer]:
+          - img [ref=e78]
+        - generic [ref=e81] [cursor=pointer]:
+          - img [ref=e82]
+          - generic "点击开启推送通知" [ref=e85]
+        - generic [ref=e87]: 普通用户
+        - generic [ref=e89] [cursor=pointer]: P
+        - generic [ref=e90] [cursor=pointer]: playwright_test
+        - button [ref=e92] [cursor=pointer]:
+          - img [ref=e94]
+    - main [ref=e98]:
+      - generic [ref=e174]:
+        - button "返回" [ref=e176] [cursor=pointer]:
+          - generic [ref=e177]:
+            - img [ref=e178]
+            - text: 返回
+        - generic [ref=e181]:
+          - generic [ref=e182]:
+            - generic [ref=e183] [cursor=pointer]:
+              - img "勒布朗·詹姆斯" [ref=e184]
+              - generic [ref=e185]: 🔍
+            - generic [ref=e186]:
+              - heading "勒布朗·詹姆斯" [level=1] [ref=e187]
+              - paragraph [ref=e188]: "湖人 · 大前锋 · #23"
+              - paragraph [ref=e189]: 6-9 · 250磅 · 美国
+              - button "+ 关注" [ref=e190] [cursor=pointer]:
+                - generic [ref=e191]: + 关注
+              - button "🔄 对比" [ref=e192] [cursor=pointer]:
+                - generic [ref=e193]: 🔄 对比
+          - generic [ref=e194]:
+            - generic [ref=e195]:
+              - generic [ref=e196]: "20.9"
+              - generic [ref=e197]: 场均得分
+            - generic [ref=e199]:
+              - generic [ref=e200]: "6.1"
+              - generic [ref=e201]: 场均篮板
+            - generic [ref=e203]:
+              - generic [ref=e204]: "7.2"
+              - generic [ref=e205]: 场均助攻
+        - generic [ref=e206]:
+          - generic [ref=e208]:
+            - generic [ref=e209]: 得分
+            - strong [ref=e210]: "20.9"
+          - generic [ref=e212]:
+            - generic [ref=e213]: 篮板
+            - strong [ref=e214]: "6.1"
+          - generic [ref=e216]:
+            - generic [ref=e217]: 助攻
+            - strong [ref=e218]: "7.2"
+          - generic [ref=e220]:
+            - generic [ref=e221]: 命中率
+            - strong [ref=e222]: 51.5%
+          - generic [ref=e224]:
+            - generic [ref=e225]: 三分
+            - strong [ref=e226]: 31.7%
+          - generic [ref=e228]:
+            - generic [ref=e229]: 效率值
+            - strong [ref=e230]: "115.5"
+        - generic [ref=e231]:
+          - generic [ref=e232]:
+            - button "◉ 能力分析" [ref=e233] [cursor=pointer]:
+              - generic [ref=e234]: ◉
+              - text: 能力分析
+            - button "● 投篮热图" [ref=e235] [cursor=pointer]:
+              - generic [ref=e236]: ●
+              - text: 投篮热图
+          - generic [ref=e238]:
+            - generic [ref=e243]:
+              - generic [ref=e244]: 雷达图
+              - generic [ref=e245]: 能力六维分析
+            - generic [ref=e255]:
+              - generic [ref=e256]: 生涯趋势
+              - generic [ref=e257]: 场均数据变化
+        - heading "近期比赛" [level=2] [ref=e265]
+        - generic [ref=e267]:
+          - generic [ref=e269]:
+            - table [ref=e271]:
+              - rowgroup [ref=e279]:
+                - row "日期 主客场 对手 比分 结果 详情" [ref=e280]:
+                  - columnheader "日期" [ref=e281]:
+                    - generic [ref=e282]: 日期
+                  - columnheader "主客场" [ref=e283]:
+                    - generic [ref=e284]: 主客场
+                  - columnheader "对手" [ref=e285]:
+                    - generic [ref=e286]: 对手
+                  - columnheader "比分" [ref=e287]:
+                    - generic [ref=e288]: 比分
+                  - columnheader "结果" [ref=e289]:
+                    - generic [ref=e290]: 结果
+                  - columnheader "详情" [ref=e291]:
+                    - generic [ref=e292]: 详情
+            - table [ref=e297]:
+              - rowgroup [ref=e305]:
+                - 'row "2026/05/11 主场 雷霆 110 : 115 负 📊" [ref=e306]':
+                  - cell "2026/05/11" [ref=e307]:
+                    - generic [ref=e308]: 2026/05/11
+                  - cell "主场" [ref=e309]:
+                    - generic [ref=e312]: 主场
+                  - cell "雷霆" [ref=e313]:
+                    - generic [ref=e314]: 雷霆
+                  - 'cell "110 : 115" [ref=e315]':
+                    - generic [ref=e317]:
+                      - generic [ref=e318]: "110"
+                      - generic [ref=e319]: ":"
+                      - generic [ref=e320]: "115"
+                  - cell "负" [ref=e321]:
+                    - generic [ref=e324]: 负
+                  - cell "📊" [ref=e325]:
+                    - button "📊" [ref=e327] [cursor=pointer]:
+                      - generic [ref=e328]: 📊
+          - generic [ref=e330]:
+            - generic [ref=e331]: 共 1 条
+            - button "上一页" [disabled] [ref=e332]:
+              - generic:
+                - img
+            - list [ref=e333]:
+              - listitem "第 1 页" [ref=e334]: "1"
+            - button "下一页" [disabled] [ref=e335]:
+              - generic:
+                - img

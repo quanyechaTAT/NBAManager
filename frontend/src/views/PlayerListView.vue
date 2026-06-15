@@ -82,7 +82,7 @@
       />
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑球员' : '新建球员'" width="680px" destroy-on-close class="dialog-light">
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑球员' : '新建球员'" width="680px" destroy-on-close class="dialog-light" :append-to-body="true" :center="true">
       <el-form :model="form" label-width="100px">
         <el-divider content-position="left">基本信息</el-divider>
         <div class="form-row">
@@ -809,5 +809,17 @@ onMounted(async () => {
 .headshot-fade-enter-from,
 .headshot-fade-leave-to {
   opacity: 0;
+}
+
+/* 移动端响应式 */
+@media (max-width: 768px) {
+  .pager {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .form-row {
+    flex-direction: column;
+    gap: 8px;
+  }
 }
 </style>

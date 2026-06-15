@@ -85,7 +85,7 @@
     </div>
 
     <!-- 发帖弹窗 -->
-    <el-dialog v-model="createVisible" title="发布帖子" width="600px" destroy-on-close class="dialog-light">
+    <el-dialog v-model="createVisible" title="发布帖子" width="600px" destroy-on-close class="dialog-light" :append-to-body="true" :center="true">
       <el-form :model="form" label-width="80px">
         <el-form-item label="标题">
           <el-input v-model="form.title" maxlength="200" show-word-limit placeholder="请输入帖子标题" />

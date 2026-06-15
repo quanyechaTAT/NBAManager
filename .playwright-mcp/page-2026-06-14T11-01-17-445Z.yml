@@ -1,0 +1,157 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e7]
+      - generic [ref=e8]:
+        - strong [ref=e9]: 数据分析系统
+        - generic [ref=e10]: Manager Console
+    - menubar [ref=e11]:
+      - menuitem "数据看板" [ref=e12] [cursor=pointer]:
+        - img [ref=e14]
+        - generic [ref=e19]: 数据看板
+      - menuitem "球队战绩" [ref=e20] [cursor=pointer]:
+        - img [ref=e22]
+        - generic [ref=e25]: 球队战绩
+      - menuitem "球员数据" [ref=e26] [cursor=pointer]:
+        - img [ref=e28]
+        - generic [ref=e33]: 球员数据
+      - menuitem "赛事资讯" [ref=e34] [cursor=pointer]:
+        - img [ref=e36]
+        - generic [ref=e39]: 赛事资讯
+      - menuitem "社区" [ref=e40] [cursor=pointer]:
+        - img [ref=e42]
+        - generic [ref=e44]: 社区
+      - menuitem "选秀数据库" [ref=e45] [cursor=pointer]:
+        - img [ref=e47]
+        - generic [ref=e51]: 选秀数据库
+      - menuitem "季后赛" [ref=e52] [cursor=pointer]:
+        - img [ref=e54]
+        - generic [ref=e60]: 季后赛
+      - menuitem "历史数据" [ref=e61] [cursor=pointer]:
+        - img [ref=e63]
+        - generic [ref=e66]: 历史数据
+  - generic [ref=e67]:
+    - generic [ref=e68]:
+      - generic [ref=e69]: 社区
+      - generic [ref=e71]:
+        - img [ref=e72]
+        - textbox "搜索球员、球队、资讯..." [ref=e75]
+      - generic [ref=e76]:
+        - generic "切换到亮色主题" [ref=e77] [cursor=pointer]:
+          - img [ref=e78]
+        - generic [ref=e85] [cursor=pointer]:
+          - img [ref=e86]
+          - generic "点击开启推送通知" [ref=e89]
+        - generic [ref=e91]: 普通用户
+        - generic [ref=e93] [cursor=pointer]: P
+        - generic [ref=e94] [cursor=pointer]: playwright_test
+        - button [ref=e96] [cursor=pointer]:
+          - img [ref=e98]
+    - main [ref=e102]:
+      - generic [ref=e103]:
+        - generic [ref=e104]:
+          - generic [ref=e105]:
+            - generic [ref=e106]:
+              - heading "💬 社区" [level=2] [ref=e107]
+              - paragraph [ref=e108]: NBA球迷讨论区，分享观点、参与辩论
+            - button "✍️ 发帖" [ref=e109] [cursor=pointer]:
+              - generic [ref=e110]: ✍️ 发帖
+          - generic [ref=e111]:
+            - tablist [ref=e115]:
+              - tab "全部" [selected] [ref=e117]
+              - tab "讨论" [ref=e118]
+              - tab "新闻" [ref=e119]
+              - tab "辩论" [ref=e120]
+              - tab "预测" [ref=e121]
+            - generic:
+              - tabpanel "全部"
+          - generic [ref=e122]:
+            - generic [ref=e123]:
+              - generic [ref=e124]:
+                - generic [ref=e125] [cursor=pointer]:
+                  - generic [ref=e127]:
+                    - generic [ref=e128]: 🔮
+                    - text: 预测
+                  - heading "预测马刺夺得总冠军" [level=3] [ref=e129]
+                  - paragraph [ref=e130]: 文班亚马太强了🏀🏀🏀
+                  - generic [ref=e131]:
+                    - generic [ref=e132]: 👁 15
+                    - generic [ref=e133]: 👍 0
+                    - generic [ref=e134]: 💬 0
+                    - generic [ref=e135]: ⭐ 0
+                    - generic [ref=e136]: 10天前
+                - generic [ref=e137] [cursor=pointer]:
+                  - generic [ref=e139]:
+                    - generic [ref=e140]: 💬
+                    - text: 讨论
+                  - heading "文班亚马上限有多大" [level=3] [ref=e141]
+                  - paragraph [ref=e142]: 历史前十
+                  - generic [ref=e143]:
+                    - generic [ref=e144]: 👁 61
+                    - generic [ref=e145]: 👍 3
+                    - generic [ref=e146]: 💬 2
+                    - generic [ref=e147]: ⭐ 0
+                    - generic [ref=e148]: 12天前
+              - generic [ref=e150]:
+                - button "上一页" [disabled] [ref=e151]:
+                  - generic:
+                    - img
+                - list [ref=e152]:
+                  - listitem "第 1 页" [ref=e153]: "1"
+                - button "下一页" [disabled] [ref=e154]:
+                  - generic:
+                    - img
+            - generic [ref=e156]:
+              - generic [ref=e157]: 🔥 热门帖子
+              - generic [ref=e158]:
+                - generic [ref=e159] [cursor=pointer]:
+                  - generic [ref=e160]: "1"
+                  - generic [ref=e161]:
+                    - generic [ref=e162]: 文班亚马上限有多大
+                    - generic [ref=e163]:
+                      - generic [ref=e164]: 👁 61
+                      - generic [ref=e165]: 👍 3
+                - generic [ref=e166] [cursor=pointer]:
+                  - generic [ref=e167]: "2"
+                  - generic [ref=e168]:
+                    - generic [ref=e169]: 预测马刺夺得总冠军
+                    - generic [ref=e170]:
+                      - generic [ref=e171]: 👁 15
+                      - generic [ref=e172]: 👍 0
+        - dialog "发布帖子" [ref=e174]:
+          - generic [active] [ref=e175]:
+            - generic [ref=e176]:
+              - heading "发布帖子" [level=2] [ref=e177]
+              - button "关闭此对话框" [ref=e178] [cursor=pointer]:
+                - img [ref=e180]
+            - generic [ref=e183]:
+              - generic [ref=e184]:
+                - generic [ref=e185]: 标题
+                - generic [ref=e188]:
+                  - textbox "标题" [ref=e189]:
+                    - /placeholder: 请输入帖子标题
+                  - generic [ref=e192]: 0 / 200
+              - generic [ref=e193]:
+                - generic [ref=e194]: 分类
+                - generic [ref=e197] [cursor=pointer]:
+                  - generic:
+                    - combobox "分类" [ref=e199]
+                    - generic [ref=e200]: 讨论
+                  - img [ref=e203]
+              - generic [ref=e205]:
+                - generic [ref=e206]: 内容
+                - generic [ref=e208]:
+                  - generic [ref=e209]:
+                    - textbox "内容" [ref=e210]:
+                      - /placeholder: 分享你的观点...
+                    - generic [ref=e211]: 0 / 5000
+                  - button "😊" [ref=e213] [cursor=pointer]
+              - generic [ref=e214]:
+                - generic [ref=e215]: 标签
+                - textbox "标签" [ref=e219]:
+                  - /placeholder: 用逗号分隔，如：湖人,季后赛
+            - generic [ref=e220]:
+              - button "取消" [ref=e221] [cursor=pointer]:
+                - generic [ref=e222]: 取消
+              - button "发布" [ref=e223] [cursor=pointer]:
+                - generic [ref=e224]: 发布

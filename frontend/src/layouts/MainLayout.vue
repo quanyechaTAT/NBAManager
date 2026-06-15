@@ -1,6 +1,8 @@
 <template>
+  <!-- 移动端遮罩 -->
+  <div v-if="mobileMenuOpen" class="mobile-overlay" @click="mobileMenuOpen = false"></div>
   <el-container class="layout">
-    <el-aside width="220px" class="aside">
+    <el-aside width="220px" class="aside" :class="{ 'aside--mobile-open': mobileMenuOpen }">
       <div class="brand">
         <div class="logo" aria-hidden="true">
           <img src="/images/nba-logo.png" alt="NBA Logo" />
@@ -10,7 +12,7 @@
           <span>Manager Console</span>
         </div>
       </div>
-      <el-menu :default-active="active" router class="side-menu">
+      <el-menu :default-active="active" router class="side-menu" @select="mobileMenuOpen = false">
         <el-menu-item index="/dashboard">
           <el-icon><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></el-icon>
           <span>数据看板</span>
@@ -52,6 +54,11 @@
     <el-container>
       <el-header class="header">
         <div class="header-left">
+          <button class="mobile-menu-btn" @click="mobileMenuOpen = !mobileMenuOpen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+              <path d="M3 12h18M3 6h18M3 18h18"/>
+            </svg>
+          </button>
           <span class="title">{{ detailTeamName || pageTitle }}</span>
         </div>
         <GlobalSearch />
@@ -85,7 +92,7 @@
   </el-container>
 
   <!-- 修改密码弹窗 -->
-  <el-dialog v-model="showPwdDialog" title="修改密码" width="420px" :close-on-click-modal="false" @closed="resetPwdForm" class="dialog-light" destroy-on-close>
+  <el-dialog v-model="showPwdDialog" title="修改密码" width="420px" :close-on-click-modal="false" @closed="resetPwdForm" class="dialog-light" destroy-on-close :append-to-body="true" :center="true">
     <el-form ref="pwdFormRef" :model="pwdForm" :rules="pwdRules" label-width="80px" label-position="right">
       <el-form-item label="原密码" prop="oldPassword">
         <el-input v-model="pwdForm.oldPassword" type="password" show-password placeholder="请输入原密码" />
@@ -104,7 +111,7 @@
   </el-dialog>
 
   <!-- 修改用户名弹窗 -->
-  <el-dialog v-model="showUsernameDialog" title="修改用户名" width="420px" :close-on-click-modal="false" @closed="resetUsernameForm" class="dialog-light" destroy-on-close>
+  <el-dialog v-model="showUsernameDialog" title="修改用户名" width="420px" :close-on-click-modal="false" @closed="resetUsernameForm" class="dialog-light" destroy-on-close :append-to-body="true" :center="true">
     <el-form ref="usernameFormRef" :model="usernameForm" :rules="usernameRules" label-width="80px" label-position="right">
       <el-form-item label="当前用户">
         <el-input :model-value="auth.username" disabled />
@@ -137,6 +144,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const notificationStore = useNotificationStore()
 const mainRef = ref<{ $el: HTMLElement } | null>(null)
+const mobileMenuOpen = ref(false)
 
 // 路由变化时滚动到顶部
 watch(() => route.path, () => {
@@ -534,5 +542,85 @@ async function submitUsername() {
 .main > * {
   position: relative;
   z-index: 1;
+}
+
+/* 汉堡菜单按钮（默认隐藏） */
+.mobile-menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+.mobile-menu-btn:hover {
+  background: var(--bg-hover);
+}
+
+/* 移动端遮罩 */
+.mobile-overlay {
+  display: none;
+}
+
+/* ===== 移动端响应式 ===== */
+@media (max-width: 768px) {
+  .aside {
+    position: fixed !important;
+    left: -220px;
+    top: 0;
+    bottom: 0;
+    z-index: 1000;
+    transition: left 0.3s ease;
+    width: 220px !important;
+  }
+  .aside--mobile-open {
+    left: 0;
+  }
+  .mobile-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+  }
+  .mobile-menu-btn {
+    display: flex;
+  }
+  .header {
+    padding: 0 12px !important;
+  }
+  .header-left {
+    flex: 0 0 auto !important;
+  }
+  .title {
+    font-size: 14px !important;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .right {
+    gap: 6px !important;
+  }
+  .role-tag {
+    display: none !important;
+  }
+  .user {
+    display: none !important;
+  }
+  .user-avatar {
+    width: 30px !important;
+    height: 30px !important;
+    font-size: 12px !important;
+  }
+  .main {
+    padding: 12px !important;
+  }
+  .main::before,
+  .main::after {
+    left: 0 !important;
+  }
 }
 </style>
