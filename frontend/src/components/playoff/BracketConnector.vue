@@ -1,12 +1,12 @@
 <template>
-  <div class="bracket-connector" :style="connectorStyle">
-    <svg :width="width" :height="height" class="connector-svg">
+  <div class="bracket-connector">
+    <svg width="20" :height="height" class="connector-svg">
       <line
         v-for="i in count"
         :key="i"
-        :x1="direction === 'right' ? 0 : width"
+        :x1="direction === 'right' ? 0 : 20"
         :y1="getLineY(i)"
-        :x2="direction === 'right' ? width : 0"
+        :x2="direction === 'right' ? 20 : 0"
         :y2="getLineY(i)"
         class="connector-line"
       />
@@ -15,25 +15,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-
 interface Props {
   count: number
   direction?: 'left' | 'right'
-  width?: number
   height?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
   direction: 'right',
-  width: 45,
-  height: 300
+  height: 240
 })
-
-const connectorStyle = computed(() => ({
-  width: `${props.width}px`,
-  height: `${props.height}px`
-}))
 
 const getLineY = (index: number) => {
   const spacing = props.height / (props.count + 1)
@@ -47,6 +38,7 @@ const getLineY = (index: number) => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  width: 20px;
 }
 
 .connector-svg {
@@ -56,6 +48,6 @@ const getLineY = (index: number) => {
 .connector-line {
   stroke: var(--border-light, #e5e7eb);
   stroke-width: 2;
-  stroke-dasharray: 4,4;
+  stroke-dasharray: 3,3;
 }
 </style>

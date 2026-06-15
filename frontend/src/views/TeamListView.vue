@@ -98,7 +98,7 @@
     </el-row>
 
     <!-- 新建/编辑弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑球队' : '新建球队'" width="480px" destroy-on-close class="dialog-light">
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑球队' : '新建球队'" width="480px" destroy-on-close class="dialog-light" :append-to-body="true" :center="true">
       <el-form :model="form" label-width="80px">
         <el-form-item label="球队名称">
           <el-input v-model="form.name" placeholder="如：湖人" />

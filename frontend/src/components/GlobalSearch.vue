@@ -156,6 +156,20 @@ function goNews() { showDropdown.value = false; query.value = ''; router.push('/
 [data-theme="light"] .search-wrap--focus .search-icon { color: #E85D26 !important; }
 [data-theme="light"] .search-input { color: #1A1A1A !important; }
 [data-theme="light"] .search-input::placeholder { color: #A8A29E !important; }
+
+@media (max-width: 768px) {
+  .global-search {
+    max-width: 140px;
+    flex: 1;
+  }
+  .search-wrap {
+    padding: 5px 10px;
+    gap: 4px;
+  }
+  .search-input {
+    font-size: 12px;
+  }
+}
 </style>
 
 <style>

@@ -34,15 +34,15 @@ public class PlayerService {
         String ps = hasPos ? position.trim() : null;
 
         if (hasKeyword && hasTeam && hasPos) {
-            page = playerRepository.findByNameContainingIgnoreCaseAndTeamIdAndPositionIgnoreCase(kw, teamId, ps, pageable);
+            page = playerRepository.findByNameOrNameEnContainingIgnoreCaseAndTeamIdAndPositionIgnoreCase(kw, teamId, ps, pageable);
         } else if (hasKeyword && hasTeam) {
-            page = playerRepository.findByNameContainingIgnoreCaseAndTeamId(kw, teamId, pageable);
+            page = playerRepository.findByNameOrNameEnContainingIgnoreCaseAndTeamId(kw, teamId, pageable);
         } else if (hasKeyword && hasPos) {
-            page = playerRepository.findByNameContainingIgnoreCaseAndPositionIgnoreCase(kw, ps, pageable);
+            page = playerRepository.findByNameOrNameEnContainingIgnoreCaseAndPositionIgnoreCase(kw, ps, pageable);
         } else if (hasTeam && hasPos) {
             page = playerRepository.findByTeamIdAndPositionIgnoreCase(teamId, ps, pageable);
         } else if (hasKeyword) {
-            page = playerRepository.findByNameContainingIgnoreCase(kw, pageable);
+            page = playerRepository.findByNameOrNameEnContainingIgnoreCase(kw, pageable);
         } else if (hasTeam) {
             page = playerRepository.findByTeamId(teamId, pageable);
         } else if (hasPos) {

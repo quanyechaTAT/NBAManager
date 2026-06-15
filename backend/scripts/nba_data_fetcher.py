@@ -1123,36 +1123,47 @@ def fetch_today_games():
         print(f"Live scoreboard失败，切换到ScoreboardV3: {e}", file=sys.stderr)
 
     # 方式2: 使用ScoreboardV3（兼容性更好，支持代理）
+    # 由于中国与美国的时差，需要同时检查今天和昨天的比赛
     try:
-        today_str = datetime.now().strftime('%m/%d/%Y')
-        sb = ScoreboardV3(game_date=today_str, timeout=15)
-        data = sb.get_dict()
-        time.sleep(0.5)
-        for game in data.get('scoreboard', {}).get('games', []):
-            home = game.get('homeTeam', {})
-            away = game.get('awayTeam', {})
-            home_cn = TEAM_ABBR_MAP.get(home.get('teamTricode', ''), home.get('teamName', ''))
-            away_cn = TEAM_ABBR_MAP.get(away.get('teamTricode', ''), away.get('teamName', ''))
-            game_status = game.get('gameStatus', 0)
-            if game_status == 1:
-                status = 'SCHEDULED'
-            elif game_status == 2:
-                status = 'LIVE'
-            else:
-                status = 'FINISHED'
-            result.append({
-                'gameId': game.get('gameId', ''),
-                'homeTeam': home_cn,
-                'awayTeam': away_cn,
-                'homeScore': _safe_int(home.get('score')),
-                'awayScore': _safe_int(away.get('score')),
-                'status': status,
-                'startTime': game.get('gameEt', ''),
-                'period': game.get('period', 0),
-                'gameClock': game.get('gameClock', ''),
-            })
+        seen_game_ids = set()
+        for days_offset in [0, -1]:
+            check_date = datetime.now() + timedelta(days=days_offset)
+            date_str = check_date.strftime('%m/%d/%Y')
+            try:
+                sb = ScoreboardV3(game_date=date_str, timeout=15)
+                data = sb.get_dict()
+                time.sleep(0.5)
+                for game in data.get('scoreboard', {}).get('games', []):
+                    game_id = game.get('gameId', '')
+                    if game_id in seen_game_ids:
+                        continue
+                    seen_game_ids.add(game_id)
+                    home = game.get('homeTeam', {})
+                    away = game.get('awayTeam', {})
+                    home_cn = TEAM_ABBR_MAP.get(home.get('teamTricode', ''), home.get('teamName', ''))
+                    away_cn = TEAM_ABBR_MAP.get(away.get('teamTricode', ''), away.get('teamName', ''))
+                    game_status = game.get('gameStatus', 0)
+                    if game_status == 1:
+                        status = 'SCHEDULED'
+                    elif game_status == 2:
+                        status = 'LIVE'
+                    else:
+                        status = 'FINISHED'
+                    result.append({
+                        'gameId': game_id,
+                        'homeTeam': home_cn,
+                        'awayTeam': away_cn,
+                        'homeScore': _safe_int(home.get('score')),
+                        'awayScore': _safe_int(away.get('score')),
+                        'status': status,
+                        'startTime': game.get('gameEt', ''),
+                        'period': game.get('period', 0),
+                        'gameClock': game.get('gameClock', ''),
+                    })
+            except Exception as e:
+                print(f"ScoreboardV3查询{date_str}失败: {e}", file=sys.stderr)
     except Exception as e:
-        print(f"ScoreboardV3也失败: {e}", file=sys.stderr)
+        print(f"ScoreboardV3整体失败: {e}", file=sys.stderr)
 
     print(f"获取到 {len(result)} 场今日比赛", file=sys.stderr)
     return result

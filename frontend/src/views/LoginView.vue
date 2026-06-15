@@ -313,6 +313,36 @@ h1 {
     font-size: 32px;
   }
 }
+@media (max-width: 480px) {
+  .wrap {
+    padding: 24px 12px;
+    gap: 20px;
+  }
+  .hero {
+    width: 100%;
+  }
+  .eyebrow {
+    font-size: 10px;
+    letter-spacing: 3px;
+  }
+  h1 {
+    font-size: 24px;
+  }
+  .desc {
+    font-size: 13px;
+  }
+  .features span {
+    font-size: 11px;
+    padding: 4px 10px;
+  }
+  .card {
+    width: 100%;
+    padding: 4px 8px 12px;
+  }
+  .card-head h2 {
+    font-size: 20px;
+  }
+}
 
 /* ===== 亮色主题登录页覆盖 ===== */
 [data-theme="light"] .wrap::before {

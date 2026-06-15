@@ -126,7 +126,7 @@
     </el-card>
 
     <!-- 详情对话框 -->
-    <el-dialog v-model="dialogVisible" :title="current?.title" width="680px" class="dialog-light" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="current?.title" width="680px" class="dialog-light" destroy-on-close :append-to-body="true" :center="true">
       <template v-if="current">
         <div class="detail-meta">
           <el-tag :type="statusType(current.status)">{{ statusLabel(current.status) }}</el-tag>
@@ -165,7 +165,7 @@
     </el-dialog>
 
     <!-- 新增/编辑对话框（管理员） -->
-    <el-dialog v-model="formVisible" :title="formTitle" width="680px" destroy-on-close @closed="resetForm" class="dialog-light">
+    <el-dialog v-model="formVisible" :title="formTitle" width="680px" destroy-on-close @closed="resetForm" class="dialog-light" :append-to-body="true" :center="true">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
         <el-form-item label="标题" prop="title">
           <el-input v-model="form.title" maxlength="120" show-word-limit />
