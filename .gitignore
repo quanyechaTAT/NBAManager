@@ -59,3 +59,13 @@ test_screenshots/
 
 # Root node_modules
 node_modules/
+
+# Test files
+test-*.js
+
+# MCP files
+.mcp.json
+.playwright-mcp/
+
+# Progress tracking
+PROGRESS.md
