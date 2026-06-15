@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "playwright": {
-      "command": "node",
-      "args": ["D:\\nodes\\node_global\\node_modules\\@playwright\\mcp\\cli.js"]
-    }
-  }
-}
