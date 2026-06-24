@@ -186,3 +186,61 @@ graph TB
 - **通知系统**：实时通知和消息推送
 - **主题系统**：深色/浅色主题切换
 - **国际化**：多语言支持（计划中）
+
+## 4. 配置与部署
+
+### 4.1 开发环境配置
+- **Java 环境**：JDK 17+
+- **Node.js 环境**：v18+
+- **Python 环境**：Python 3.10+
+- **数据库**：MySQL 8.0+
+- **缓存**：Redis 7.0+
+
+### 4.2 后端配置
+- **主配置文件**：`backend/src/main/resources/application.yml`
+- **安全配置**：`SecurityConfig.java`
+- **数据库配置**：MySQL 连接配置
+- **Redis 配置**：缓存和会话配置
+
+### 4.3 前端配置
+- **构建配置**：`frontend/vite.config.ts`
+- **环境变量**：`.env.development`, `.env.production`
+- **API 代理**：开发环境 API 代理配置
+
+### 4.4 Python 服务配置
+- **依赖管理**：`requirements.txt`
+- **模型配置**：AI 模型路径和参数
+- **向量数据库**：ChromaDB 配置
+
+### 4.5 部署流程
+1. **后端部署**：
+   ```bash
+   cd backend
+   mvn clean package
+   java -jar target/nbamanager-*.jar
+   ```
+
+2. **前端部署**：
+   ```bash
+   cd frontend
+   npm install
+   npm run build
+   # 将 dist/ 目录部署到 Web 服务器
+   ```
+
+3. **Python 服务部署**：
+   ```bash
+   cd backend/scripts
+   pip install -r requirements.txt
+   python rag_server.py
+   ```
+
+### 4.6 环境变量配置
+- `DB_HOST`：数据库主机
+- `DB_PORT`：数据库端口
+- `DB_NAME`：数据库名称
+- `DB_USERNAME`：数据库用户名
+- `DB_PASSWORD`：数据库密码
+- `REDIS_HOST`：Redis 主机
+- `REDIS_PORT`：Redis 端口
+- `JWT_SECRET`：JWT 密钥
