@@ -1,0 +1,557 @@
+# NBAManager 项目概览报告实现计划
+
+> **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [ ]`）语法来跟踪进度。
+
+**目标：** 生成一份全面、均衡的 NBAManager 项目概览报告，涵盖项目结构、技术架构、功能模块、配置部署、代码质量和改进建议。
+
+**架构：** 创建一个结构化的 Markdown 文档，包含 6 个主要章节，每个章节都有详细的子章节。报告将包含必要的可视化图表（使用 Mermaid 或 ASCII 艺术）。
+
+**技术栈：** Markdown, Mermaid.js, ASCII 艺术
+
+---
+
+## 文件结构
+
+- 创建：`output/NBAManager-Overview-Report.md` - 最终的项目概览报告
+- 创建：`output/diagrams/` - 存放可视化图表文件
+- 修改：无现有文件需要修改
+
+## 任务分解
+
+### 任务 1：创建报告基础结构
+
+**文件：**
+- 创建：`output/NBAManager-Overview-Report.md`
+
+- [ ] **步骤 1：创建报告文件并添加头部**
+
+```markdown
+# NBAManager 项目概览报告
+
+> 生成时间：2026-06-24
+> 项目版本：v3.1
+> 报告类型：全面均衡覆盖
+
+## 目录
+
+1. [项目概述](#1-项目概述)
+2. [技术架构](#2-技术架构)
+3. [功能模块详解](#3-功能模块详解)
+4. [配置与部署](#4-配置与部署)
+5. [代码质量分析](#5-代码质量分析)
+6. [改进建议](#6-改进建议)
+```
+
+- [ ] **步骤 2：验证文件创建成功**
+
+运行：`ls -la output/NBAManager-Overview-Report.md`
+预期：文件存在，大小 > 0
+
+- [ ] **步骤 3：Commit**
+
+```bash
+git add output/NBAManager-Overview-Report.md
+git commit -m "docs: 创建项目概览报告基础结构"
+```
+
+### 任务 2：编写项目概述章节
+
+**文件：**
+- 修改：`output/NBAManager-Overview-Report.md`
+
+- [ ] **步骤 1：添加项目概述章节**
+
+在报告文件中添加以下内容：
+
+```markdown
+## 1. 项目概述
+
+### 1.1 项目背景
+NBAManager 是一个基于现代 Web 技术栈构建的 NBA 数据管理与分析平台。项目采用前后端分离架构，旨在为篮球爱好者、数据分析师和球队管理人员提供全面的 NBA 数据服务。
+
+### 1.2 项目目标
+- 提供全面的 NBA 数据查询和分析功能
+- 实现智能化的数据检索和推荐系统
+- 支持社区互动和用户生成内容
+- 提供直观的数据可视化界面
+
+### 1.3 主要功能
+- **数据看板**：实时展示 NBA 比赛数据、球员统计和球队排名
+- **球队管理**：球队信息管理、球员阵容分析
+- **球员数据**：详细球员数据、投篮热图、职业生涯统计
+- **赛事资讯**：比赛新闻、赛事预告、赛后分析
+- **季后赛**：季后赛对阵、比赛预测、历史数据
+- **历史数据**：历史比赛记录、球员职业生涯数据
+- **社区互动**：用户发帖、评论、点赞功能
+- **选秀数据库**：选秀历史、球员发展潜力分析
+- **智能搜索**：基于 RAG 的智能问答和数据检索
+- **用户系统**：用户注册、登录、个人资料管理
+- **管理后台**：系统管理、用户管理、数据维护
+
+### 1.4 项目发展历程
+- **v1.0**：基础数据展示功能
+- **v2.0**：添加社区互动和用户系统
+- **v3.0**：集成 RAG 智能搜索功能
+- **v3.1**：优化性能和用户体验
+```
+
+- [ ] **步骤 2：验证章节添加成功**
+
+运行：`grep -n "## 1. 项目概述" output/NBAManager-Overview-Report.md`
+预期：找到匹配行
+
+- [ ] **步骤 3：Commit**
+
+```bash
+git add output/NBAManager-Overview-Report.md
+git commit -m "docs: 添加项目概述章节"
+```
+
+### 任务 3：编写技术架构章节
+
+**文件：**
+- 修改：`output/NBAManager-Overview-Report.md`
+- 创建：`output/diagrams/architecture.mmd`
+
+- [ ] **步骤 1：创建系统架构图**
+
+```mermaid
+graph TB
+    subgraph "前端层"
+        A[Vue 3 应用] --> B[Element Plus UI]
+        A --> C[Pinia 状态管理]
+        A --> D[ECharts 可视化]
+    end
+    
+    subgraph "后端层"
+        E[Spring Boot 应用] --> F[Spring Security]
+        E --> G[JPA 数据访问]
+        E --> H[WebSocket 实时通信]
+    end
+    
+    subgraph "数据层"
+        I[MySQL 数据库]
+        J[Redis 缓存]
+        K[ChromaDB 向量数据库]
+    end
+    
+    subgraph "AI 服务层"
+        L[Python RAG 服务]
+        M[LangChain 框架]
+        N[nba_api 数据采集]
+    end
+    
+    A --> E
+    E --> I
+    E --> J
+    E --> K
+    L --> M
+    L --> N
+    E --> L
+```
+
+- [ ] **步骤 2：添加技术架构章节**
+
+在报告文件中添加以下内容：
+
+```markdown
+## 2. 技术架构
+
+### 2.1 前端技术栈
+- **框架**：Vue 3 (Composition API)
+- **构建工具**：Vite
+- **UI 组件库**：Element Plus
+- **状态管理**：Pinia
+- **可视化**：ECharts
+- **类型系统**：TypeScript
+- **HTTP 客户端**：Axios
+
+### 2.2 后端技术栈
+- **框架**：Spring Boot 3.2.5
+- **安全框架**：Spring Security
+- **数据访问**：Spring Data JPA
+- **数据库**：MySQL 8.0
+- **缓存**：Redis
+- **实时通信**：WebSocket
+- **构建工具**：Maven
+- **Java 版本**：17
+
+### 2.3 数据采集与 AI 服务
+- **数据采集**：Python + nba_api
+- **AI 框架**：LangChain
+- **向量数据库**：ChromaDB
+- **Web 框架**：FastAPI
+- **模型服务**：本地部署的 AI 模型
+
+### 2.4 系统架构图
+![系统架构图](diagrams/architecture.mmd)
+
+### 2.5 数据流
+1. 前端通过 REST API 或 WebSocket 与后端通信
+2. 后端处理业务逻辑，访问数据库和缓存
+3. AI 服务提供智能搜索和推荐功能
+4. 数据采集服务定期更新 NBA 数据
+```
+
+- [ ] **步骤 3：验证章节添加成功**
+
+运行：`grep -n "## 2. 技术架构" output/NBAManager-Overview-Report.md`
+预期：找到匹配行
+
+- [ ] **步骤 4：Commit**
+
+```bash
+git add output/NBAManager-Overview-Report.md output/diagrams/architecture.mmd
+git commit -m "docs: 添加技术架构章节和架构图"
+```
+
+### 任务 4：编写功能模块详解章节
+
+**文件：**
+- 修改：`output/NBAManager-Overview-Report.md`
+
+- [ ] **步骤 1：添加功能模块详解章节**
+
+在报告文件中添加以下内容：
+
+```markdown
+## 3. 功能模块详解
+
+### 3.1 数据看板模块
+- **功能**：实时展示 NBA 比赛数据、球员统计和球队排名
+- **技术实现**：Vue 3 组件 + ECharts 图表
+- **数据源**：后端 REST API
+- **关键组件**：`DashboardView.vue`
+
+### 3.2 球队管理模块
+- **功能**：球队信息管理、球员阵容分析
+- **技术实现**：Vue 3 组件 + 表格展示
+- **数据源**：后端 REST API
+- **关键组件**：`TeamDetailView.vue`
+
+### 3.3 球员数据模块
+- **功能**：详细球员数据、投篮热图、职业生涯统计
+- **技术实现**：Vue 3 组件 + ECharts 投篮热图
+- **数据源**：后端 REST API + Python 数据采集
+- **关键组件**：`PlayerDetailView.vue`, `ShotChart.vue`
+
+### 3.4 赛事资讯模块
+- **功能**：比赛新闻、赛事预告、赛后分析
+- **技术实现**：Vue 3 组件 + 文章列表
+- **数据源**：后端 REST API
+- **关键组件**：`NewsView.vue`
+
+### 3.5 季后赛模块
+- **功能**：季后赛对阵、比赛预测、历史数据
+- **技术实现**：Vue 3 组件 + 对阵图
+- **数据源**：后端 REST API
+- **关键组件**：`PlayoffView.vue`, `ConferenceBracket.vue`
+
+### 3.6 历史数据模块
+- **功能**：历史比赛记录、球员职业生涯数据
+- **技术实现**：Vue 3 组件 + 数据表格
+- **数据源**：后端 REST API
+- **关键组件**：`HistoricalDataView.vue`
+
+### 3.7 社区互动模块
+- **功能**：用户发帖、评论、点赞功能
+- **技术实现**：Vue 3 组件 + WebSocket 实时更新
+- **数据源**：后端 REST API + WebSocket
+- **关键组件**：`CommunityView.vue`, `PostDetailView.vue`
+
+### 3.8 选秀数据库模块
+- **功能**：选秀历史、球员发展潜力分析
+- **技术实现**：Vue 3 组件 + 数据可视化
+- **数据源**：后端 REST API
+- **关键组件**：`DraftView.vue`
+
+### 3.9 智能搜索（RAG）模块
+- **功能**：基于 RAG 的智能问答和数据检索
+- **技术实现**：Vue 3 组件 + Python RAG 服务
+- **数据源**：Python RAG 服务 + 向量数据库
+- **关键组件**：`SmartSearchView.vue`
+
+### 3.10 用户系统模块
+- **功能**：用户注册、登录、个人资料管理
+- **技术实现**：Vue 3 组件 + Spring Security
+- **数据源**：后端 REST API
+- **关键组件**：`LoginView.vue`, `RegisterView.vue`, `ProfileView.vue`
+
+### 3.11 管理后台模块
+- **功能**：系统管理、用户管理、数据维护
+- **技术实现**：Vue 3 组件 + 管理界面
+- **数据源**：后端 REST API
+- **关键组件**：`AdminView.vue`
+
+### 3.12 其他辅助模块
+- **通知系统**：实时通知和消息推送
+- **主题系统**：深色/浅色主题切换
+- **国际化**：多语言支持（计划中）
+```
+
+- [ ] **步骤 2：验证章节添加成功**
+
+运行：`grep -n "## 3. 功能模块详解" output/NBAManager-Overview-Report.md`
+预期：找到匹配行
+
+- [ ] **步骤 3：Commit**
+
+```bash
+git add output/NBAManager-Overview-Report.md
+git commit -m "docs: 添加功能模块详解章节"
+```
+
+### 任务 5：编写配置与部署章节
+
+**文件：**
+- 修改：`output/NBAManager-Overview-Report.md`
+
+- [ ] **步骤 1：添加配置与部署章节**
+
+在报告文件中添加以下内容：
+
+```markdown
+## 4. 配置与部署
+
+### 4.1 开发环境配置
+- **Java 环境**：JDK 17+
+- **Node.js 环境**：v18+
+- **Python 环境**：Python 3.10+
+- **数据库**：MySQL 8.0+
+- **缓存**：Redis 7.0+
+
+### 4.2 后端配置
+- **主配置文件**：`backend/src/main/resources/application.yml`
+- **安全配置**：`SecurityConfig.java`
+- **数据库配置**：MySQL 连接配置
+- **Redis 配置**：缓存和会话配置
+
+### 4.3 前端配置
+- **构建配置**：`frontend/vite.config.ts`
+- **环境变量**：`.env.development`, `.env.production`
+- **API 代理**：开发环境 API 代理配置
+
+### 4.4 Python 服务配置
+- **依赖管理**：`requirements.txt`
+- **模型配置**：AI 模型路径和参数
+- **向量数据库**：ChromaDB 配置
+
+### 4.5 部署流程
+1. **后端部署**：
+   ```bash
+   cd backend
+   mvn clean package
+   java -jar target/nbamanager-*.jar
+   ```
+
+2. **前端部署**：
+   ```bash
+   cd frontend
+   npm install
+   npm run build
+   # 将 dist/ 目录部署到 Web 服务器
+   ```
+
+3. **Python 服务部署**：
+   ```bash
+   cd backend/scripts
+   pip install -r requirements.txt
+   python rag_server.py
+   ```
+
+### 4.6 环境变量配置
+- `DB_HOST`：数据库主机
+- `DB_PORT`：数据库端口
+- `DB_NAME`：数据库名称
+- `DB_USERNAME`：数据库用户名
+- `DB_PASSWORD`：数据库密码
+- `REDIS_HOST`：Redis 主机
+- `REDIS_PORT`：Redis 端口
+- `JWT_SECRET`：JWT 密钥
+```
+
+- [ ] **步骤 2：验证章节添加成功**
+
+运行：`grep -n "## 4. 配置与部署" output/NBAManager-Overview-Report.md`
+预期：找到匹配行
+
+- [ ] **步骤 3：Commit**
+
+```bash
+git add output/NBAManager-Overview-Report.md
+git commit -m "docs: 添加配置与部署章节"
+```
+
+### 任务 6：编写代码质量分析章节
+
+**文件：**
+- 修改：`output/NBAManager-Overview-Report.md`
+
+- [ ] **步骤 1：添加代码质量分析章节**
+
+在报告文件中添加以下内容：
+
+```markdown
+## 5. 代码质量分析
+
+### 5.1 代码结构评估
+- **优点**：
+  - 前后端分离清晰，职责明确
+  - 模块化设计良好，组件复用性高
+  - 遵循 MVC 架构模式
+- **待改进**：
+  - 部分组件文件较大，可进一步拆分
+  - 部分 API 接口设计可更 RESTful
+
+### 5.2 设计模式分析
+- **前端**：
+  - 使用 Composition API 和 Mixins
+  - 状态管理模式（Pinia）
+  - 组件通信模式（Props/Events）
+- **后端**：
+  - 依赖注入模式
+  - 仓储模式（Repository Pattern）
+  - 服务层模式（Service Layer）
+
+### 5.3 潜在问题识别
+1. **性能问题**：
+   - 大数据量表格渲染可能卡顿
+   - 图表组件首次加载较慢
+2. **安全问题**：
+   - 需要定期更新依赖库
+   - API 接口需要更严格的输入验证
+3. **维护性问题**：
+   - 部分代码注释不足
+   - 测试覆盖率有待提高
+
+### 5.4 代码复用性评估
+- **高复用性组件**：`ShotChart.vue`, `ConferenceBracket.vue`
+- **中复用性组件**：表格组件、图表组件
+- **低复用性组件**：页面级组件（`DashboardView.vue` 等）
+
+### 5.5 测试现状
+- **单元测试**：后端 JUnit 测试
+- **集成测试**：API 接口测试
+- **前端测试**：待完善
+- **E2E 测试**：待实施
+```
+
+- [ ] **步骤 2：验证章节添加成功**
+
+运行：`grep -n "## 5. 代码质量分析" output/NBAManager-Overview-Report.md`
+预期：找到匹配行
+
+- [ ] **步骤 3：Commit**
+
+```bash
+git add output/NBAManager-Overview-Report.md
+git commit -m "docs: 添加代码质量分析章节"
+```
+
+### 任务 7：编写改进建议章节
+
+**文件：**
+- 修改：`output/NBAManager-Overview-Report.md`
+
+- [ ] **步骤 1：添加改进建议章节**
+
+在报告文件中添加以下内容：
+
+```markdown
+## 6. 改进建议
+
+### 6.1 架构优化建议
+1. **微服务化**：将 AI 服务、数据采集服务拆分为独立微服务
+2. **API 网关**：引入 API 网关统一管理接口
+3. **服务发现**：使用 Consul 或 Eureka 实现服务发现
+
+### 6.2 性能优化建议
+1. **前端优化**：
+   - 实现路由懒加载
+   - 使用虚拟滚动处理大数据表格
+   - 优化图表渲染性能
+2. **后端优化**：
+   - 增加数据库索引
+   - 优化 Redis 缓存策略
+   - 实现接口限流
+3. **数据库优化**：
+   - 读写分离
+   - 分表分库（数据量增长后）
+
+### 6.3 代码质量改进建议
+1. **测试覆盖率**：提高单元测试覆盖率到 80%+
+2. **代码规范**：引入 ESLint、Prettier 统一代码风格
+3. **文档完善**：补充 API 文档、组件文档
+4. **CI/CD**：完善持续集成和部署流程
+
+### 6.4 功能扩展建议
+1. **移动端适配**：响应式设计或开发移动 App
+2. **数据导出**：支持 Excel、PDF 格式导出
+3. **高级分析**：引入机器学习模型进行比赛预测
+4. **社交功能**：增加用户关注、私信等功能
+5. **多语言支持**：实现国际化（i18n）
+
+### 6.5 安全改进建议
+1. **依赖更新**：定期更新依赖库，修复安全漏洞
+2. **输入验证**：加强前后端输入验证
+3. **权限控制**：细化用户权限管理
+4. **日志监控**：实现操作日志和异常监控
+```
+
+- [ ] **步骤 2：验证章节添加成功**
+
+运行：`grep -n "## 6. 改进建议" output/NBAManager-Overview-Report.md`
+预期：找到匹配行
+
+- [ ] **步骤 3：Commit**
+
+```bash
+git add output/NBAManager-Overview-Report.md
+git commit -m "docs: 添加改进建议章节"
+```
+
+### 任务 8：最终验证和格式优化
+
+**文件：**
+- 修改：`output/NBAManager-Overview-Report.md`
+
+- [ ] **步骤 1：验证报告完整性**
+
+运行：`wc -l output/NBAManager-Overview-Report.md`
+预期：行数 > 200
+
+- [ ] **步骤 2：检查所有章节标题**
+
+运行：`grep -n "^## " output/NBAManager-Overview-Report.md`
+预期：显示 6 个主要章节标题
+
+- [ ] **步骤 3：优化格式和排版**
+
+检查并修复以下问题：
+- 确保所有列表格式正确
+- 检查代码块格式
+- 优化段落间距
+- 确保链接格式正确
+
+- [ ] **步骤 4：最终 Commit**
+
+```bash
+git add output/NBAManager-Overview-Report.md
+git commit -m "docs: 完成项目概览报告，优化格式"
+```
+
+## 自检结果
+
+1. **规格覆盖度**：所有 6 个章节都有对应任务 ✅
+2. **占位符扫描**：没有发现占位符或 TODO ✅
+3. **类型一致性**：所有任务使用一致的文件路径和格式 ✅
+
+## 执行交接
+
+计划已完成并保存到 `docs/superpowers/plans/2026-06-24-nba-manager-overview-report.md`。两种执行方式：
+
+**1. 子代理驱动（推荐）** - 每个任务调度一个新的子代理，任务间进行审查，快速迭代
+
+**2. 内联执行** - 在当前会话中使用 executing-plans 执行任务，批量执行并设有检查点
+
+选哪种方式？
