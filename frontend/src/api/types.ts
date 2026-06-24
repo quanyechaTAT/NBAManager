@@ -198,3 +198,89 @@ export interface DraftPickRequest {
   playerName: string
   notes: string
 }
+
+/**
+ * 仪表盘指标项
+ */
+export interface MetricItem {
+  /** 指标标题 */
+  title: string
+  /** 指标值 */
+  value: number | string
+  /** 指标单位（可选） */
+  unit?: string
+  /** 趋势变化（可选，正数为上升，负数为下降） */
+  trend?: number
+  /** 图标类型（可选） */
+  icon?: string
+}
+
+/**
+ * 排行榜项目
+ */
+export interface RankItem {
+  /** 排名序号 */
+  rank: number
+  /** 显示名称 */
+  name: string
+  /** 关联团队名称 */
+  teamName?: string
+  /** 统计值 */
+  value: number | string
+  /** 副标题/描述 */
+  subtitle?: string
+  /** 额外数据字段 */
+  extra?: Record<string, unknown>
+}
+
+/**
+ * 排行榜列定义
+ */
+export interface RankColumn {
+  /** 字段名 */
+  key: string
+  /** 列标题 */
+  title: string
+  /** 列宽（可选） */
+  width?: string | number
+  /** 对齐方式（可选） */
+  align?: 'left' | 'center' | 'right'
+  /** 自定义渲染函数（可选） */
+  render?: (item: RankItem) => string
+}
+
+/**
+ * 关联实体
+ */
+export interface RelatedEntity {
+  /** 实体ID */
+  id: number
+  /** 实体类型 */
+  type: 'team' | 'player' | 'game' | 'news'
+  /** 实体名称 */
+  name: string
+  /** 实体描述 */
+  description?: string
+  /** 实体图标/头像URL */
+  imageUrl?: string
+}
+
+/**
+ * 比赛记录（用于实时比分滚动条）
+ */
+export interface LiveMatch {
+  /** 比赛ID */
+  id: number
+  /** 主队名称 */
+  homeTeam: string
+  /** 客队名称 */
+  awayTeam: string
+  /** 主队得分 */
+  homeScore: number
+  /** 客队得分 */
+  awayScore: number
+  /** 比赛状态 */
+  status: 'SCHEDULED' | 'LIVE' | 'FINISHED'
+  /** 比赛时间/状态描述 */
+  timeStatus?: string
+}
