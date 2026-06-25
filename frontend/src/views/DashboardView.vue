@@ -1,460 +1,755 @@
 <template>
-  <div class="page animated-bg">
-    <!-- 浮动光晕粒子 -->
-    <div class="bg-particles">
-      <div class="particle"></div>
-      <div class="particle"></div>
-      <div class="particle"></div>
-      <div class="particle"></div>
-    </div>
-    <!-- 科技网格线 -->
-    <div class="bg-grid"></div>
-
-    <div class="page-inner stagger-in">
-      <!-- 欢迎横幅 -->
-      <div class="welcome-banner">
-        <div class="welcome-banner-header">
-          <div>
-            <h3>👋 欢迎回来，{{ auth.username }}！</h3>
-            <p>NBA 数据管理仪表盘 — 查看球队战绩、球员数据和赛事资讯的最新概览。</p>
+  <div class="dashboard">
+    <!-- Hero — Apple Style -->
+    <section class="hero-section">
+      <div class="hero-inner">
+        <div class="hero-left">
+          <p class="hero-eyebrow">NBA DATA CENTER</p>
+          <h1 class="hero-title">赛季数据中心</h1>
+          <p class="hero-season">2025-26 NBA Season</p>
+          <div class="hero-actions">
+            <button class="hero-btn primary" @click="$router.push('/news')">查看赛程</button>
+            <button class="hero-btn secondary" @click="$router.push('/smart-search')">AI 助手</button>
           </div>
-          <ThemeToggle />
         </div>
-        <div class="welcome-tags">
-          <span class="welcome-tag">📊 实时数据</span>
-          <span class="welcome-tag">🏆 赛季追踪</span>
-          <span class="welcome-tag">⚡ 快速分析</span>
-          <span v-if="lastUpdated" class="welcome-tag welcome-tag--muted">🕐 更新于 {{ lastUpdated }}</span>
+        <div class="hero-metrics">
+          <div class="metric-card">
+            <span class="metric-value">{{ todayGames.length }}</span>
+            <span class="metric-label">今日比赛</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value">{{ stats?.teamCount ?? 30 }}</span>
+            <span class="metric-label">活跃球队</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value">{{ docCount.toLocaleString() }}</span>
+            <span class="metric-label">已索引文档</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value">2026</span>
+            <span class="metric-label">当前赛季</span>
+          </div>
         </div>
       </div>
+    </section>
 
-      <!-- 统计卡片 -->
-      <div class="overview">
-        <el-card shadow="never" class="stat-card stat-card--purple">
-          <div class="stat-card-inner">
-            <div class="stat-card-body">
-              <span class="stat-label">球队数量</span>
-              <strong class="stat-number">{{ teamCount }}</strong>
-              <span class="stat-sub">NBA 全联盟</span>
-            </div>
-            <div class="stat-card-icon">
-              <span>🏀</span>
-            </div>
-          </div>
-        </el-card>
-
-        <el-card shadow="never" class="stat-card stat-card--cyan">
-          <div class="stat-card-inner">
-            <div class="stat-card-body">
-              <span class="stat-label">球员数量</span>
-              <strong class="stat-number">{{ playerCount }}</strong>
-              <span class="stat-sub">在册球员</span>
-            </div>
-            <div class="stat-card-icon">
-              <span>⭐</span>
-            </div>
-          </div>
-        </el-card>
-
-        <el-card shadow="never" class="stat-card stat-card--gold">
-          <div class="stat-card-inner">
-            <div class="stat-card-body">
-              <span class="stat-label">最高胜场</span>
-              <strong class="stat-number">{{ maxWins }}</strong>
-              <span class="stat-sub">赛季最佳</span>
-            </div>
-            <div class="stat-card-icon">
-              <span>🏆</span>
-            </div>
-          </div>
-        </el-card>
+    <!-- 今日比赛 -->
+    <section class="section" v-if="todayGames.length > 0">
+      <div class="section-header">
+        <h2 class="section-title">今日比赛</h2>
+        <router-link to="/news" class="section-link">查看全部</router-link>
       </div>
+      <div class="games-scroll">
+        <div v-for="g in todayGames" :key="g.id" class="game-card" @click="goMatch(g)">
+          <div class="game-status" :class="g.status?.toLowerCase()">{{ statusLabel(g.status) }}</div>
+          <div class="game-teams">
+            <div class="game-team">
+              <img v-if="getLogo(g.homeTeam)" :src="getLogo(g.homeTeam)" class="game-logo" alt="" />
+              <span v-else class="game-logo-fb">{{ g.homeTeam?.charAt(0) }}</span>
+              <span class="game-team-name">{{ g.homeTeam }}</span>
+            </div>
+            <div class="game-score">
+              <span :class="{ win: g.homeScore > g.awayScore }">{{ g.homeScore ?? '-' }}</span>
+              <span class="game-sep">:</span>
+              <span :class="{ win: g.awayScore > g.homeScore }">{{ g.awayScore ?? '-' }}</span>
+            </div>
+            <div class="game-team">
+              <img v-if="getLogo(g.awayTeam)" :src="getLogo(g.awayTeam)" class="game-logo" alt="" />
+              <span v-else class="game-logo-fb">{{ g.awayTeam?.charAt(0) }}</span>
+              <span class="game-team-name">{{ g.awayTeam }}</span>
+            </div>
+          </div>
+          <button class="game-ai-btn" @click.stop="goMatchAI(g)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5"/></svg>
+            AI 分析
+          </button>
+        </div>
+      </div>
+    </section>
 
-      <!-- 图表区域 -->
-      <el-row :gutter="18">
-        <el-col :span="14">
-          <el-card shadow="never" class="chart-card">
-            <div class="card-head">
-              <div class="card-head-title">
-                <span>📊 球队战绩概览</span>
-                <small>按当前系统数据统计</small>
+    <!-- 摘要区：排名 / 热门球员 / 球队趋势 -->
+    <section class="section">
+      <div class="summary-grid">
+        <!-- 排名摘要 -->
+        <div class="summary-card">
+          <div class="summary-header">
+            <h3>排名摘要</h3>
+            <router-link to="/teams" class="section-link">完整排名</router-link>
+          </div>
+          <div class="rank-tabs">
+            <button class="rank-tab" :class="{ active: rankTab === 'west' }" @click="rankTab = 'west'">西部</button>
+            <button class="rank-tab" :class="{ active: rankTab === 'east' }" @click="rankTab = 'east'">东部</button>
+          </div>
+          <div class="rank-list">
+            <div v-for="(t, i) in currentRank" :key="t.teamName" class="rank-row">
+              <span class="rank-num" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+              <img v-if="getLogo(t.teamName)" :src="getLogo(t.teamName)" class="rank-logo" alt="" />
+              <span class="rank-name">{{ t.teamName }}</span>
+              <span class="rank-record">{{ t.wins }}-{{ t.losses }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 热门球员 -->
+        <div class="summary-card">
+          <div class="summary-header">
+            <h3>得分榜</h3>
+            <router-link to="/players" class="section-link">球员排行</router-link>
+          </div>
+          <div class="player-list">
+            <div v-for="(p, i) in topScorers" :key="p.playerName" class="player-row">
+              <span class="player-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+              <div class="player-info">
+                <span class="player-name">{{ p.playerName }}</span>
+                <span class="player-team">{{ p.teamName }}</span>
               </div>
+              <span class="player-stat">{{ p.ppg.toFixed(1) }}</span>
             </div>
-            <div class="chart-body">
-              <v-chart class="chart" :option="winsOption" autoresize v-if="loaded" />
-              <el-skeleton v-else :rows="6" animated />
+          </div>
+        </div>
+
+        <!-- 热门讨论 -->
+        <div class="summary-card">
+          <div class="summary-header">
+            <h3>热门讨论</h3>
+            <router-link to="/community" class="section-link">社区</router-link>
+          </div>
+          <div class="hot-list">
+            <div v-for="p in hotPosts" :key="p.id" class="hot-row" @click="$router.push({ path: '/community/post', query: { id: String(p.id) } })">
+              <span class="hot-title">{{ p.title.slice(0, 24) }}{{ p.title.length > 24 ? '...' : '' }}</span>
+              <span class="hot-meta">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                {{ p.viewCount }}
+              </span>
             </div>
-          </el-card>
-        </el-col>
-        <el-col :span="10">
-          <el-card shadow="never" class="chart-card">
-            <div class="card-head">
-              <div class="card-head-title">
-                <span>🏅 球员得分排行</span>
-                <small>场均得分 Top 8</small>
-              </div>
-            </div>
-            <div class="chart-body">
-              <v-chart class="chart chart-sm" :option="ppgOption" autoresize v-if="loaded" />
-              <el-skeleton v-else :rows="6" animated />
-            </div>
-          </el-card>
-        </el-col>
-      </el-row>
-    </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 核心功能入口 -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">核心功能</h2>
+      </div>
+      <div class="features-grid">
+        <router-link to="/playoff" class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+          </div>
+          <span class="feature-title">季后赛对阵图</span>
+          <span class="feature-desc">查看完整晋级路径与系列赛比分</span>
+        </router-link>
+
+        <router-link to="/teams" class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+          </div>
+          <span class="feature-title">球队分析</span>
+          <span class="feature-desc">战绩、趋势与核心数据</span>
+        </router-link>
+
+        <router-link to="/players" class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <span class="feature-title">球员排行榜</span>
+          <span class="feature-desc">得分、篮板、助攻等榜单</span>
+        </router-link>
+
+        <router-link to="/news" class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </div>
+          <span class="feature-title">赛程中心</span>
+          <span class="feature-desc">今日、近期和完整赛程</span>
+        </router-link>
+
+        <router-link to="/smart-search" class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5"/><path d="M8.5 8.5v.01"/><path d="M16 15.5v.01"/><path d="M12 12v.01"/></svg>
+          </div>
+          <span class="feature-title">AI 数据助手</span>
+          <span class="feature-desc">自然语言查询 NBA 数据</span>
+        </router-link>
+
+        <router-link to="/history" class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          </div>
+          <span class="feature-title">历史数据</span>
+          <span class="feature-desc">多赛季数据查询与对比</span>
+        </router-link>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import * as echarts from 'echarts'
-import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
-import { BarChart, LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
-import VChart from 'vue-echarts'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { fetchDashboardStats } from '@/api/dashboard'
-import type { DashboardStats } from '@/api/types'
-import { useAuthStore } from '@/stores/auth'
-import { ElMessage } from 'element-plus'
-import ThemeToggle from '@/components/ThemeToggle.vue'
+import { fetchTodayNews } from '@/api/news'
+import { fetchRankings } from '@/api/team'
+import { fetchHotPosts } from '@/api/community'
+import { getTeamLogo } from '@/utils/teamLogos'
+import request from '@/utils/request'
+import type { DashboardStats, TeamRank, GameNews, Post } from '@/api/types'
 
-use([CanvasRenderer, BarChart, LineChart, GridComponent, TooltipComponent, LegendComponent])
+const router = useRouter()
 
-const auth = useAuthStore()
 const stats = ref<DashboardStats | null>(null)
-const loaded = ref(false)
-const lastUpdated = ref<string>('')
-const isLight = computed(() => document.documentElement.getAttribute('data-theme') === 'light')
+const todayGames = ref<GameNews[]>([])
+const westStandings = ref<TeamRank[]>([])
+const eastStandings = ref<TeamRank[]>([])
+const topScorers = ref<{ playerName: string; ppg: number; teamName: string }[]>([])
+const hotPosts = ref<Post[]>([])
+const docCount = ref(0)
+const rankTab = ref<'west' | 'east'>('west')
 
-const teamCount = computed(() => stats.value?.teamCount ?? 0)
-const playerCount = computed(() => stats.value?.playerCount ?? 0)
-const maxWins = computed(() => Math.max(0, ...(stats.value?.teamWinRows.map((r) => r.wins) ?? [])))
+const currentRank = computed(() => rankTab.value === 'west' ? westStandings.value : eastStandings.value)
 
-/* ---- 主图表 ---- */
-const winsOption = computed(() => {
-  const rows = stats.value?.teamWinRows ?? []
-  return {
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: isLight.value ? '#FFFFFF' : '#1C2333',
-      borderColor: isLight.value ? '#E8E5E0' : '#30363D',
-      textStyle: { color: isLight.value ? '#1A1A1A' : '#E6EDF3', fontSize: 12 },
-    },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: {
-      type: 'category',
-      data: rows.map((r) => r.name),
-      axisLabel: { rotate: 30, color: '#6E7681', fontSize: 11 },
-      axisLine: { lineStyle: { color: '#30363D' } },
-      axisTick: { show: false },
-    },
-    yAxis: {
-      type: 'value',
-      name: '场次',
-      nameTextStyle: { color: '#6E7681', fontSize: 11 },
-      axisLabel: { color: '#6E7681', fontSize: 11 },
-      splitLine: { lineStyle: { color: isLight.value ? '#E8E5E0' : '#1C2333', type: 'dashed' } },
-      axisLine: { show: false },
-      axisTick: { show: false },
-    },
-    series: [
-      {
-        name: '胜场',
-        type: 'bar',
-        data: rows.map((r) => r.wins),
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#6C5CE7' },
-            { offset: 1, color: '#A29BFE' },
-          ]),
-          borderRadius: [6, 6, 0, 0],
-        },
-        barWidth: '35%',
-      },
-      {
-        name: '负场',
-        type: 'bar',
-        data: rows.map((r) => r.losses),
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#3D444D' },
-            { offset: 1, color: '#2D333B' },
-          ]),
-          borderRadius: [6, 6, 0, 0],
-        },
-        barWidth: '35%',
-      },
-    ],
-    legend: {
-      data: ['胜场', '负场'],
-      textStyle: { color: '#8B949E', fontSize: 12 },
-      top: 0,
-      icon: 'roundRect',
-      itemWidth: 12,
-      itemHeight: 8,
-    },
-  }
-})
+const getLogo = (name: string) => getTeamLogo(name) || undefined
 
-const ppgOption = computed(() => {
-  const rows = stats.value?.topScorers ?? []
-  return {
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: '#1C2333',
-      borderColor: '#30363D',
-      textStyle: { color: '#E6EDF3', fontSize: 12 },
-      formatter: (p: any) => `${p[0].name}<br/>场均得分: ${p[0].value}`,
-    },
-    grid: { left: '3%', right: '10%', bottom: '3%', containLabel: true },
-    xAxis: {
-      type: 'value',
-      name: 'PPG',
-      nameTextStyle: { color: '#6E7681', fontSize: 11 },
-      axisLabel: { color: '#6E7681', fontSize: 11 },
-      splitLine: { lineStyle: { color: isLight.value ? '#E8E5E0' : '#1C2333', type: 'dashed' } },
-      axisLine: { show: false },
-      axisTick: { show: false },
-    },
-    yAxis: {
-      type: 'category',
-      data: rows.map((r) => r.playerName),
-      inverse: true,
-      axisLabel: { width: 90, overflow: 'truncate', color: '#8B949E', fontSize: 11 },
-      axisLine: { lineStyle: { color: '#30363D' } },
-      axisTick: { show: false },
-    },
-    series: [
-      {
-        name: '场均得分',
-        type: 'bar',
-        data: rows.map((r) => r.ppg),
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: '#00D2FF' },
-            { offset: 1, color: '#6C5CE7' },
-          ]),
-          borderRadius: [0, 6, 6, 0],
-        },
-        barWidth: '50%',
-        label: {
-          show: true,
-          position: 'right',
-          color: '#8B949E',
-          fontSize: 11,
-          formatter: '{c}',
-        },
-      },
-    ],
-  }
-})
+function statusLabel(s?: string) {
+  const map: Record<string, string> = { LIVE: '进行中', FINISHED: '已结束', SCHEDULED: '未开始', UPCOMING: '未开始' }
+  return map[s || ''] || s || '未开始'
+}
+
+function goMatch(g: GameNews) {
+  if (g.nbaGameId) router.push({ path: '/match-detail', query: { gameId: String(g.nbaGameId) } })
+}
+
+function goMatchAI(g: GameNews) {
+  router.push({ path: '/smart-search', query: { q: `分析${g.homeTeam} vs ${g.awayTeam}这场比赛的关键看点` } })
+}
 
 onMounted(async () => {
-  try {
-    const { data } = await fetchDashboardStats()
-    stats.value = data
-    lastUpdated.value = new Date().toLocaleString('zh-CN')
-  } catch {
-    ElMessage.error('加载看板数据失败')
-  } finally {
-    loaded.value = true
+  const [statsRes, todayRes, rankRes, hotRes, ragRes] = await Promise.allSettled([
+    fetchDashboardStats(),
+    fetchTodayNews(),
+    fetchRankings(),
+    fetchHotPosts({ page: 0, size: 5 }),
+    request.get('/rag/stats'),
+  ])
+  if (statsRes.status === 'fulfilled') {
+    stats.value = statsRes.value.data
+    topScorers.value = stats.value?.topScorers ?? []
   }
+  if (todayRes.status === 'fulfilled') {
+    const INVALID = new Set(['待定', 'TBD', 'tbd', ''])
+    todayGames.value = (todayRes.value.data ?? [])
+      .filter((g: GameNews) => g.nbaGameId && !INVALID.has(g.homeTeam?.trim()) && !INVALID.has(g.awayTeam?.trim()))
+      .slice(0, 10)
+  }
+  if (rankRes.status === 'fulfilled') {
+    const r = rankRes.value.data
+    westStandings.value = r?.西部 ?? r?.western ?? []
+    eastStandings.value = r?.东部 ?? r?.eastern ?? []
+  }
+  if (hotRes.status === 'fulfilled') hotPosts.value = (hotRes.value.data?.content ?? []).slice(0, 5)
+  if (ragRes.status === 'fulfilled') docCount.value = ragRes.value.data?.documentCount || 0
 })
 </script>
 
 <style scoped>
-.page {
-  max-width: 1200px;
-  min-height: calc(100vh - 108px);
-  position: relative;
-  border-radius: var(--radius-lg);
-  animation: pageFadeIn 0.4s var(--ease-smooth) forwards;
-  opacity: 0;
-  transform: translateY(12px);
+/* ===== 页面 ===== */
+.dashboard {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+  animation: fadeIn 0.3s ease;
 }
-@keyframes pageFadeIn { to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-/* 欢迎横幅 */
-.welcome-banner-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 12px;
+/* ===== Hero — Apple Style ===== */
+.hero-section {
+  margin-bottom: var(--space-6, 24px);
 }
-.welcome-banner-header h3 {
+.hero-inner {
+  display: flex;
+  align-items: center;
+  gap: 40px;
+  background: #000;
+  padding: 32px 40px;
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+.hero-left {
+  flex: 1;
+}
+.hero-eyebrow {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #86868B;
+  font-family: var(--font-body);
+}
+.hero-title {
   margin: 0 0 6px;
-  font-size: 20px;
+  font-size: 36px;
   font-weight: 700;
-  color: var(--text-primary);
+  line-height: 1.15;
+  letter-spacing: -0.5px;
+  color: #F5F5F7;
+  font-family: var(--font-heading);
 }
-.welcome-banner-header p {
-  margin: 0;
-  font-size: 14px;
-  color: var(--text-secondary);
+.hero-season {
+  margin: 0 0 20px;
+  font-size: 15px;
+  color: #86868B;
+  font-family: var(--font-body);
 }
-.welcome-banner .welcome-tags {
+.hero-actions {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 10px;
 }
-.welcome-tag {
+.hero-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
-  background: rgba(0, 255, 136, 0.08);
-  border: 1px solid rgba(0, 255, 136, 0.15);
-  border-radius: 20px;
-  font-size: 11px;
-  color: var(--accent);
-  font-weight: 600;
-  font-family: var(--font-heading);
-  letter-spacing: 0.5px;
-  transition: all var(--duration-fast) var(--ease-smooth);
+  gap: 6px;
+  padding: 10px 24px;
+  border-radius: 980px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: none;
+  font-family: var(--font-body);
 }
-.welcome-tag--muted {
-  background: var(--bg-secondary);
-  border-color: var(--border-light);
-  color: var(--text-dim);
+.hero-btn.primary {
+  background: var(--accent);
+  color: #fff;
 }
-.welcome-tag:hover {
-  background: rgba(0, 255, 136, 0.15);
+.hero-btn.primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 0 15px rgba(0, 255, 136, 0.1);
+  box-shadow: 0 4px 12px var(--accent-glow);
 }
-
-/* 统计卡片 */
-.overview {
+.hero-btn.secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #F5F5F7;
+}
+.hero-btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+.hero-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 240px;
 }
-.stat-card {
-  background: var(--bg-card) !important;
-  border: 1px solid var(--border-light) !important;
-  border-radius: var(--radius-xl) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-  transition: all var(--duration-normal) var(--ease-smooth);
-  overflow: hidden;
-  position: relative;
+.metric-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  transition: all 0.2s ease;
 }
-.stat-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  opacity: 0;
-  transition: opacity var(--duration-normal) var(--ease-smooth);
+.metric-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
 }
-.stat-card:hover::before {
-  opacity: 1;
+.metric-value {
+  display: block;
+  font-size: 28px;
+  font-weight: 700;
+  font-family: var(--font-heading);
+  color: #F5F5F7;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
 }
-.stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), 0 0 1px rgba(0, 255, 136, 0.2) !important;
+.metric-label {
+  display: block;
+  font-size: 11px;
+  color: #86868B;
+  margin-top: 4px;
+  font-family: var(--font-body);
 }
-.stat-card--purple:hover { border-color: var(--purple) !important; box-shadow: 0 16px 40px rgba(139, 92, 246, 0.2), 0 4px 12px rgba(0, 0, 0, 0.25) !important; }
-.stat-card--cyan:hover { border-color: var(--cyan) !important; box-shadow: 0 16px 40px rgba(6, 182, 212, 0.2), 0 4px 12px rgba(0, 0, 0, 0.25) !important; }
-.stat-card--gold:hover { border-color: var(--orange) !important; box-shadow: 0 16px 40px rgba(245, 158, 11, 0.2), 0 4px 12px rgba(0, 0, 0, 0.25) !important; }
 
-.stat-card :deep(.el-card__body) {
-  padding: 0;
-}
-.stat-card-inner {
+/* ===== 通用 Section ===== */
+.section { margin-bottom: 28px; }
+.section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px 12px;
+  margin-bottom: 14px;
 }
-.stat-card-body {
+.section-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+}
+.section-link {
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+.section-link:hover { text-decoration: underline; }
+
+/* ===== 今日比赛 ===== */
+.games-scroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.games-scroll::-webkit-scrollbar { height: 4px; }
+.games-scroll::-webkit-scrollbar-thumb { background: var(--border-medium); border-radius: 2px; }
+.game-card {
+  flex: 0 0 220px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+}
+.game-card:hover {
+  border-color: var(--border-medium);
+  box-shadow: var(--shadow-sm);
+}
+.game-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+.game-status.live { background: rgba(239,68,68,0.1); color: var(--danger); }
+.game-status.finished { background: var(--bg-hover); color: var(--text-muted); }
+.game-status.scheduled, .game-status.upcoming { background: rgba(37,99,235,0.08); color: #2563eb; }
+.game-teams {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.game-team {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
-.stat-card-body .stat-number {
-  font-size: 32px;
-  margin: 4px 0;
-}
-.stat-sub {
-  font-size: 12px;
-  color: var(--text-dim);
-}
-.stat-card-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--radius-lg);
+.game-logo { width: 32px; height: 32px; object-fit: contain; }
+.game-logo-fb {
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  background: var(--bg-hover);
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.game-team-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.game-score {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
-  transition: all var(--duration-normal) var(--ease-smooth);
 }
-.stat-card:hover .stat-card-icon {
-  transform: scale(1.1) rotate(5deg);
+.game-sep { font-size: 14px; color: var(--text-dim); }
+.game-score .win { color: var(--accent); }
+.game-ai-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 6px;
+  background: var(--bg-page);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  justify-content: center;
 }
-.stat-card--purple .stat-card-icon { background: var(--purple-dim); }
-.stat-card--cyan .stat-card-icon { background: var(--cyan-dim); }
-.stat-card--gold .stat-card-icon { background: var(--orange-dim); }
+.game-ai-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
-.stat-card-footer {
+/* ===== 摘要区 ===== */
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+}
+.summary-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 16px;
+}
+.summary-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 24px 16px;
-  border-top: 1px solid var(--border-light);
+  margin-bottom: 12px;
 }
-.sparkline {
-  width: 80px;
-  height: 36px;
+.summary-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
-/* 图表卡片 */
-.chart-card {
-  background: var(--bg-card) !important;
-  border: 1px solid var(--border-light) !important;
-  border-radius: var(--radius-xl) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-  transition: all var(--duration-normal) var(--ease-smooth);
+/* 排名 */
+.rank-tabs { display: flex; gap: 0; margin-bottom: 10px; }
+.rank-tab {
+  flex: 1;
+  padding: 6px;
+  background: var(--bg-page);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+.rank-tab.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.rank-list { display: flex; flex-direction: column; gap: 2px; }
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+.rank-row:hover { background: var(--bg-hover); }
+.rank-num {
+  width: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-align: center;
+}
+.rank-num.top3 { color: var(--accent); }
+.rank-logo { width: 20px; height: 20px; object-fit: contain; }
+.rank-name { flex: 1; font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.rank-record {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 球员 */
+.player-list { display: flex; flex-direction: column; gap: 2px; }
+.player-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+.player-row:hover { background: var(--bg-hover); }
+.player-rank {
+  width: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-align: center;
+}
+.player-rank.top3 { color: var(--accent); }
+.player-info { flex: 1; min-width: 0; }
+.player-name { display: block; font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.player-team { font-size: 11px; color: var(--text-muted); }
+.player-stat {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 热门讨论 */
+.hot-list { display: flex; flex-direction: column; gap: 2px; }
+.hot-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.hot-row:hover { background: var(--bg-hover); }
+.hot-title {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
   overflow: hidden;
-  position: relative;
+  text-overflow: ellipsis;
 }
-.chart-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--purple), var(--accent));
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  opacity: 0;
-  transition: opacity var(--duration-normal) var(--ease-smooth);
+.hot-row:hover .hot-title { color: var(--accent); }
+.hot-meta {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
 }
-.chart-card:hover::before {
-  opacity: 1;
+.hot-meta svg { opacity: 0.4; }
+
+/* ===== 核心功能入口 ===== */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
 }
-.chart-card:hover {
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), 0 0 1px rgba(0, 255, 136, 0.2) !important;
+.feature-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  text-decoration: none;
+  transition: all 0.15s;
+  text-align: center;
 }
-.chart-body {
-  padding: 8px 16px 16px;
+.feature-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-2px);
 }
-.chart {
-  height: 360px;
+.feature-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--accent-lighter);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.chart-sm {
-  height: 360px;
+.feature-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.feature-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
+/* ===== 响应式 ===== */
 @media (max-width: 960px) {
-  .overview {
-    grid-template-columns: 1fr;
+  .hero-inner {
+    flex-direction: column;
+    text-align: center;
+    padding: 28px 24px;
+    gap: 24px;
   }
+  .hero-actions {
+    justify-content: center;
+  }
+  .hero-metrics {
+    width: 100%;
+    max-width: 320px;
+  }
+  .summary-grid { grid-template-columns: 1fr; }
+  .features-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 768px) {
+  .dashboard { padding: 16px 12px 80px; }
+  .hero-inner {
+    padding: 24px 20px;
+  }
+  .hero-title { font-size: 28px; }
+  .metric-value { font-size: 24px; }
+  .features-grid { grid-template-columns: repeat(2, 1fr); }
+  .game-card { flex: 0 0 180px; }
+}
+@media (max-width: 480px) {
+  .hero-inner {
+    padding: 20px 16px;
+  }
+  .hero-title { font-size: 24px; }
+  .hero-season { font-size: 13px; }
+  .metric-card { padding: 12px; }
+  .metric-value { font-size: 22px; }
+  .metric-label { font-size: 10px; }
+}
+
+/* ===== Light Theme Hero ===== */
+[data-theme="light"] .hero-inner {
+  background: #F5F5F7;
+}
+[data-theme="light"] .hero-eyebrow {
+  color: #86868B;
+}
+[data-theme="light"] .hero-title {
+  color: #1D1D1F;
+}
+[data-theme="light"] .hero-season {
+  color: #86868B;
+}
+[data-theme="light"] .hero-btn.primary {
+  background: var(--accent);
+  color: #fff;
+}
+[data-theme="light"] .hero-btn.secondary {
+  background: rgba(0, 0, 0, 0.06);
+  color: #1D1D1F;
+}
+[data-theme="light"] .hero-btn.secondary:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+[data-theme="light"] .metric-card {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .metric-value {
+  color: #1D1D1F;
+}
+[data-theme="light"] .metric-label {
+  color: #86868B;
 }
 </style>
