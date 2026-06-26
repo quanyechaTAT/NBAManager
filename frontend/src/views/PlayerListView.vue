@@ -90,7 +90,7 @@
             </el-table-column>
             <el-table-column prop="teamName" label="球队" min-width="70" />
             <el-table-column prop="position" label="位置" min-width="50" align="center" />
-            <el-table-column prop="jerseyNumber" label="球衣" min-width="45" align="center" />
+            <el-table-column prop="jerseyNumber" label="球衣" min-width="50" align="center" />
             <el-table-column prop="gamesPlayed" label="出场" min-width="50" align="center" sortable="custom" />
             <el-table-column prop="minutesPerGame" label="时间" min-width="50" align="center" sortable="custom">
               <template #default="{ row }">{{ row.minutesPerGame?.toFixed(1) }}</template>
@@ -437,7 +437,8 @@ onMounted(async () => { await loadTeams(); await load() })
 /* 表格视图 */
 .card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 16px; overflow: hidden; }
 .table-scroll { overflow-x: auto; }
-.table-scroll :deep(.el-table__header th) { white-space: nowrap; }
+.table-scroll :deep(.el-table__header th),
+.table-scroll :deep(.el-table__header .cell) { white-space: nowrap; }
 .player-cell { display: flex; align-items: center; gap: 10px; cursor: pointer; }
 .player-thumb { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: var(--bg-hover); flex-shrink: 0; }
 .player-name-link { color: var(--accent); cursor: pointer; font-weight: 500; }
