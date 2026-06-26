@@ -121,12 +121,12 @@
         </div>
 
         <!-- 热门球员 -->
-        <div class="summary-card">
+        <div ref="scorersCard" class="summary-card scorers-card">
           <div class="summary-header">
             <h3>得分榜</h3>
             <router-link to="/players" class="section-link">球员排行</router-link>
           </div>
-          <template v-if="loading && topScorers.length === 0">
+          <template v-if="loading && scorersList.length === 0">
             <div v-for="i in 8" :key="i" class="skeleton-row">
               <div class="skeleton" style="width: 20px; height: 14px;"></div>
               <div class="skeleton" style="width: 36px; height: 36px; border-radius: 50%;"></div>
@@ -139,19 +139,31 @@
           </template>
           <template v-else>
             <div class="player-list">
-              <div v-for="(p, i) in topScorers" :key="p.playerName" class="player-row clickable" @click="goPlayerDetail(p.id)">
+              <div v-for="(p, i) in scorersList" :key="p.id" class="player-row clickable" @click="goPlayerDetail(p.id)">
                 <span class="player-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
                 <div class="player-avatar-mini">
-                  <img v-if="p.nbaPlayerId" :src="getHeadshotUrl(p.nbaPlayerId)" :alt="p.playerName" class="player-headshot-mini" @error="onHeadshotError" loading="lazy" />
-                  <span class="player-avatar-fallback" :style="{ display: p.nbaPlayerId ? 'none' : 'flex' }">{{ p.playerName?.charAt(0) }}</span>
+                  <img v-if="p.nbaPlayerId" :src="getHeadshotUrl(p.nbaPlayerId)" :alt="p.name" class="player-headshot-mini" @error="onHeadshotError" loading="lazy" />
+                  <span class="player-avatar-fallback" :style="{ display: p.nbaPlayerId ? 'none' : 'flex' }">{{ p.name?.charAt(0) }}</span>
                 </div>
                 <div class="player-info">
-                  <span class="player-name">{{ p.playerName }}</span>
+                  <span class="player-name">{{ p.name }}</span>
                   <span class="player-team">{{ p.teamName }}</span>
                 </div>
-                <span class="player-stat">{{ p.ppg.toFixed(1) }}</span>
+                <span class="player-stat">{{ p.pointsPerGame.toFixed(1) }}</span>
                 <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
               </div>
+              <!-- Infinite scroll sentinel -->
+              <div ref="scorerSentinel" class="scorer-sentinel"></div>
+              <div v-if="scorerLoading" class="scorer-loading">
+                <div class="skeleton" style="width: 20px; height: 14px;"></div>
+                <div class="skeleton" style="width: 36px; height: 36px; border-radius: 50%;"></div>
+                <div style="flex: 1;">
+                  <div class="skeleton" style="width: 80px; height: 14px; margin-bottom: 4px;"></div>
+                  <div class="skeleton" style="width: 50px; height: 10px;"></div>
+                </div>
+                <div class="skeleton" style="width: 32px; height: 14px;"></div>
+              </div>
+              <div v-if="!scorerHasMore && scorersList.length > 0" class="scorer-end">已加载全部球员</div>
             </div>
           </template>
         </div>
@@ -234,13 +246,45 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { getTeamLogo } from '@/utils/teamLogos'
 import { useDashboardCache } from '@/composables/useDashboardCache'
+import { fetchTopScorers } from '@/api/dashboard'
+import type { Player } from '@/api/types'
 
 const router = useRouter()
-const { stats, todayGames, westStandings, eastStandings, topScorers, hotPosts, docCount, loading } = useDashboardCache()
+const { stats, todayGames, westStandings, eastStandings, hotPosts, docCount, loading } = useDashboardCache()
+
+// ---- Infinite scroll scorers ----
+const scorersList = ref<Player[]>([])
+const scorerPage = ref(0)
+const scorerHasMore = ref(true)
+const scorerLoading = ref(false)
+const scorerSentinel = ref<HTMLElement | null>(null)
+const scorersCard = ref<HTMLElement | null>(null)
+let scorerObserver: IntersectionObserver | null = null
+
+async function loadMoreScorers() {
+  if (scorerLoading.value || !scorerHasMore.value) return
+  scorerLoading.value = true
+  try {
+    const res = await fetchTopScorers(scorerPage.value, 20)
+    const page = res.data
+    const items = page.content ?? []
+    if (scorerPage.value === 0) {
+      scorersList.value = items
+    } else {
+      scorersList.value = [...scorersList.value, ...items]
+    }
+    scorerHasMore.value = scorerPage.value < page.totalPages - 1
+    scorerPage.value++
+  } catch {
+    // silently ignore
+  } finally {
+    scorerLoading.value = false
+  }
+}
 
 const rankTab = ref<'west' | 'east'>('west')
 
@@ -280,6 +324,29 @@ function goTeamDetail(teamName: string) {
 function goPlayerDetail(playerId: number) {
   router.push({ path: '/players/detail', query: { id: String(playerId), returnTo: '/dashboard' } })
 }
+
+// ---- Lifecycle: Intersection Observer for infinite scroll ----
+onMounted(async () => {
+  // Load the first page of scorers immediately
+  await loadMoreScorers()
+
+  await nextTick()
+  if (scorerSentinel.value && scorersCard.value) {
+    scorerObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMoreScorers()
+        }
+      },
+      { root: scorersCard.value, rootMargin: '100px' }
+    )
+    scorerObserver.observe(scorerSentinel.value)
+  }
+})
+
+onUnmounted(() => {
+  scorerObserver?.disconnect()
+})
 </script>
 
 <style scoped>
@@ -641,6 +708,10 @@ function goPlayerDetail(playerId: number) {
 
 /* 球员 */
 .player-list { display: flex; flex-direction: column; gap: 2px; }
+.scorers-card { max-height: 560px; overflow-y: auto; }
+.scorer-sentinel { height: 1px; }
+.scorer-loading { display: flex; align-items: center; gap: 8px; padding: 8px 4px; }
+.scorer-end { text-align: center; font-size: 11px; color: var(--text-dim); padding: 10px 0 4px; }
 .player-row {
   display: flex;
   align-items: center;
