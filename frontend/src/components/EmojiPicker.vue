@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="emoji-backdrop" @click="$emit('close')"></div>
+    <div v-if="visible" class="emoji-backdrop" :style="{ zIndex: pickerZIndex - 1 }" @click="$emit('close')"></div>
     <div
       v-if="visible"
       class="emoji-picker"
@@ -497,12 +497,33 @@ function select(char: string) {
 const PICKER_W = 340
 const PICKER_H = 380
 
+/** 获取 anchor 所在 el-dialog 的 z-index，如果没有则返回 0 */
+function getParentDialogZIndex(el: HTMLElement | null): number {
+  let node: HTMLElement | null = el
+  while (node) {
+    if (node.classList?.contains('el-overlay') || node.classList?.contains('el-dialog__wrapper')) {
+      const z = parseInt(getComputedStyle(node).zIndex, 10)
+      if (!isNaN(z) && z > 0) return z
+    }
+    node = node.parentElement
+  }
+  return 0
+}
+
+const pickerZIndex = computed(() => {
+  if (!props.anchor) return 1000
+  const dialogZ = getParentDialogZIndex(props.anchor)
+  return dialogZ > 0 ? dialogZ + 10 : 1000
+})
+
 const pickerStyle = computed(() => {
+  const z = pickerZIndex.value
   if (!props.anchor) {
     return {
       top: '50%',
       left: '50%',
       transform: 'translate(-50%, -50%)',
+      zIndex: z,
     }
   }
   const r = props.anchor.getBoundingClientRect()
@@ -525,6 +546,7 @@ const pickerStyle = computed(() => {
   return {
     top: `${top}px`,
     left: `${left}px`,
+    zIndex: z,
   }
 })
 
