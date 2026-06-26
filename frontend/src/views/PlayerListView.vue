@@ -72,7 +72,7 @@
           <el-empty v-if="!loading && rows.length === 0" description="暂无球员数据" />
         </div>
         <div class="pager" v-if="total > 0">
-          <el-pagination background layout="total, prev, pager, next" :total="total" v-model:current-page="page" :page-size="20" @current-change="load" />
+          <el-pagination background layout="total, prev, pager, next" :total="total" v-model:current-page="page" :page-size="21" @current-change="load" />
         </div>
       </template>
 
@@ -180,6 +180,7 @@ const teamOptions = ref<Team[]>([])
 const total = ref(0)
 const page = ref(1)
 const size = ref(20)
+const cardSize = ref(21)
 const keyword = ref('')
 const filterTeamId = ref<number | undefined>(undefined)
 const filterPosition = ref<string | undefined>(undefined)
@@ -210,7 +211,8 @@ async function loadTeams() {
 async function load() {
   loading.value = true
   try {
-    const params: any = { page: page.value - 1, size: size.value }
+    const pageSize = viewMode.value === 'cards' ? cardSize.value : size.value
+    const params: any = { page: page.value - 1, size: pageSize }
     if (keyword.value) params.q = keyword.value
     if (filterTeamId.value) params.teamId = filterTeamId.value
     if (filterPosition.value) params.position = filterPosition.value
