@@ -124,11 +124,10 @@
           <div style="position: relative;">
             <el-input v-model="form.content" type="textarea" :rows="8" maxlength="5000" show-word-limit placeholder="分享你的观点..." />
             <div class="textarea-toolbar">
-              <button class="emoji-trigger" @click.prevent="showEmojiPicker = !showEmojiPicker; emojiTarget = 'content'" title="插入表情">
+              <button ref="contentEmojiBtn" class="emoji-trigger" @click.prevent="emojiTarget = 'content'; emoji.open(contentEmojiBtn!, e => form.content += e)" title="插入表情">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
               </button>
             </div>
-            <EmojiPicker :visible="showEmojiPicker && emojiTarget === 'content'" @select="insertEmoji" @close="showEmojiPicker = false" />
           </div>
         </el-form-item>
         <el-form-item label="标签">
@@ -140,6 +139,7 @@
         <el-button type="primary" :loading="submitting" @click="submitPost">发布</el-button>
       </template>
     </el-dialog>
+    <EmojiPicker :visible="emoji.visible.value" :anchor="emoji.anchor.value" @select="emoji.onSelect" @close="emoji.close" />
   </div>
 </template>
 
@@ -150,12 +150,14 @@ import { ElMessage } from 'element-plus'
 import { fetchPosts, fetchHotPosts, createPost } from '@/api/community'
 import type { Post, PostRequest } from '@/api/community'
 import EmojiPicker from '@/components/EmojiPicker.vue'
+import { useEmojiPicker } from '@/composables/useEmojiPicker'
 
 const router = useRouter()
 const loading = ref(false)
 const submitting = ref(false)
-const showEmojiPicker = ref(false)
+const emoji = useEmojiPicker()
 const emojiTarget = ref<'title' | 'content'>('content')
+const contentEmojiBtn = ref<HTMLElement | null>(null)
 const posts = ref<Post[]>([])
 const hotPosts = ref<Post[]>([])
 const total = ref(0)
@@ -213,16 +215,7 @@ async function loadHot() {
 
 function onCategoryChange() { page.value = 1; loadPosts() }
 function goToPost(id: number) { router.push({ path: '/community/post', query: { id: String(id) } }) }
-function openCreate() { createVisible.value = true; showEmojiPicker.value = false }
-
-function insertEmoji(emoji: string) {
-  if (emojiTarget.value === 'title') {
-    form.value.title += emoji
-  } else {
-    form.value.content += emoji
-  }
-  showEmojiPicker.value = false
-}
+function openCreate() { createVisible.value = true; emoji.close() }
 
 async function submitPost() {
   if (!form.value.title.trim() || !form.value.content.trim()) {
