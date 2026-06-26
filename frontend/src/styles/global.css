@@ -465,7 +465,24 @@
   background-color: var(--accent) !important;
 }
 
-/* 下拉菜单 */
+/* 下拉菜单 - 暗色主题 */
+.el-dropdown-menu {
+  background: #111827 !important;
+  border: 1px solid #1E293B !important;
+  border-radius: 10px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+  padding: 4px !important;
+}
+.el-dropdown-menu__item {
+  color: #CBD5E1 !important;
+  border-radius: 6px !important;
+  padding: 8px 14px !important;
+}
+.el-dropdown-menu__item:hover {
+  background: #1E293B !important;
+  color: #F1F5F9 !important;
+}
+/* 下拉菜单 - 亮色主题 */
 [data-theme="light"] .el-dropdown-menu {
   background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
@@ -910,7 +927,7 @@ html, body {
 
 /* 弹窗 */
 .el-dialog {
-  --el-dialog-bg-color: #161B22;
+  --el-dialog-bg-color: var(--bg-card);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-dialog);
@@ -983,7 +1000,7 @@ html, body {
 
 /* 下拉面板 */
 .el-select-dropdown {
-  background: #161B22 !important;
+  background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
   box-shadow: var(--shadow-lg) !important;
   border-radius: var(--radius-md) !important;
@@ -1054,10 +1071,10 @@ html, body {
 
 /* 抽屉、弹出框 */
 .el-drawer {
-  background: #161B22 !important;
+  background: var(--bg-card) !important;
 }
 .el-popover {
-  background: #161B22 !important;
+  background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
   box-shadow: var(--shadow-lg) !important;
 }
@@ -1070,7 +1087,7 @@ html, body {
   transition: all var(--duration-fast) var(--ease-smooth) !important;
 }
 .el-button--default {
-  --el-button-bg-color: #161B22;
+  --el-button-bg-color: var(--bg-card);
   --el-button-border-color: var(--border-medium);
   --el-button-text-color: var(--text-secondary);
 }
@@ -1114,7 +1131,7 @@ html, body {
 }
 
 /* 数字输入框 */
-.el-input-number { --el-input-bg-color: #161B22; }
+.el-input-number { --el-input-bg-color: var(--bg-card); }
 
 /* 空状态 */
 .el-empty__description p { color: var(--text-muted) !important; }
@@ -1126,7 +1143,7 @@ html, body {
 
 /* 消息提示 */
 .el-message {
-  background: #161B22 !important;
+  background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
   border-radius: var(--radius-md) !important;
   box-shadow: var(--shadow-lg) !important;
@@ -1137,16 +1154,16 @@ html, body {
 
 /* 骨架屏 */
 .el-skeleton {
-  --el-skeleton-color: #1C2333;
-  --el-skeleton-to-color: #252D3A;
+  --el-skeleton-color: var(--bg-hover);
+  --el-skeleton-to-color: var(--bg-secondary);
 }
 
 /* ===== 表格 ===== */
 .el-table {
   --el-table-bg-color: transparent !important;
   --el-table-tr-bg-color: transparent !important;
-  --el-table-header-bg-color: #1A2030 !important;
-  --el-table-row-hover-bg-color: #1C2333 !important;
+  --el-table-header-bg-color: var(--bg-secondary) !important;
+  --el-table-row-hover-bg-color: var(--bg-hover) !important;
   --el-table-border-color: var(--border-light) !important;
   --el-table-text-color: var(--text-primary) !important;
   --el-table-header-text-color: var(--text-secondary) !important;
@@ -1189,7 +1206,7 @@ html, body {
 
 /* ===== 弹窗表单覆盖 ===== */
 .el-dialog .el-input__wrapper {
-  background: #1C2333 !important;
+  background: var(--bg-input) !important;
   border: 1px solid var(--border-light) !important;
   box-shadow: none !important;
   border-radius: var(--radius-sm) !important;
@@ -1209,13 +1226,13 @@ html, body {
   color: var(--text-dim) !important;
 }
 .el-dialog .el-input-number .el-input__wrapper {
-  background: #1C2333 !important;
+  background: var(--bg-input) !important;
 }
 .el-dialog .el-select .el-input__wrapper {
-  background: #1C2333 !important;
+  background: var(--bg-input) !important;
 }
 .el-dialog .el-button--default {
-  --el-button-bg-color: #1C2333;
+  --el-button-bg-color: var(--bg-input);
   --el-button-border-color: var(--border-medium);
   --el-button-text-color: var(--text-secondary);
 }
@@ -1249,7 +1266,7 @@ html, body {
 
 /* 弹窗内 Select 触发器 */
 .el-dialog .el-select .el-select__wrapper {
-  background: #1C2333 !important;
+  background: var(--bg-input) !important;
   border: 1px solid var(--border-light) !important;
   box-shadow: none !important;
   border-radius: var(--radius-sm) !important;
@@ -1285,7 +1302,7 @@ html, body {
 
 /* ===== Textarea ===== */
 .el-textarea__inner {
-  background: #1C2333 !important;
+  background: var(--bg-input) !important;
   color: var(--text-primary) !important;
   border-color: var(--border-light) !important;
 }
@@ -1345,7 +1362,7 @@ html, body {
 
 /* ===== 确认弹框增强 ===== */
 .el-message-box {
-  background: #161B22 !important;
+  background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
   border-radius: var(--radius-xl) !important;
   box-shadow: var(--shadow-dialog) !important;
@@ -1407,7 +1424,7 @@ html, body {
 
 /* ===== 工具提示增强 ===== */
 .el-tooltip__popper {
-  background: #1C2333 !important;
+  background: var(--bg-card) !important;
   border: 1px solid var(--border-medium) !important;
   border-radius: var(--radius-md) !important;
   box-shadow: var(--shadow-lg) !important;
@@ -1416,7 +1433,7 @@ html, body {
 
 /* ===== 日期选择器面板增强 ===== */
 .el-picker-panel {
-  background: #161B22 !important;
+  background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
   box-shadow: var(--shadow-lg) !important;
   border-radius: var(--radius-lg) !important;
@@ -1455,7 +1472,7 @@ html, body {
   border-top: 1px solid var(--border-light) !important;
 }
 .el-picker__content .el-time-panel {
-  background: #161B22 !important;
+  background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
 }
 .el-time-panel__content::after, .el-time-panel__content::before {
