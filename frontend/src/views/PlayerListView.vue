@@ -119,7 +119,7 @@
             <el-table-column label="罚球命中率" min-width="80" align="center" sortable="custom">
               <template #default="{ row }">{{ (row.freeThrowPct * 100).toFixed(1) }}%</template>
             </el-table-column>
-            <el-table-column prop="efficiency" label="效率" min-width="50" align="center" sortable="custom" />
+            <el-table-column prop="efficiency" label="效率值" min-width="65" align="center" sortable="custom" />
             <el-table-column label="操作" min-width="100" v-if="auth.isAdmin">
               <template #default="{ row }">
                 <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -437,6 +437,7 @@ onMounted(async () => { await loadTeams(); await load() })
 /* 表格视图 */
 .card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 16px; overflow: hidden; }
 .table-scroll { overflow-x: auto; }
+.table-scroll :deep(.el-table__header th) { white-space: nowrap; }
 .player-cell { display: flex; align-items: center; gap: 10px; cursor: pointer; }
 .player-thumb { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: var(--bg-hover); flex-shrink: 0; }
 .player-name-link { color: var(--accent); cursor: pointer; font-weight: 500; }
