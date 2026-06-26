@@ -78,8 +78,8 @@
 
       <!-- 表格视图（管理员） -->
       <template v-if="viewMode === 'table' && auth.isAdmin">
-        <div class="card table-scroll">
-          <el-table :data="rows" border stripe v-loading="loading" @sort-change="onSortChange" style="width: 100%; min-width: 1200px;">
+        <div class="card">
+          <el-table :data="rows" border stripe v-loading="loading" @sort-change="onSortChange" style="width: 100%;">
             <el-table-column label="姓名" min-width="130">
               <template #default="{ row }">
                 <div class="player-cell" @click="goToPlayerDetail(row)">
@@ -435,11 +435,10 @@ onMounted(async () => { await loadTeams(); await load() })
 .stat-lbl { font-size: 10px; color: var(--text-muted); }
 
 /* 表格视图 */
-.card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 16px; overflow: hidden; }
-.table-scroll { overflow-x: auto; }
-.table-scroll :deep(.el-table__header th),
-.table-scroll :deep(.el-table__header .cell),
-.table-scroll :deep(.el-table__body .cell) { white-space: nowrap; }
+.card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 16px; }
+.card :deep(.el-table__header th),
+.card :deep(.el-table__header .cell),
+.card :deep(.el-table__body .cell) { white-space: nowrap; }
 .player-cell { display: flex; align-items: center; gap: 10px; cursor: pointer; }
 .player-thumb { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: var(--bg-hover); flex-shrink: 0; }
 .player-name-link { color: var(--accent); cursor: pointer; font-weight: 500; }
