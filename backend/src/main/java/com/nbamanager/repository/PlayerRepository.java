@@ -41,4 +41,7 @@ public interface PlayerRepository extends JpaRepository<Player, Long> {
 
     @Query("SELECT p FROM Player p WHERE (LOWER(p.name) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(p.nameEn) LIKE LOWER(CONCAT('%', :q, '%'))) AND p.team.id = :teamId AND LOWER(p.position) = LOWER(:position)")
     Page<Player> findByNameOrNameEnContainingIgnoreCaseAndTeamIdAndPositionIgnoreCase(@Param("q") String q, @Param("teamId") Long teamId, @Param("position") String position, Pageable pageable);
+
+    @Query("SELECT p FROM Player p JOIN FETCH p.team ORDER BY p.pointsPerGame DESC")
+    java.util.List<Player> findAllWithTeamSortedByPpg();
 }
