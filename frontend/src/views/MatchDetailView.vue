@@ -55,7 +55,21 @@
         </div>
       </div>
 
-      <!-- Tabs: 统计 + 评论区 -->
+      <!-- 关键数据对比 -->
+      <div class="key-comparison" v-if="boxScore">
+        <div class="section-header">
+          <div class="section-header-left"><h2>关键数据对比</h2></div>
+        </div>
+        <div class="comparison-grid">
+          <div class="comparison-item" v-for="item in comparisonItems" :key="item.label">
+            <span class="comp-value" :class="{ win: item.homeValue > item.awayValue }">{{ item.homeValue }}</span>
+            <span class="comp-label">{{ item.label }}</span>
+            <span class="comp-value" :class="{ win: item.awayValue > item.homeValue }">{{ item.awayValue }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
       <el-tabs v-model="activeTab" class="detail-tabs">
         <el-tab-pane label="统计" name="stats">
           <!-- 逐节比分 -->
@@ -164,6 +178,35 @@
           </el-card>
         </el-tab-pane>
 
+        <el-tab-pane label="投篮图" name="shotchart">
+          <div class="section-header">
+            <div class="section-header-left">
+              <h2>投篮分布</h2>
+            </div>
+          </div>
+          <ShotChart :game-id="gameId" />
+        </el-tab-pane>
+
+        <el-tab-pane label="比赛回放" name="playbyplay">
+          <div class="section-header">
+            <div class="section-header-left">
+              <h2>比赛回放</h2>
+            </div>
+          </div>
+          <div v-loading="pbpLoading" class="pbp-container">
+            <div v-if="playByPlay.length === 0 && !pbpLoading" class="empty-inline">暂无比赛回放数据</div>
+            <div v-for="(event, idx) in playByPlay" :key="idx" class="pbp-event">
+              <span class="pbp-period">Q{{ event.period }}</span>
+              <span class="pbp-time">{{ event.clock }}</span>
+              <span class="pbp-desc">{{ event.description }}</span>
+            </div>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="实时聊天" name="livechat">
+          <LiveChat :game-id="gameId" :home-team="boxScore?.homeTeam || queryHomeTeam" :away-team="boxScore?.awayTeam || queryAwayTeam" />
+        </el-tab-pane>
+
         <el-tab-pane label="评论区" name="comments">
           <!-- 评论区 -->
           <div class="comment-section">
@@ -171,10 +214,9 @@
             <div class="comment-input">
               <el-input v-model="newComment" type="textarea" :rows="3" placeholder="写下你的评论..." maxlength="2000" show-word-limit />
               <div class="comment-input-actions">
-                <div ref="emojiBtnRef" class="emoji-trigger" @click="showEmojiPicker = !showEmojiPicker">
+                <div ref="commentEmojiBtn" class="emoji-trigger" @click="emoji.open(commentEmojiBtn!, e => newComment += e)">
                   <span class="emoji-icon">😀</span>
                 </div>
-                <EmojiPicker :visible="showEmojiPicker" :anchor="emojiBtnRef" @select="insertEmoji" @close="showEmojiPicker = false" />
                 <el-button type="primary" size="small" :loading="commentSubmitting" @click="submitComment" :disabled="!newComment.trim()">发表评论</el-button>
               </div>
             </div>
@@ -219,10 +261,9 @@
               <div v-if="replyingTo === comment.id" class="reply-input">
                 <el-input v-model="replyContent" type="textarea" :rows="2" placeholder="回复..." maxlength="1000" size="small" />
                 <div class="reply-actions">
-                  <div ref="replyEmojiBtnRef" class="emoji-trigger" @click="showReplyEmojiPicker = !showReplyEmojiPicker">
+                  <div ref="replyEmojiBtn" class="emoji-trigger" @click="emoji.open(replyEmojiBtn!, e => replyContent += e)">
                     <span class="emoji-icon">😀</span>
                   </div>
-                  <EmojiPicker :visible="showReplyEmojiPicker" :anchor="replyEmojiBtnRef" @select="insertReplyEmoji" @close="showReplyEmojiPicker = false" />
                   <el-button size="small" @click="replyingTo = null">取消</el-button>
                   <el-button type="primary" size="small" :loading="commentSubmitting" @click="submitReply(comment.id)">回复</el-button>
                 </div>
@@ -235,15 +276,19 @@
       </el-tabs>
     </div>
   </div>
+  <EmojiPicker :visible="emoji.visible.value" :anchor="emoji.anchor.value" @select="emoji.onSelect" @close="emoji.close" />
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { fetchBoxScore, fetchQuarterScores } from '@/api/matchDetail'
+import { fetchBoxScore, fetchQuarterScores, fetchPlayByPlay } from '@/api/matchDetail'
 import { fetchGameComments, createComment, deleteComment, toggleCommentLike } from '@/api/community'
 import EmojiPicker from '@/components/EmojiPicker.vue'
+import { useEmojiPicker } from '@/composables/useEmojiPicker'
+import ShotChart from '@/components/ShotChart.vue'
+import LiveChat from '@/components/LiveChat.vue'
 import type { BoxScore, BoxScorePlayer, QuarterScore } from '@/api/types'
 import type { Comment } from '@/api/community'
 import { getTeamLogo } from '@/utils/teamLogos'
@@ -278,16 +323,21 @@ function goBack() {
 const boxScore = ref<BoxScore | null>(null)
 const activeTab = ref('stats')
 
+// Tab 切换时加载对应数据
+watch(activeTab, (tab) => {
+  if (tab === 'playbyplay') loadPlayByPlay()
+  if (tab === 'comments') loadComments()
+})
+
 // 评论相关
 const comments = ref<Comment[]>([])
 const newComment = ref('')
 const replyContent = ref('')
 const replyingTo = ref<number | null>(null)
 const commentSubmitting = ref(false)
-const showEmojiPicker = ref(false)
-const showReplyEmojiPicker = ref(false)
-const emojiBtnRef = ref<HTMLElement | null>(null)
-const replyEmojiBtnRef = ref<HTMLElement | null>(null)
+const emoji = useEmojiPicker()
+const commentEmojiBtn = ref<HTMLElement | null>(null)
+const replyEmojiBtn = ref<HTMLElement | null>(null)
 
 // 当boxScore加载完成后，如果quarterScores为空，则从boxScore中获取
 watch(boxScore, (newVal) => {
@@ -301,10 +351,11 @@ const boxscoreLoading = ref(false)
 const quarterLoading = ref(false)
 
 const homeTotalScore = computed(() => {
-  // 优先使用查询参数中的官方分数
   if (queryHomeScore.value !== null) return String(queryHomeScore.value)
   if (!boxScore.value) return '--'
-  return boxScore.value.homePlayers.reduce((sum, p) => sum + p.points, 0)
+  const players = boxScore.value.homePlayers ?? []
+  if (!players.length) return '--'
+  return players.reduce((sum: number, p: any) => sum + (p.points ?? 0), 0)
 })
 
 const homeTeamLogo = computed(() => {
@@ -317,10 +368,11 @@ const awayTeamLogo = computed(() => {
 })
 
 const awayTotalScore = computed(() => {
-  // 优先使用查询参数中的官方分数
   if (queryAwayScore.value !== null) return String(queryAwayScore.value)
   if (!boxScore.value) return '--'
-  return boxScore.value.awayPlayers.reduce((sum, p) => sum + p.points, 0)
+  const players = boxScore.value.awayPlayers ?? []
+  if (!players.length) return '--'
+  return players.reduce((sum: number, p: any) => sum + (p.points ?? 0), 0)
 })
 
 function sortPlayers(players: BoxScorePlayer[]): BoxScorePlayer[] {
@@ -332,6 +384,25 @@ function sortPlayers(players: BoxScorePlayer[]): BoxScorePlayer[] {
 
 const sortedHomePlayers = computed(() => sortPlayers(boxScore.value?.homePlayers ?? []))
 const sortedAwayPlayers = computed(() => sortPlayers(boxScore.value?.awayPlayers ?? []))
+
+// 关键数据对比
+const comparisonItems = computed(() => {
+  if (!boxScore.value) return []
+  const h = boxScore.value.homePlayers ?? []
+  const a = boxScore.value.awayPlayers ?? []
+  const sum = (players: any[], field: string) => players.reduce((s: number, p: any) => s + (p[field] ?? 0), 0)
+  const avg = (players: any[], field: string) => players.length ? (sum(players, field) / players.length).toFixed(1) : '0'
+  return [
+    { label: '总得分', homeValue: String(sum(h, 'points')), awayValue: String(sum(a, 'points')) },
+    { label: '总篮板', homeValue: String(sum(h, 'rebounds')), awayValue: String(sum(a, 'rebounds')) },
+    { label: '总助攻', homeValue: String(sum(h, 'assists')), awayValue: String(sum(a, 'assists')) },
+    { label: '总抢断', homeValue: String(sum(h, 'steals')), awayValue: String(sum(a, 'steals')) },
+    { label: '总盖帽', homeValue: String(sum(h, 'blocks')), awayValue: String(sum(a, 'blocks')) },
+    { label: '总失误', homeValue: String(sum(h, 'turnovers')), awayValue: String(sum(a, 'turnovers')) },
+    { label: '投篮命中率', homeValue: avg(h, 'fgPct') + '%', awayValue: avg(a, 'fgPct') + '%' },
+    { label: '三分命中率', homeValue: avg(h, 'threePct') + '%', awayValue: avg(a, 'threePct') + '%' },
+  ]
+})
 
 function statusType(s: string) {
   const map: Record<string, string> = { SCHEDULED: 'warning', LIVE: 'danger', FINISHED: 'info' }
@@ -360,7 +431,6 @@ async function loadBoxScore() {
   try {
     const { data } = await fetchBoxScore(gameId.value)
     boxScore.value = data
-    // 如果boxScore包含quarterScores，直接使用
     if (data.quarterScores?.length) {
       quarterScores.value = data.quarterScores
     }
@@ -369,6 +439,23 @@ async function loadBoxScore() {
   } finally {
     boxscoreLoading.value = false
     loading.value = false
+  }
+}
+
+// Play-by-Play
+const playByPlay = ref<any[]>([])
+const pbpLoading = ref(false)
+
+async function loadPlayByPlay() {
+  if (!gameId.value || playByPlay.value.length) return
+  pbpLoading.value = true
+  try {
+    const { data } = await fetchPlayByPlay(gameId.value)
+    playByPlay.value = data ?? []
+  } catch {
+    ElMessage.error('加载比赛回放失败')
+  } finally {
+    pbpLoading.value = false
   }
 }
 
@@ -456,15 +543,6 @@ function formatCommentTime(t: string) {
   return d.toLocaleDateString('zh-CN')
 }
 
-function insertEmoji(emoji: string) {
-  newComment.value += emoji
-  showEmojiPicker.value = false
-}
-
-function insertReplyEmoji(emoji: string) {
-  replyContent.value += emoji
-  showReplyEmojiPicker.value = false
-}
 
 onMounted(async () => {
   // 并行加载数据
@@ -907,7 +985,7 @@ onMounted(async () => {
   transition: all var(--duration-fast) var(--ease-smooth);
 }
 .comment-item:hover {
-  background: rgba(108, 92, 231, 0.02);
+  background: var(--purple-dim);
   border-radius: var(--radius-md);
   padding-left: 8px;
 }
@@ -964,5 +1042,80 @@ onMounted(async () => {
   align-items: center;
   margin-top: 6px;
   position: relative;
+}
+
+/* 关键数据对比 */
+.key-comparison {
+  margin-bottom: 20px;
+}
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.comparison-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+}
+.comp-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  min-width: 40px;
+  text-align: center;
+}
+.comp-value.win {
+  color: var(--accent);
+}
+.comp-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+@media (max-width: 768px) {
+  .comparison-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Play-by-Play */
+.pbp-container {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 12px 0;
+}
+.pbp-event {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 13px;
+}
+.pbp-period {
+  font-weight: 700;
+  color: var(--accent);
+  width: 30px;
+  text-align: center;
+}
+.pbp-time {
+  color: var(--text-muted);
+  width: 50px;
+  font-variant-numeric: tabular-nums;
+}
+.pbp-desc {
+  flex: 1;
+  color: var(--text-primary);
+}
+.empty-inline {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 40px 0;
+  font-size: 14px;
 }
 </style>
