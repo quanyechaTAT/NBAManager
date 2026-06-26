@@ -110,16 +110,16 @@
             <el-table-column prop="blocksPerGame" label="盖帽" min-width="50" align="center" sortable="custom">
               <template #default="{ row }">{{ row.blocksPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column label="投篮命中率" min-width="80" align="center" sortable="custom">
+            <el-table-column label="投篮命中率" width="100" align="center" sortable="custom">
               <template #default="{ row }">{{ (row.fieldGoalPct * 100).toFixed(1) }}%</template>
             </el-table-column>
-            <el-table-column label="三分命中率" min-width="80" align="center" sortable="custom">
+            <el-table-column label="三分命中率" width="100" align="center" sortable="custom">
               <template #default="{ row }">{{ (row.threePointPct * 100).toFixed(1) }}%</template>
             </el-table-column>
-            <el-table-column label="罚球命中率" min-width="80" align="center" sortable="custom">
+            <el-table-column label="罚球命中率" width="100" align="center" sortable="custom">
               <template #default="{ row }">{{ (row.freeThrowPct * 100).toFixed(1) }}%</template>
             </el-table-column>
-            <el-table-column prop="efficiency" label="效率值" min-width="65" align="center" sortable="custom" />
+            <el-table-column prop="efficiency" label="效率值" width="80" align="center" sortable="custom" />
             <el-table-column label="操作" min-width="100" v-if="auth.isAdmin">
               <template #default="{ row }">
                 <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -277,7 +277,7 @@ onMounted(async () => { await loadTeams(); await load() })
 
 <style scoped>
 .page {
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 0 24px;
   min-height: calc(100vh - 108px);
