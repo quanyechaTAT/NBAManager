@@ -63,7 +63,7 @@ export interface DashboardStats {
   teamCount: number
   playerCount: number
   teamWinRows: { name: string; wins: number; losses: number }[]
-  topScorers: { id: number; playerName: string; ppg: number; teamName: string }[]
+  topScorers: { id: number; playerName: string; ppg: number; teamName: string; nbaPlayerId: number | null }[]
 }
 
 export interface GameNews {

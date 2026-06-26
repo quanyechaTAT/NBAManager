@@ -38,7 +38,7 @@ public class DashboardService {
                 players.stream()
                         .sorted(Comparator.comparing(Player::getPointsPerGame).reversed())
                         .limit(8)
-                        .map(p -> new TopScorerRow(p.getId(), p.getName(), p.getPointsPerGame(), p.getTeam().getName()))
+                        .map(p -> new TopScorerRow(p.getId(), p.getName(), p.getPointsPerGame(), p.getTeam().getName(), p.getNbaPlayerId()))
                         .collect(Collectors.toList());
 
         return new DashboardStatsDto(teams.size(), players.size(), teamRows, top);

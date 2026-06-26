@@ -100,6 +100,10 @@
           <div class="player-list">
             <div v-for="(p, i) in topScorers" :key="p.playerName" class="player-row clickable" @click="goPlayerDetail(p.id)">
               <span class="player-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+              <div class="player-avatar-mini">
+                <img v-if="p.nbaPlayerId" :src="getHeadshotUrl(p.nbaPlayerId)" :alt="p.playerName" class="player-headshot-mini" @error="onHeadshotError" />
+                <span class="player-avatar-fallback" :style="{ display: p.nbaPlayerId ? 'none' : 'flex' }">{{ p.playerName?.charAt(0) }}</span>
+              </div>
               <div class="player-info">
                 <span class="player-name">{{ p.playerName }}</span>
                 <span class="player-team">{{ p.teamName }}</span>
@@ -188,30 +192,31 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchDashboardStats } from '@/api/dashboard'
-import { fetchTodayNews } from '@/api/news'
-import { fetchRankings } from '@/api/team'
-import { fetchHotPosts } from '@/api/community'
 import { getTeamLogo } from '@/utils/teamLogos'
-import request from '@/utils/request'
-import type { DashboardStats, TeamRank, GameNews, Post } from '@/api/types'
+import { useDashboardCache } from '@/composables/useDashboardCache'
 
 const router = useRouter()
+const { stats, todayGames, westStandings, eastStandings, topScorers, hotPosts, docCount, loading } = useDashboardCache()
 
-const stats = ref<DashboardStats | null>(null)
-const todayGames = ref<GameNews[]>([])
-const westStandings = ref<TeamRank[]>([])
-const eastStandings = ref<TeamRank[]>([])
-const topScorers = ref<{ id: number; playerName: string; ppg: number; teamName: string }[]>([])
-const hotPosts = ref<Post[]>([])
-const docCount = ref(0)
 const rankTab = ref<'west' | 'east'>('west')
 
 const currentRank = computed(() => rankTab.value === 'west' ? westStandings.value : eastStandings.value)
 
 const getLogo = (name: string) => getTeamLogo(name) || undefined
+
+function getHeadshotUrl(nbaPlayerId: number | null): string {
+  if (!nbaPlayerId) return ''
+  return `https://ak-static.cms.nba.com/wp-content/uploads/headshots/nba/latest/260x190/${nbaPlayerId}.png`
+}
+
+function onHeadshotError(e: Event) {
+  const img = e.target as HTMLImageElement
+  img.style.display = 'none'
+  const fallback = img.nextElementSibling as HTMLElement
+  if (fallback) fallback.style.display = 'flex'
+}
 
 function statusLabel(s?: string) {
   const map: Record<string, string> = { LIVE: '进行中', FINISHED: '已结束', SCHEDULED: '未开始', UPCOMING: '未开始' }
@@ -233,33 +238,6 @@ function goTeamDetail(teamName: string) {
 function goPlayerDetail(playerId: number) {
   router.push({ path: '/players/detail', query: { id: String(playerId), returnTo: '/dashboard' } })
 }
-
-onMounted(async () => {
-  const [statsRes, todayRes, rankRes, hotRes, ragRes] = await Promise.allSettled([
-    fetchDashboardStats(),
-    fetchTodayNews(),
-    fetchRankings(),
-    fetchHotPosts({ page: 0, size: 5 }),
-    request.get('/rag/stats'),
-  ])
-  if (statsRes.status === 'fulfilled') {
-    stats.value = statsRes.value.data
-    topScorers.value = stats.value?.topScorers ?? []
-  }
-  if (todayRes.status === 'fulfilled') {
-    const INVALID = new Set(['待定', 'TBD', 'tbd', ''])
-    todayGames.value = (todayRes.value.data ?? [])
-      .filter((g: GameNews) => g.nbaGameId && !INVALID.has(g.homeTeam?.trim()) && !INVALID.has(g.awayTeam?.trim()))
-      .slice(0, 10)
-  }
-  if (rankRes.status === 'fulfilled') {
-    const r = rankRes.value.data
-    westStandings.value = r?.西部 ?? r?.western ?? []
-    eastStandings.value = r?.东部 ?? r?.eastern ?? []
-  }
-  if (hotRes.status === 'fulfilled') hotPosts.value = (hotRes.value.data?.content ?? []).slice(0, 5)
-  if (ragRes.status === 'fulfilled') docCount.value = ragRes.value.data?.documentCount || 0
-})
 </script>
 
 <style scoped>
@@ -625,6 +603,33 @@ onMounted(async () => {
   text-align: center;
 }
 .player-rank.top3 { color: var(--accent); }
+.player-avatar-mini {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--purple) 0%, #5A4BD1 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.player-headshot-mini {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.player-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-heading);
+}
 .player-info { flex: 1; min-width: 0; }
 .player-name { display: block; font-size: 13px; font-weight: 500; color: var(--text-primary); }
 .player-team { font-size: 11px; color: var(--text-muted); }
