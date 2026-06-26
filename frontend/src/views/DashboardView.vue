@@ -81,11 +81,12 @@
             <button class="rank-tab" :class="{ active: rankTab === 'east' }" @click="rankTab = 'east'">东部</button>
           </div>
           <div class="rank-list">
-            <div v-for="(t, i) in currentRank" :key="t.teamName" class="rank-row">
+            <div v-for="(t, i) in currentRank" :key="t.teamName" class="rank-row clickable" @click="goTeamDetail(t.teamName)">
               <span class="rank-num" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
               <img v-if="getLogo(t.teamName)" :src="getLogo(t.teamName)" class="rank-logo" alt="" />
               <span class="rank-name">{{ t.teamName }}</span>
               <span class="rank-record">{{ t.wins }}-{{ t.losses }}</span>
+              <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
             </div>
           </div>
         </div>
@@ -97,13 +98,14 @@
             <router-link to="/players" class="section-link">球员排行</router-link>
           </div>
           <div class="player-list">
-            <div v-for="(p, i) in topScorers" :key="p.playerName" class="player-row">
+            <div v-for="(p, i) in topScorers" :key="p.playerName" class="player-row clickable" @click="goPlayerDetail(p.id)">
               <span class="player-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
               <div class="player-info">
                 <span class="player-name">{{ p.playerName }}</span>
                 <span class="player-team">{{ p.teamName }}</span>
               </div>
               <span class="player-stat">{{ p.ppg.toFixed(1) }}</span>
+              <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
             </div>
           </div>
         </div>
@@ -202,7 +204,7 @@ const stats = ref<DashboardStats | null>(null)
 const todayGames = ref<GameNews[]>([])
 const westStandings = ref<TeamRank[]>([])
 const eastStandings = ref<TeamRank[]>([])
-const topScorers = ref<{ playerName: string; ppg: number; teamName: string }[]>([])
+const topScorers = ref<{ id: number; playerName: string; ppg: number; teamName: string }[]>([])
 const hotPosts = ref<Post[]>([])
 const docCount = ref(0)
 const rankTab = ref<'west' | 'east'>('west')
@@ -222,6 +224,14 @@ function goMatch(g: GameNews) {
 
 function goMatchAI(g: GameNews) {
   router.push({ path: '/smart-search', query: { q: `分析${g.homeTeam} vs ${g.awayTeam}这场比赛的关键看点` } })
+}
+
+function goTeamDetail(teamName: string) {
+  router.push({ path: '/teams/detail', query: { name: teamName, returnTo: '/dashboard' } })
+}
+
+function goPlayerDetail(playerId: number) {
+  router.push({ path: '/players/detail', query: { id: String(playerId), returnTo: '/dashboard' } })
 }
 
 onMounted(async () => {
@@ -556,6 +566,23 @@ onMounted(async () => {
   transition: background 0.1s;
 }
 .rank-row:hover { background: var(--bg-hover); }
+.rank-row.clickable {
+  cursor: pointer;
+}
+.rank-row.clickable:hover {
+  background: var(--bg-hover);
+}
+.arrow-icon {
+  opacity: 0;
+  transition: opacity 0.15s, transform 0.15s;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.rank-row.clickable:hover .arrow-icon,
+.player-row.clickable:hover .arrow-icon {
+  opacity: 1;
+  transform: translateX(2px);
+}
 .rank-num {
   width: 20px;
   font-size: 12px;
@@ -584,6 +611,12 @@ onMounted(async () => {
   transition: background 0.1s;
 }
 .player-row:hover { background: var(--bg-hover); }
+.player-row.clickable {
+  cursor: pointer;
+}
+.player-row.clickable:hover {
+  background: var(--bg-hover);
+}
 .player-rank {
   width: 20px;
   font-size: 12px;
