@@ -51,13 +51,19 @@ export interface TeamRank {
   losses: number
   gamesBehind: number
   conference: string
+  homeRecord?: string
+  awayRecord?: string
+  pointsPerGame?: number
+  oppPointsPerGame?: number
+  netRating?: number
+  streak?: string
 }
 
 export interface DashboardStats {
   teamCount: number
   playerCount: number
   teamWinRows: { name: string; wins: number; losses: number }[]
-  topScorers: { playerName: string; ppg: number; teamName: string }[]
+  topScorers: { id: number; playerName: string; ppg: number; teamName: string }[]
 }
 
 export interface GameNews {
