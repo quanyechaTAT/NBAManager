@@ -3,7 +3,6 @@
     <div v-if="visible" class="emoji-backdrop" @click="$emit('close')"></div>
     <div
       v-if="visible"
-      ref="pickerRef"
       class="emoji-picker"
       :style="pickerStyle"
       @keydown="onKeydown"
@@ -11,7 +10,7 @@
       <!-- Tab 栏 -->
       <div class="emoji-tabs">
         <button
-          v-for="(group, i) in allGroups"
+          v-for="group in allGroups"
           :key="group.id"
           class="emoji-tab"
           :class="{ active: activeTab === group.id }"
@@ -117,7 +116,6 @@ const MAX_RECENT = 16
 const search = ref('')
 const activeTab = ref('recent')
 const highlightIndex = ref(-1)
-const pickerRef = ref<HTMLElement | null>(null)
 const searchRef = ref<HTMLInputElement | null>(null)
 const gridRef = ref<HTMLElement | null>(null)
 
