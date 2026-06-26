@@ -51,8 +51,13 @@ public class DashboardService {
 
     @Transactional(readOnly = true)
     public Page<PlayerDto> getTopScorers(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "pointsPerGame"));
-        return playerRepository.findAll(pageable).map(this::toDto);
+        List<Player> all = playerRepository.findAllWithTeamSortedByPpg();
+        int start = page * size;
+        int end = Math.min(start + size, all.size());
+        List<PlayerDto> content = start < all.size()
+                ? all.subList(start, end).stream().map(this::toDto).collect(Collectors.toList())
+                : List.of();
+        return new org.springframework.data.domain.PageImpl<>(content, PageRequest.of(page, size), all.size());
     }
 
     private PlayerDto toDto(Player p) {
