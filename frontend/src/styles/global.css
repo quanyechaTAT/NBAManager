@@ -2203,10 +2203,63 @@ html, body {
 }
 
 /* 覆盖 Element Plus 默认的 dialog margin 和 background */
+/* 暗色主题：使用 CSS 变量 */
 .el-dialog.dialog-light {
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border-light) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.3) !important;
+}
+.el-dialog.dialog-light .el-dialog__header {
+  background: linear-gradient(135deg, var(--bg-hover) 0%, transparent 100%) !important;
+  border-bottom: 1px solid var(--border-light) !important;
+}
+.el-dialog.dialog-light .el-dialog__title {
+  color: var(--text-primary) !important;
+}
+.el-dialog.dialog-light .el-dialog__body {
+  background-color: transparent !important;
+  color: var(--text-secondary) !important;
+}
+.el-dialog.dialog-light .el-dialog__footer {
+  background: var(--bg-hover) !important;
+  border-top: 1px solid var(--border-light) !important;
+}
+.el-dialog.dialog-light .el-form-item__label {
+  color: var(--text-secondary) !important;
+}
+.el-dialog.dialog-light .el-input__wrapper {
+  background: var(--bg-input) !important;
+  border: 1.5px solid var(--border-light) !important;
+}
+.el-dialog.dialog-light .el-input__wrapper:hover {
+  border-color: var(--border-medium) !important;
+}
+.el-dialog.dialog-light .el-input__wrapper.is-focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-glow) !important;
+}
+.el-dialog.dialog-light .el-input__inner {
+  color: var(--text-primary) !important;
+}
+.el-dialog.dialog-light .el-textarea__inner {
+  background: var(--bg-input) !important;
+  border: 1.5px solid var(--border-light) !important;
+  color: var(--text-primary) !important;
+}
+.el-dialog.dialog-light .el-select__wrapper {
+  background: var(--bg-input) !important;
+  border: 1.5px solid var(--border-light) !important;
+}
+.el-dialog.dialog-light .el-button--default {
+  background: var(--bg-input) !important;
+  border-color: var(--border-medium) !important;
+  color: var(--text-secondary) !important;
+}
+/* 亮色主题：白色背景 */
+[data-theme="light"] .el-dialog.dialog-light {
   background-color: #FFFFFF !important;
   border: 1px solid #E8E5E0 !important;
-  border-radius: 14px !important;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.10), 0 6px 20px rgba(0, 0, 0, 0.06) !important;
 }
 
