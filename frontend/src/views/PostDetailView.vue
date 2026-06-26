@@ -418,7 +418,7 @@ onMounted(() => { loadPost(); loadComments(); checkFavoriteStatus() })
 </script>
 
 <style scoped>
-.page { max-width: 900px; min-height: calc(100vh - 108px); position: relative; animation: pageFadeIn 0.3s ease forwards; opacity: 0; transform: translateY(8px); }
+.page { max-width: 1200px; min-height: calc(100vh - 108px); position: relative; animation: pageFadeIn 0.3s ease forwards; opacity: 0; transform: translateY(8px); }
 @keyframes pageFadeIn { to { opacity: 1; transform: translateY(0); } }
 .back-row { margin-bottom: 16px; }
 .back-btn { color: var(--text-muted) !important; font-size: 13px !important; }

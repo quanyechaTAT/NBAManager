@@ -1050,7 +1050,7 @@ onMounted(async () => {
 }
 .comparison-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 8px;
 }
 .comparison-item {
@@ -1076,6 +1076,7 @@ onMounted(async () => {
   font-size: 11px;
   color: var(--text-muted);
   text-align: center;
+  white-space: nowrap;
 }
 @media (max-width: 768px) {
   .comparison-grid {

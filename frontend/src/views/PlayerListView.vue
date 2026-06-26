@@ -72,7 +72,7 @@
           <el-empty v-if="!loading && rows.length === 0" description="暂无球员数据" />
         </div>
         <div class="pager" v-if="total > 0">
-          <el-pagination background layout="total, prev, pager, next" :total="total" v-model:current-page="page" :page-size="21" @current-change="load" />
+          <el-pagination background layout="total, prev, pager, next" :total="total" v-model:current-page="page" :page-size="20" @current-change="load" />
         </div>
       </template>
 
@@ -179,7 +179,7 @@ const rows = ref<Player[]>([])
 const teamOptions = ref<Team[]>([])
 const total = ref(0)
 const page = ref(1)
-const size = ref(21)
+const size = ref(20)
 const keyword = ref('')
 const filterTeamId = ref<number | undefined>(undefined)
 const filterPosition = ref<string | undefined>(undefined)
@@ -323,6 +323,41 @@ onMounted(async () => { await loadTeams(); await load() })
 .filter-search svg { color: var(--text-muted); flex-shrink: 0; }
 .filter-search input { background: none; border: none; outline: none; color: var(--text-primary); font-size: 13px; width: 100%; }
 .filter-search input::placeholder { color: var(--text-dim); }
+
+.filter-bar :deep(.el-select__wrapper) {
+  min-height: 40px;
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.72), rgba(15, 23, 42, 0.88)) !important;
+  border: 1px solid rgba(var(--border-light-rgb), 0.95) !important;
+  border-radius: 6px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.filter-bar :deep(.el-select__wrapper:hover) {
+  border-color: rgba(100, 116, 139, 0.52) !important;
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.86), rgba(15, 23, 42, 0.94)) !important;
+}
+
+.filter-bar :deep(.el-select__wrapper.is-focused) {
+  border-color: rgba(59, 130, 246, 0.7) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+.filter-bar :deep(.el-select__placeholder),
+.filter-bar :deep(.el-select__selected-item span) {
+  color: var(--text-secondary) !important;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.filter-bar :deep(.el-select__placeholder.is-transparent) {
+  color: var(--text-dim) !important;
+}
+
+.filter-bar :deep(.el-select__caret) {
+  color: var(--text-muted) !important;
+}
+
 .filter-reset {
   display: inline-flex;
   align-items: center;
@@ -337,6 +372,22 @@ onMounted(async () => { await loadTeams(); await load() })
   transition: all 0.15s;
 }
 .filter-reset:hover { border-color: var(--danger); color: var(--danger); }
+
+[data-theme="light"] .filter-bar :deep(.el-select__wrapper) {
+  background: var(--bg-input) !important;
+  border-color: var(--border-light) !important;
+  box-shadow: none !important;
+}
+
+[data-theme="light"] .filter-bar :deep(.el-select__wrapper:hover) {
+  border-color: var(--border-medium) !important;
+  background: var(--bg-input) !important;
+}
+
+[data-theme="light"] .filter-bar :deep(.el-select__wrapper.is-focused) {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(232, 93, 38, 0.1) !important;
+}
 
 /* 球员卡片网格 */
 .player-grid {
