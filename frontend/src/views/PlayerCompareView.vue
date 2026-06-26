@@ -172,10 +172,24 @@ onMounted(async () => {
   const id1FromQuery = Number(route.query.id1) || null
   if (id1FromQuery) {
     player1Id.value = id1FromQuery
+    // 加载球员信息到选项列表，以便显示名称
+    try {
+      const { data } = await fetchPlayerCompare(id1FromQuery, id1FromQuery)
+      if (data?.player1) {
+        playerOptions1.value = [{ id: data.player1.id, name: data.player1.name, teamName: data.player1.teamName } as Player]
+      }
+    } catch { /* ignore */ }
   }
   const id2FromQuery = Number(route.query.id2) || null
   if (id2FromQuery) {
     player2Id.value = id2FromQuery
+    // 加载球员信息到选项列表，以便显示名称
+    try {
+      const { data } = await fetchPlayerCompare(id2FromQuery, id2FromQuery)
+      if (data?.player1) {
+        playerOptions2.value = [{ id: data.player1.id, name: data.player1.name, teamName: data.player1.teamName } as Player]
+      }
+    } catch { /* ignore */ }
   }
 
   // 如果两个球员都已选择，自动加载对比
