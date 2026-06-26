@@ -24,7 +24,7 @@
                 📷 更换头像
               </el-button>
             </div>
-            <el-tag :type="auth.isAdmin ? 'warning' : 'info'" size="small">{{ auth.isAdmin ? '管理员' : '用户' }}</el-tag>
+            <el-tag type="info" size="small">用户</el-tag>
             <input ref="avatarInput" type="file" accept="image/*" style="display:none" @change="onAvatarChange" />
           </div>
         </div>
@@ -387,7 +387,7 @@ onMounted(loadTabData)
 </script>
 
 <style scoped>
-.page { max-width: 900px; min-height: calc(100vh - 108px); position: relative; border-radius: var(--radius-lg); animation: pageFadeIn 0.4s var(--ease-smooth) forwards; opacity: 0; transform: translateY(12px); }
+.page { max-width: 900px; margin: 0 auto; padding: 0 24px; min-height: calc(100vh - 108px); position: relative; border-radius: var(--radius-lg); animation: pageFadeIn 0.4s var(--ease-smooth) forwards; opacity: 0; transform: translateY(12px); }
 @keyframes pageFadeIn { to { opacity: 1; transform: translateY(0); } }
 .profile-card { background: var(--bg-card) !important; border: 1px solid var(--border-light) !important; border-radius: var(--radius-xl) !important; margin-bottom: 20px; position: relative; overflow: hidden; }
 .profile-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--purple), var(--accent), var(--cyan)); border-radius: var(--radius-xl) var(--radius-xl) 0 0; }

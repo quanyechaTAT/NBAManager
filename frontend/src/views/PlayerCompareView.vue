@@ -133,9 +133,11 @@ import { fetchPlayers } from '@/api/player'
 import { fetchPlayerCompare } from '@/api/playerCompare'
 import type { Player } from '@/api/types'
 import type { PlayerCompare } from '@/api/playerCompare'
+import { useChartTheme } from '@/composables/useChartTheme'
 
 use([RadarChart, TitleComponent, TooltipComponent, RadarComponent, CanvasRenderer])
 
+const { colors, tooltipStyle } = useChartTheme()
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
@@ -197,19 +199,16 @@ async function loadCompare() {
 
 const radarOption = computed(() => {
   if (!compare.value) return {}
+  const c = colors.value
   const p1 = compare.value.player1
   const p2 = compare.value.player2
   const normalize = (val: number, max: number) => Math.min((val / max) * 100, 100)
   return {
-    tooltip: {
-      backgroundColor: '#1C2333',
-      borderColor: '#30363D',
-      textStyle: { color: '#E6EDF3', fontSize: 12 },
-    },
+    tooltip: tooltipStyle.value,
     legend: {
       data: [p1.name, p2.name],
       bottom: 0,
-      textStyle: { color: '#8B949E', fontSize: 12 },
+      textStyle: { color: c.textMuted, fontSize: 12 },
       icon: 'roundRect',
       itemWidth: 12,
       itemHeight: 8,
@@ -225,10 +224,10 @@ const radarOption = computed(() => {
       ],
       shape: 'polygon',
       splitNumber: 4,
-      axisName: { color: '#8B949E', fontSize: 12 },
-      splitLine: { lineStyle: { color: '#30363D' } },
-      splitArea: { areaStyle: { color: ['rgba(108,92,231,0.02)', 'rgba(108,92,231,0.05)'] } },
-      axisLine: { lineStyle: { color: '#30363D' } },
+      axisName: { color: c.textMuted, fontSize: 12 },
+      splitLine: { lineStyle: { color: c.axisLine } },
+      splitArea: { areaStyle: { color: [c.splitArea1, c.splitArea2] } },
+      axisLine: { lineStyle: { color: c.axisLine } },
     },
     series: [{
       type: 'radar',
@@ -243,9 +242,9 @@ const radarOption = computed(() => {
             normalize(p1.fieldGoalPct, 0.65),
           ],
           name: p1.name,
-          areaStyle: { color: 'rgba(0, 210, 255, 0.2)' },
-          lineStyle: { color: '#00D2FF', width: 2 },
-          itemStyle: { color: '#00D2FF' },
+          areaStyle: { color: `${c.cyan}33` },
+          lineStyle: { color: c.cyan, width: 2 },
+          itemStyle: { color: c.cyan },
         },
         {
           value: [
@@ -257,9 +256,9 @@ const radarOption = computed(() => {
             normalize(p2.fieldGoalPct, 0.65),
           ],
           name: p2.name,
-          areaStyle: { color: 'rgba(108, 92, 231, 0.2)' },
-          lineStyle: { color: '#6C5CE7', width: 2 },
-          itemStyle: { color: '#A29BFE' },
+          areaStyle: { color: `${c.purple}33` },
+          lineStyle: { color: c.purple, width: 2 },
+          itemStyle: { color: c.purpleLight },
         },
       ],
     }],
@@ -304,7 +303,7 @@ function onPhotoError(e: Event) {
 </script>
 
 <style scoped>
-.page { max-width: 1000px; min-height: calc(100vh - 108px); position: relative; border-radius: var(--radius-lg); }
+.page { max-width: 1000px; margin: 0 auto; padding: 0 24px; min-height: calc(100vh - 108px); position: relative; border-radius: var(--radius-lg); }
 .back-row { margin-bottom: 16px; }
 .back-btn { color: var(--text-muted) !important; font-size: 13px !important; }
 .compare-title { margin: 0 0 20px; font-size: 22px; color: var(--text-primary); font-family: var(--font-heading); }
