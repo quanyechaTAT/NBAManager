@@ -78,9 +78,9 @@
 
       <!-- 表格视图（管理员） -->
       <template v-if="viewMode === 'table' && auth.isAdmin">
-        <div class="card">
-          <el-table :data="rows" border stripe v-loading="loading" @sort-change="onSortChange" style="width: 100%">
-            <el-table-column label="姓名" min-width="140">
+        <div class="card table-scroll">
+          <el-table :data="rows" border stripe v-loading="loading" @sort-change="onSortChange" style="width: 100%; min-width: 1060px;">
+            <el-table-column label="姓名" min-width="130">
               <template #default="{ row }">
                 <div class="player-cell" @click="goToPlayerDetail(row)">
                   <img v-if="row.nbaPlayerId" :src="`https://cdn.nba.com/headshots/nba/latest/260x190/${row.nbaPlayerId}.png`" class="player-thumb" @error="onThumbError($event)" />
@@ -88,38 +88,38 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column prop="teamName" label="球队" min-width="80" />
-            <el-table-column prop="position" label="位置" min-width="55" align="center" />
-            <el-table-column prop="jerseyNumber" label="球衣" min-width="50" align="center" />
+            <el-table-column prop="teamName" label="球队" min-width="70" />
+            <el-table-column prop="position" label="位置" min-width="50" align="center" />
+            <el-table-column prop="jerseyNumber" label="球衣" min-width="45" align="center" />
             <el-table-column prop="gamesPlayed" label="出场" min-width="50" align="center" sortable="custom" />
-            <el-table-column prop="minutesPerGame" label="时间" min-width="55" align="center" sortable="custom">
+            <el-table-column prop="minutesPerGame" label="时间" min-width="50" align="center" sortable="custom">
               <template #default="{ row }">{{ row.minutesPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column prop="pointsPerGame" label="得分" min-width="60" align="center" sortable="custom">
+            <el-table-column prop="pointsPerGame" label="得分" min-width="55" align="center" sortable="custom">
               <template #default="{ row }"><span class="stat-highlight">{{ row.pointsPerGame?.toFixed(1) }}</span></template>
             </el-table-column>
-            <el-table-column prop="reboundsPerGame" label="篮板" min-width="60" align="center" sortable="custom">
+            <el-table-column prop="reboundsPerGame" label="篮板" min-width="55" align="center" sortable="custom">
               <template #default="{ row }">{{ row.reboundsPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column prop="assistsPerGame" label="助攻" min-width="60" align="center" sortable="custom">
+            <el-table-column prop="assistsPerGame" label="助攻" min-width="55" align="center" sortable="custom">
               <template #default="{ row }">{{ row.assistsPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column prop="stealsPerGame" label="抢断" min-width="55" align="center" sortable="custom">
+            <el-table-column prop="stealsPerGame" label="抢断" min-width="50" align="center" sortable="custom">
               <template #default="{ row }">{{ row.stealsPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column prop="blocksPerGame" label="盖帽" min-width="55" align="center" sortable="custom">
+            <el-table-column prop="blocksPerGame" label="盖帽" min-width="50" align="center" sortable="custom">
               <template #default="{ row }">{{ row.blocksPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column label="投篮%" min-width="60" align="center" sortable="custom">
+            <el-table-column label="投篮命中率" min-width="80" align="center" sortable="custom">
               <template #default="{ row }">{{ (row.fieldGoalPct * 100).toFixed(1) }}%</template>
             </el-table-column>
-            <el-table-column label="三分%" min-width="60" align="center" sortable="custom">
+            <el-table-column label="三分命中率" min-width="80" align="center" sortable="custom">
               <template #default="{ row }">{{ (row.threePointPct * 100).toFixed(1) }}%</template>
             </el-table-column>
-            <el-table-column label="罚球%" min-width="60" align="center" sortable="custom">
+            <el-table-column label="罚球命中率" min-width="80" align="center" sortable="custom">
               <template #default="{ row }">{{ (row.freeThrowPct * 100).toFixed(1) }}%</template>
             </el-table-column>
-            <el-table-column prop="efficiency" label="效率" min-width="55" align="center" sortable="custom" />
+            <el-table-column prop="efficiency" label="效率" min-width="50" align="center" sortable="custom" />
             <el-table-column label="操作" min-width="100" v-if="auth.isAdmin">
               <template #default="{ row }">
                 <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -436,6 +436,7 @@ onMounted(async () => { await loadTeams(); await load() })
 
 /* 表格视图 */
 .card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 16px; overflow: hidden; }
+.table-scroll { overflow-x: auto; }
 .player-cell { display: flex; align-items: center; gap: 10px; cursor: pointer; }
 .player-thumb { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: var(--bg-hover); flex-shrink: 0; }
 .player-name-link { color: var(--accent); cursor: pointer; font-weight: 500; }
