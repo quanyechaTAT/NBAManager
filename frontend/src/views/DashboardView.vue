@@ -4,31 +4,50 @@
     <section class="hero-section">
       <div class="hero-inner">
         <div class="hero-left">
-          <p class="hero-eyebrow">NBA DATA CENTER</p>
-          <h1 class="hero-title">赛季数据中心</h1>
-          <p class="hero-season">2025-26 NBA Season</p>
-          <div class="hero-actions">
-            <button class="hero-btn primary" @click="$router.push('/news')">查看赛程</button>
-            <button class="hero-btn secondary" @click="$router.push('/smart-search')">AI 助手</button>
-          </div>
+          <template v-if="loading && !stats">
+            <div class="skeleton skeleton-text" style="width: 140px; height: 12px; margin-bottom: 12px;"></div>
+            <div class="skeleton skeleton-text" style="width: 200px; height: 32px; margin-bottom: 8px;"></div>
+            <div class="skeleton skeleton-text" style="width: 160px; height: 14px; margin-bottom: 20px;"></div>
+            <div style="display: flex; gap: 10px;">
+              <div class="skeleton" style="width: 100px; height: 36px; border-radius: 980px;"></div>
+              <div class="skeleton" style="width: 80px; height: 36px; border-radius: 980px;"></div>
+            </div>
+          </template>
+          <template v-else>
+            <p class="hero-eyebrow">NBA DATA CENTER</p>
+            <h1 class="hero-title">赛季数据中心</h1>
+            <p class="hero-season">2025-26 NBA Season</p>
+            <div class="hero-actions">
+              <button class="hero-btn primary" @click="$router.push('/news')">查看赛程</button>
+              <button class="hero-btn secondary" @click="$router.push('/smart-search')">AI 助手</button>
+            </div>
+          </template>
         </div>
         <div class="hero-metrics">
-          <div class="metric-card">
-            <span class="metric-value">{{ todayGames.length }}</span>
-            <span class="metric-label">今日比赛</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-value">{{ stats?.teamCount ?? 30 }}</span>
-            <span class="metric-label">活跃球队</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-value">{{ docCount.toLocaleString() }}</span>
-            <span class="metric-label">已索引文档</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-value">2026</span>
-            <span class="metric-label">当前赛季</span>
-          </div>
+          <template v-if="loading && !stats">
+            <div v-for="i in 4" :key="i" class="metric-card">
+              <div class="skeleton" style="width: 48px; height: 28px; margin: 0 auto 6px;"></div>
+              <div class="skeleton" style="width: 56px; height: 11px; margin: 0 auto;"></div>
+            </div>
+          </template>
+          <template v-else>
+            <div class="metric-card">
+              <span class="metric-value">{{ todayGames.length }}</span>
+              <span class="metric-label">今日比赛</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-value">{{ stats?.teamCount ?? 30 }}</span>
+              <span class="metric-label">活跃球队</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-value">{{ docCount.toLocaleString() }}</span>
+              <span class="metric-label">已索引文档</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-value">2026</span>
+              <span class="metric-label">当前赛季</span>
+            </div>
+          </template>
         </div>
       </div>
     </section>
@@ -76,19 +95,29 @@
             <h3>排名摘要</h3>
             <router-link to="/teams" class="section-link">完整排名</router-link>
           </div>
-          <div class="rank-tabs">
-            <button class="rank-tab" :class="{ active: rankTab === 'west' }" @click="rankTab = 'west'">西部</button>
-            <button class="rank-tab" :class="{ active: rankTab === 'east' }" @click="rankTab = 'east'">东部</button>
-          </div>
-          <div class="rank-list">
-            <div v-for="(t, i) in currentRank" :key="t.teamName" class="rank-row clickable" @click="goTeamDetail(t.teamName)">
-              <span class="rank-num" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
-              <img v-if="getLogo(t.teamName)" :src="getLogo(t.teamName)" class="rank-logo" alt="" />
-              <span class="rank-name">{{ t.teamName }}</span>
-              <span class="rank-record">{{ t.wins }}-{{ t.losses }}</span>
-              <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
+          <template v-if="loading && currentRank.length === 0">
+            <div v-for="i in 8" :key="i" class="skeleton-row">
+              <div class="skeleton" style="width: 20px; height: 14px;"></div>
+              <div class="skeleton" style="width: 20px; height: 20px; border-radius: 4px;"></div>
+              <div class="skeleton" style="width: 60px; height: 14px;"></div>
+              <div class="skeleton" style="width: 40px; height: 14px; margin-left: auto;"></div>
             </div>
-          </div>
+          </template>
+          <template v-else>
+            <div class="rank-tabs">
+              <button class="rank-tab" :class="{ active: rankTab === 'west' }" @click="rankTab = 'west'">西部</button>
+              <button class="rank-tab" :class="{ active: rankTab === 'east' }" @click="rankTab = 'east'">东部</button>
+            </div>
+            <div class="rank-list">
+              <div v-for="(t, i) in currentRank" :key="t.teamName" class="rank-row clickable" @click="goTeamDetail(t.teamName)">
+                <span class="rank-num" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+                <img v-if="getLogo(t.teamName)" :src="getLogo(t.teamName)" class="rank-logo" alt="" />
+                <span class="rank-name">{{ t.teamName }}</span>
+                <span class="rank-record">{{ t.wins }}-{{ t.losses }}</span>
+                <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- 热门球员 -->
@@ -97,21 +126,34 @@
             <h3>得分榜</h3>
             <router-link to="/players" class="section-link">球员排行</router-link>
           </div>
-          <div class="player-list">
-            <div v-for="(p, i) in topScorers" :key="p.playerName" class="player-row clickable" @click="goPlayerDetail(p.id)">
-              <span class="player-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
-              <div class="player-avatar-mini">
-                <img v-if="p.nbaPlayerId" :src="getHeadshotUrl(p.nbaPlayerId)" :alt="p.playerName" class="player-headshot-mini" @error="onHeadshotError" />
-                <span class="player-avatar-fallback" :style="{ display: p.nbaPlayerId ? 'none' : 'flex' }">{{ p.playerName?.charAt(0) }}</span>
+          <template v-if="loading && topScorers.length === 0">
+            <div v-for="i in 8" :key="i" class="skeleton-row">
+              <div class="skeleton" style="width: 20px; height: 14px;"></div>
+              <div class="skeleton" style="width: 36px; height: 36px; border-radius: 50%;"></div>
+              <div style="flex: 1;">
+                <div class="skeleton" style="width: 80px; height: 14px; margin-bottom: 4px;"></div>
+                <div class="skeleton" style="width: 50px; height: 10px;"></div>
               </div>
-              <div class="player-info">
-                <span class="player-name">{{ p.playerName }}</span>
-                <span class="player-team">{{ p.teamName }}</span>
-              </div>
-              <span class="player-stat">{{ p.ppg.toFixed(1) }}</span>
-              <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
+              <div class="skeleton" style="width: 32px; height: 14px;"></div>
             </div>
-          </div>
+          </template>
+          <template v-else>
+            <div class="player-list">
+              <div v-for="(p, i) in topScorers" :key="p.playerName" class="player-row clickable" @click="goPlayerDetail(p.id)">
+                <span class="player-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+                <div class="player-avatar-mini">
+                  <img v-if="p.nbaPlayerId" :src="getHeadshotUrl(p.nbaPlayerId)" :alt="p.playerName" class="player-headshot-mini" @error="onHeadshotError" loading="lazy" />
+                  <span class="player-avatar-fallback" :style="{ display: p.nbaPlayerId ? 'none' : 'flex' }">{{ p.playerName?.charAt(0) }}</span>
+                </div>
+                <div class="player-info">
+                  <span class="player-name">{{ p.playerName }}</span>
+                  <span class="player-team">{{ p.teamName }}</span>
+                </div>
+                <span class="player-stat">{{ p.ppg.toFixed(1) }}</span>
+                <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- 热门讨论 -->
@@ -246,7 +288,26 @@ function goPlayerDetail(playerId: number) {
   max-width: 1280px;
   margin: 0 auto;
   padding: 24px 20px 60px;
-  animation: fadeIn 0.3s ease;
+}
+/* ===== Skeleton Loading ===== */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-hover) 25%, var(--bg-card) 50%, var(--bg-hover) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton-text {
+  height: 14px;
+}
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px;
 }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
