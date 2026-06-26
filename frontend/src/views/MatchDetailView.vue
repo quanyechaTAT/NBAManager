@@ -1050,8 +1050,8 @@ onMounted(async () => {
 }
 .comparison-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
 }
 .comparison-item {
   display: flex;
