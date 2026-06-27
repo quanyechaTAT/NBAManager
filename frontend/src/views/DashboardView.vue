@@ -228,6 +228,14 @@
           <span class="feature-title">历史数据</span>
           <span class="feature-desc">多赛季数据查询与对比</span>
         </router-link>
+
+        <router-link to="/drafts" class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+          </div>
+          <span class="feature-title">选秀数据</span>
+          <span class="feature-desc">历年选秀顺位与球员</span>
+        </router-link>
       </div>
     </section>
   </div>
@@ -762,7 +770,7 @@ function goPlayerDetail(playerId: number) {
 /* ===== 核心功能入口 ===== */
 .features-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   gap: 12px;
 }
 .feature-card {
