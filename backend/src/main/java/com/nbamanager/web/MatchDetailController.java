@@ -25,13 +25,7 @@ public class MatchDetailController {
     private final SmartDataService smartDataService;
 
     @GetMapping("/{gameId}/boxscore")
-    public Object getBoxScore(@PathVariable String gameId) {
-        // 优先从API实时获取
-        JSONObject realtimeData = smartDataService.getMatchDetailRealtime(gameId);
-        if (realtimeData != null && realtimeData.has("boxscore")) {
-            return realtimeData.get("boxscore");
-        }
-        // 降级：从数据库读取
+    public BoxScoreDto getBoxScore(@PathVariable String gameId) {
         return matchDetailService.getBoxScore(gameId);
     }
 
@@ -43,13 +37,7 @@ public class MatchDetailController {
     }
 
     @GetMapping("/{gameId}/quarters")
-    public Object getQuarterScores(@PathVariable String gameId) {
-        // 优先从API实时获取
-        JSONObject realtimeData = smartDataService.getQuarterScoresRealtime(gameId);
-        if (realtimeData != null && realtimeData.has("quarterScores")) {
-            return realtimeData.get("quarterScores");
-        }
-        // 降级：从数据库读取
+    public List<QuarterScoreDto> getQuarterScores(@PathVariable String gameId) {
         return matchDetailService.getQuarterScores(gameId);
     }
 }

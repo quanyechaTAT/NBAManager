@@ -26,6 +26,24 @@ export function getTeamsBySeason(season: string) {
 }
 
 /**
+ * 获取指定赛季联盟排名
+ */
+export function getHistoricalRankings(season: string) {
+  return request.get('/historical/rankings', {
+    params: { season }
+  }).then(res => res.data)
+}
+
+/**
+ * 获取指定赛季分区排名
+ */
+export function getHistoricalDivisionRankings(season: string) {
+  return request.get('/historical/division-rankings', {
+    params: { season }
+  }).then(res => res.data)
+}
+
+/**
  * 获取指定赛季数据领袖
  */
 export function getSeasonLeaders(season: string) {

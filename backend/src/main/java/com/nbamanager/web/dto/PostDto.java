@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 public record PostDto(
         Long id,
         Long userId,
+        String username,
         String title,
         String content,
         String category,
@@ -14,6 +15,8 @@ public record PostDto(
         Integer commentCount,
         Integer favoriteCount,
         Boolean isTop,
+        Boolean isFeatured,
         Boolean hasPoll,
         boolean likedByMe,
+        LocalDateTime lastReplyTime,
         LocalDateTime createTime) {}

@@ -192,14 +192,17 @@ public class SmartDataService {
             String absolutePath = scriptFile.getAbsolutePath();
             String workingDir = scriptFile.getParentFile().getAbsolutePath();
 
+            // 获取Python可执行文件（优先使用虚拟环境）
+            String pythonExec = getPythonExecutable();
+
             List<String> command = new ArrayList<>();
-            command.add("python");
+            command.add(pythonExec);
             command.add(absolutePath);
             for (String arg : args) {
                 command.add(arg);
             }
 
-            log.info("执行Python脚本: {} 参数: {}", absolutePath, String.join(" ", args));
+            log.info("执行Python脚本: {} {} 参数: {}", pythonExec, absolutePath, String.join(" ", args));
 
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.redirectErrorStream(false);
@@ -280,6 +283,31 @@ public class SmartDataService {
         }
         log.warn("未找到Python脚本，使用默认路径");
         return "scripts/nba_data_fetcher.py";
+    }
+
+    /**
+     * 获取Python可执行文件路径（优先使用虚拟环境）
+     */
+    private String getPythonExecutable() {
+        // 检查虚拟环境Python
+        String[] venvPaths = {
+                "backend/scripts/venv/Scripts/python.exe",
+                "backend/scripts/venv/bin/python",
+                "scripts/venv/Scripts/python.exe",
+                "scripts/venv/bin/python"
+        };
+
+        for (String venvPath : venvPaths) {
+            File venvPython = new File(venvPath);
+            if (venvPython.exists()) {
+                log.info("使用虚拟环境Python: {}", venvPython.getAbsolutePath());
+                return venvPython.getAbsolutePath();
+            }
+        }
+
+        // 降级使用系统Python
+        log.warn("未找到虚拟环境Python，使用系统Python");
+        return "python";
     }
 
     /**

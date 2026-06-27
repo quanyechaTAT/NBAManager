@@ -13,6 +13,10 @@ export function fetchRankings() {
   return request.get<Record<string, TeamRank[]>>('/teams/rankings')
 }
 
+export function fetchDivisionRankings() {
+  return request.get<Record<string, TeamRank[]>>('/teams/divisions')
+}
+
 export function createTeam(data: Omit<Team, 'id'>) {
   return request.post<Team>('/teams', data)
 }

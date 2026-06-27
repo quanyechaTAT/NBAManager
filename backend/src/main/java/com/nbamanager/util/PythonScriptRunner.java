@@ -12,7 +12,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Python脚本执行器 - 使用唯一临时文件避免竞争条件
+ * Python脚本执行器 - 使用虚拟环境和唯一临时文件避免竞争条件
  */
 @Slf4j
 @Component
@@ -20,8 +20,9 @@ public class PythonScriptRunner {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PythonScriptRunner.class);
 
-
     private static final String SCRIPT_DIR = "backend/scripts";
+    private static final String VENV_PYTHON_WIN = "backend/scripts/venv/Scripts/python.exe";
+    private static final String VENV_PYTHON_UNIX = "backend/scripts/venv/bin/python";
 
     /**
      * 执行Python脚本并返回JSON结果
@@ -44,9 +45,10 @@ public class PythonScriptRunner {
         File outputFile = new File(scriptFile.getParentFile(), outputFileName);
 
         try {
-            // 构建命令
+            // 构建命令（使用虚拟环境Python）
+            String pythonExec = getPythonExecutable();
             String[] cmdArray = new String[3 + (args != null ? args.length : 0)];
-            cmdArray[0] = "python";
+            cmdArray[0] = pythonExec;
             cmdArray[1] = scriptPath;
             cmdArray[2] = action;
             if (args != null) {
@@ -167,5 +169,26 @@ public class PythonScriptRunner {
             }
         }
         return null;
+    }
+
+    /**
+     * 获取Python可执行文件路径（优先使用虚拟环境）
+     */
+    private String getPythonExecutable() {
+        File baseDir = new File(System.getProperty("user.dir"));
+
+        // 检查虚拟环境Python
+        String[] venvPaths = {VENV_PYTHON_WIN, VENV_PYTHON_UNIX};
+        for (String venvPath : venvPaths) {
+            File venvPython = new File(baseDir, venvPath);
+            if (venvPython.exists()) {
+                log.info("使用虚拟环境Python: {}", venvPython.getAbsolutePath());
+                return venvPython.getAbsolutePath();
+            }
+        }
+
+        // 降级使用系统Python
+        log.warn("未找到虚拟环境Python，使用系统Python");
+        return "python";
     }
 }

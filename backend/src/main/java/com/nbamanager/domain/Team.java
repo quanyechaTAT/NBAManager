@@ -43,6 +43,10 @@ public class Team {
     @Column(nullable = false, length = 16)
     private String conference;
 
+    /** 赛区，如 "大西洋"、"太平洋" */
+    @Column(length = 32)
+    private String division;
+
     @Column(nullable = false)
     private Integer wins;
 

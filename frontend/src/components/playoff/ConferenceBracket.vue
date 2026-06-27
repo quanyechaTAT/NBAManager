@@ -83,10 +83,27 @@ withDefaults(defineProps<Props>(), { isReverse: false })
 .matches-list.round-2 { gap: 40px; margin-top: 24px; }
 .matches-list.round-3 { margin-top: 40px; }
 
-@media (max-width: 1100px) {
-  .rounds-container, .rounds-container.reverse { flex-direction: column; align-items: center; gap: 16px; }
-  .round-column { width: 100%; max-width: 350px; }
-  .matches-list.round-2, .matches-list.round-3 { margin-top: 0; gap: 8px; }
-  .rounds-container :deep(.bracket-connector) { display: none; }
+@media (max-width: 768px) {
+  .conference-bracket {
+    min-width: 580px;
+    width: auto;
+  }
+
+  .rounds-container {
+    gap: 4px;
+  }
+
+  .rounds-container.reverse {
+    flex-direction: row-reverse;
+  }
+
+  .matches-list.round-2 {
+    gap: 20px;
+    margin-top: 16px;
+  }
+
+  .matches-list.round-3 {
+    margin-top: 24px;
+  }
 }
 </style>

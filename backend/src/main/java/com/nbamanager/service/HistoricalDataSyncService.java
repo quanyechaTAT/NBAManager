@@ -6,6 +6,7 @@ import com.nbamanager.repository.PlayerSeasonStatsRepository;
 import com.nbamanager.repository.TeamSeasonStatsRepository;
 import com.nbamanager.util.PythonScriptRunner;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -94,6 +95,25 @@ public class HistoricalDataSyncService {
         // 同步当前赛季数据
         String currentSeason = seasonService.getCurrentSeason();
         syncSeasonData(currentSeason);
+    }
+
+    /**
+     * 同步缺失的历史赛季数据（最多保留5个赛季）
+     */
+    public void syncMissingSeasons() {
+        List<String> synced = seasonService.getSyncedSeasons();
+        if (synced.size() >= 5) return;
+
+        String currentSeason = seasonService.getCurrentSeason();
+        int startYear = Integer.parseInt(currentSeason.split("-")[0]);
+
+        for (int i = 0; i < 5; i++) {
+            String season = (startYear - i) + "-" + String.valueOf(startYear - i + 1).substring(2);
+            if (!synced.contains(season)) {
+                log.info("自动同步缺失赛季: {}", season);
+                syncSeasonData(season);
+            }
+        }
     }
 
     /**

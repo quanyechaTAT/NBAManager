@@ -10,6 +10,7 @@ frontend/node_modules/
 frontend/dist/
 frontend/.npm-cache/
 frontend/.vite/
+frontend/.playwright-cli/
 
 # Environment variables (sensitive)
 .env
@@ -24,22 +25,30 @@ database/
 *.db
 *.sqlite
 
-# Python cache
+# Python
 backend/scripts/__pycache__/
 *.pyc
 __pycache__/
+backend/scripts/venv/
+backend/scripts/venv312/
+backend/scripts/runtime/
+backend/scripts/chroma_db/
+backend/scripts/models/
 
-# Output files
+# Generated data files
 backend/scripts/output.json
 backend/scripts/translate_log.txt
+backend/scripts/player_cn_map_dynamic.json
+backend/check.txt
 
 # Logs
 *.log
 backend/backend.log
 nohup.out
 
-# Claude Code
+# Claude Code / Superpowers
 .claude/
+.superpowers/
 
 # IDE
 .vscode/
@@ -55,7 +64,6 @@ desktop.ini
 # Screenshots (test artifacts)
 screenshots/
 test_screenshots/
-*.png
 
 # Root node_modules
 node_modules/
@@ -65,7 +73,8 @@ test-*.js
 
 # MCP files
 .mcp.json
-.playwright-mcp/
+.playwright-mcp
 
-# Progress tracking
+# Output / docs artifacts
+output/
 PROGRESS.md

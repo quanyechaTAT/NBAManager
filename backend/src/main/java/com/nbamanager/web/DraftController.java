@@ -26,7 +26,10 @@ public class DraftController {
 
     /** 按年份查询选秀记录 */
     @GetMapping
-    public List<DraftPickDto> listByYear(@RequestParam Integer year) {
+    public List<DraftPickDto> listByYear(@RequestParam(required = false) Integer year) {
+        if (year == null) {
+            year = java.time.LocalDate.now().getYear();
+        }
         return draftService.listByYear(year);
     }
 

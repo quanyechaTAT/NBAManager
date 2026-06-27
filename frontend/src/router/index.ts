@@ -103,6 +103,12 @@ const router = createRouter({
           meta: { title: '历史数据' },
         },
         {
+          path: 'smart-search',
+          name: 'smart-search',
+          component: () => import('@/views/SmartSearchView.vue'),
+          meta: { title: '智能问答' },
+        },
+        {
           path: 'profile',
           name: 'profile',
           component: () => import('@/views/ProfileView.vue'),

@@ -96,11 +96,44 @@ async function copyLink() {
 
 <style scoped>
 .share-trigger {
+  --el-button-bg-color: rgba(var(--bg-card-rgb), 0.78) !important;
+  --el-button-border-color: rgba(var(--border-light-rgb), 0.95) !important;
+  --el-button-text-color: var(--text-secondary) !important;
+  --el-button-hover-bg-color: rgba(232, 93, 38, 0.12) !important;
+  --el-button-hover-border-color: rgba(232, 93, 38, 0.45) !important;
+  --el-button-hover-text-color: var(--accent-light) !important;
+  --el-button-active-bg-color: rgba(232, 93, 38, 0.18) !important;
+  --el-button-active-border-color: rgba(232, 93, 38, 0.6) !important;
+  --el-button-active-text-color: var(--accent-light) !important;
+  min-height: 34px !important;
+  padding: 7px 14px !important;
+  border: 1px solid rgba(var(--border-light-rgb), 0.95) !important;
   border-radius: var(--radius-md) !important;
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.72), rgba(15, 23, 42, 0.88)) !important;
+  color: var(--text-secondary) !important;
   font-size: 12px !important;
   font-weight: 600 !important;
   letter-spacing: 0.3px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
   transition: all var(--duration-fast) var(--ease-smooth) !important;
+}
+
+.share-trigger:hover,
+.share-trigger:focus {
+  border-color: rgba(232, 93, 38, 0.45) !important;
+  background: linear-gradient(180deg, rgba(232, 93, 38, 0.16), rgba(232, 93, 38, 0.08)) !important;
+  color: var(--accent-light) !important;
+  box-shadow: 0 0 0 3px rgba(232, 93, 38, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+[data-theme="light"] .share-trigger {
+  --el-button-bg-color: #fff !important;
+  --el-button-border-color: var(--border-medium) !important;
+  --el-button-text-color: var(--text-secondary) !important;
+  background: #fff !important;
+  border-color: var(--border-medium) !important;
+  color: var(--text-secondary) !important;
+  box-shadow: var(--shadow-xs) !important;
 }
 
 .share-panel {

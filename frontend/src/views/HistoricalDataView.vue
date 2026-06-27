@@ -138,11 +138,13 @@ import { getTeamLogo } from '@/utils/teamLogos'
 import { getAvailableSeasons, getPlayersBySeason, getTeamsBySeason, syncHistoricalSeason } from '@/api/historical'
 import { useAuthStore } from '@/stores/auth'
 import type { Player, Team } from '@/api/types'
+import { useChartTheme } from '@/composables/useChartTheme'
 
 use([CanvasRenderer, BarChart, GridComponent, TooltipComponent, LegendComponent])
 
 const router = useRouter()
 const auth = useAuthStore()
+const { colors, tooltipStyle, legendStyle, xAxisStyle, yAxisStyle } = useChartTheme()
 const teamsLoading = ref(false)
 const playersLoading = ref(false)
 const syncing = ref(false)
@@ -224,35 +226,28 @@ const winsChartOption = computed(() => {
   const names = sorted.map(t => t.teamName || t.name)
   const wins = sorted.map(t => t.wins)
   const losses = sorted.map(t => t.losses)
+  const c = colors.value
   return {
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
-      backgroundColor: 'rgba(22, 27, 34, 0.95)',
-      borderColor: '#1E2130',
-      textStyle: { color: '#F0F2F5', fontFamily: 'Rajdhani, Space Grotesk, sans-serif' },
+      ...tooltipStyle.value,
     },
     legend: {
       data: ['胜场', '负场'],
-      textStyle: { color: '#9CA3B0', fontFamily: 'Rajdhani, Space Grotesk, sans-serif' },
+      ...legendStyle.value,
       top: 8,
     },
     grid: { left: '3%', right: '4%', bottom: '8%', top: '15%', containLabel: true },
     xAxis: {
       type: 'category',
       data: names,
-      axisLabel: {
-        color: '#9CA3B0',
-        rotate: 45,
-        fontSize: 11,
-        fontFamily: 'Rajdhani, Space Grotesk, sans-serif',
-      },
-      axisLine: { lineStyle: { color: '#1E2130' } },
+      ...xAxisStyle.value,
+      axisLabel: { ...xAxisStyle.value.axisLabel, rotate: 45 },
     },
     yAxis: {
       type: 'value',
-      axisLabel: { color: '#6B7280', fontFamily: 'Rajdhani, Space Grotesk, sans-serif' },
-      splitLine: { lineStyle: { color: '#1E2130', type: 'dashed' } },
+      ...yAxisStyle.value,
     },
     series: [
       {
@@ -264,8 +259,8 @@ const winsChartOption = computed(() => {
           color: {
             type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
             colorStops: [
-              { offset: 0, color: '#00FF88' },
-              { offset: 1, color: '#00CC6A' },
+              { offset: 0, color: c.barWin1 },
+              { offset: 1, color: c.barWin2 },
             ],
           },
           borderRadius: [4, 4, 0, 0],
@@ -281,8 +276,8 @@ const winsChartOption = computed(() => {
           color: {
             type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
             colorStops: [
-              { offset: 0, color: '#6B7280' },
-              { offset: 1, color: '#4B5563' },
+              { offset: 0, color: c.barLose1 },
+              { offset: 1, color: c.barLose2 },
             ],
           },
           borderRadius: [0, 0, 4, 4],

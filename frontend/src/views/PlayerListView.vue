@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div class="page" :class="{ 'page--table': viewMode === 'table' }">
     <div class="page-inner">
       <!-- 页面头部 -->
       <div class="page-header">
@@ -78,9 +78,9 @@
 
       <!-- 表格视图（管理员） -->
       <template v-if="viewMode === 'table' && auth.isAdmin">
-        <div class="card">
-          <el-table :data="rows" border stripe v-loading="loading" @sort-change="onSortChange" style="width: 100%;">
-            <el-table-column label="姓名" min-width="130">
+        <div class="card table-card">
+          <el-table class="player-table" :data="rows" border stripe v-loading="loading" @sort-change="onSortChange" style="width: 100%;">
+            <el-table-column label="姓名" min-width="160">
               <template #default="{ row }">
                 <div class="player-cell" @click="goToPlayerDetail(row)">
                   <img v-if="row.nbaPlayerId" :src="`https://cdn.nba.com/headshots/nba/latest/260x190/${row.nbaPlayerId}.png`" class="player-thumb" @error="onThumbError($event)" />
@@ -88,39 +88,39 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column prop="teamName" label="球队" min-width="70" />
-            <el-table-column prop="position" label="位置" min-width="50" align="center" />
-            <el-table-column prop="jerseyNumber" label="球衣" min-width="50" align="center" />
-            <el-table-column prop="gamesPlayed" label="出场" min-width="50" align="center" sortable="custom" />
-            <el-table-column prop="minutesPerGame" label="时间" min-width="50" align="center" sortable="custom">
+            <el-table-column prop="teamName" label="球队" min-width="90" />
+            <el-table-column prop="position" label="位置" min-width="70" align="center" />
+            <el-table-column prop="jerseyNumber" label="球衣" min-width="64" align="center" />
+            <el-table-column prop="gamesPlayed" label="出场" min-width="68" align="center" sortable="custom" />
+            <el-table-column prop="minutesPerGame" label="时间" min-width="68" align="center" sortable="custom">
               <template #default="{ row }">{{ row.minutesPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column prop="pointsPerGame" label="得分" min-width="55" align="center" sortable="custom">
+            <el-table-column prop="pointsPerGame" label="得分" min-width="68" align="center" sortable="custom">
               <template #default="{ row }"><span class="stat-highlight">{{ row.pointsPerGame?.toFixed(1) }}</span></template>
             </el-table-column>
-            <el-table-column prop="reboundsPerGame" label="篮板" min-width="55" align="center" sortable="custom">
+            <el-table-column prop="reboundsPerGame" label="篮板" min-width="68" align="center" sortable="custom">
               <template #default="{ row }">{{ row.reboundsPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column prop="assistsPerGame" label="助攻" min-width="55" align="center" sortable="custom">
+            <el-table-column prop="assistsPerGame" label="助攻" min-width="68" align="center" sortable="custom">
               <template #default="{ row }">{{ row.assistsPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column prop="stealsPerGame" label="抢断" min-width="50" align="center" sortable="custom">
+            <el-table-column prop="stealsPerGame" label="抢断" min-width="68" align="center" sortable="custom">
               <template #default="{ row }">{{ row.stealsPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column prop="blocksPerGame" label="盖帽" min-width="50" align="center" sortable="custom">
+            <el-table-column prop="blocksPerGame" label="盖帽" min-width="68" align="center" sortable="custom">
               <template #default="{ row }">{{ row.blocksPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column label="投篮命中率" width="100" align="center" sortable="custom">
+            <el-table-column label="投篮命中率" width="126" align="center" sortable="custom">
               <template #default="{ row }">{{ (row.fieldGoalPct * 100).toFixed(1) }}%</template>
             </el-table-column>
-            <el-table-column label="三分命中率" width="100" align="center" sortable="custom">
+            <el-table-column label="三分命中率" width="126" align="center" sortable="custom">
               <template #default="{ row }">{{ (row.threePointPct * 100).toFixed(1) }}%</template>
             </el-table-column>
-            <el-table-column label="罚球命中率" width="100" align="center" sortable="custom">
+            <el-table-column label="罚球命中率" width="126" align="center" sortable="custom">
               <template #default="{ row }">{{ (row.freeThrowPct * 100).toFixed(1) }}%</template>
             </el-table-column>
-            <el-table-column prop="efficiency" label="效率值" width="80" align="center" sortable="custom" />
-            <el-table-column label="操作" min-width="100" v-if="auth.isAdmin">
+            <el-table-column prop="efficiency" label="效率值" width="92" align="center" sortable="custom" />
+            <el-table-column label="操作" min-width="120" v-if="auth.isAdmin">
               <template #default="{ row }">
                 <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
                 <el-button link type="danger" @click="onDelete(row)">删除</el-button>
@@ -285,6 +285,11 @@ onMounted(async () => { await loadTeams(); await load() })
   opacity: 0;
   transform: translateY(8px);
 }
+
+.page--table {
+  max-width: min(1680px, calc(100vw - 96px));
+}
+
 @keyframes pageFadeIn { to { opacity: 1; transform: translateY(0); } }
 
 .page-header {
@@ -436,6 +441,28 @@ onMounted(async () => { await loadTeams(); await load() })
 
 /* 表格视图 */
 .card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 16px; }
+.table-card {
+  overflow-x: auto;
+}
+.table-card :deep(.el-table) {
+  min-width: 1430px;
+}
+.table-card :deep(.el-table__inner-wrapper),
+.table-card :deep(.el-scrollbar__view) {
+  min-width: 1430px;
+}
+.table-card :deep(.el-table__header .cell) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  overflow: visible;
+  text-overflow: clip;
+}
+.table-card :deep(.caret-wrapper) {
+  flex: 0 0 auto;
+}
 .card :deep(.el-table__header th),
 .card :deep(.el-table__header .cell),
 .card :deep(.el-table__body .cell) { white-space: nowrap; }
@@ -448,6 +475,8 @@ onMounted(async () => { await loadTeams(); await load() })
 
 /* 移动端 */
 @media (max-width: 768px) {
+  .page,
+  .page--table { max-width: 100%; padding: 0 16px; }
   .player-grid { grid-template-columns: repeat(2, 1fr); }
   .player-card-stats { gap: 8px; }
   .filter-search { max-width: 100%; }
