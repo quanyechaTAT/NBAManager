@@ -65,9 +65,15 @@
             </el-table-column>
             <el-table-column prop="playerName" label="球员" min-width="160">
               <template #default="{ row }">
-                <div class="player-name-cell">
-                  <span class="player-name-cn">{{ row.playerName }}</span>
-                  <span v-if="row.playerNameEn" class="player-name-en">{{ row.playerNameEn }}</span>
+                <div class="player-name-cell" :class="{ 'clickable': row.nbaPlayerId }" @click="row.nbaPlayerId && goPlayerDetail(row.nbaPlayerId)">
+                  <div v-if="row.nbaPlayerId" class="player-avatar-sm">
+                    <img :src="getHeadshotUrl(row.nbaPlayerId)" :alt="row.playerName" class="headshot-sm" @error="onHeadshotError" loading="lazy" />
+                  </div>
+                  <div v-else class="player-avatar-sm player-avatar-placeholder">{{ row.playerName?.charAt(0) }}</div>
+                  <div>
+                    <span class="player-name-cn">{{ row.playerName }}</span>
+                    <span v-if="row.playerNameEn" class="player-name-en">{{ row.playerNameEn }}</span>
+                  </div>
                 </div>
               </template>
             </el-table-column>
@@ -101,9 +107,15 @@
             </el-table-column>
             <el-table-column prop="playerName" label="球员" min-width="160">
               <template #default="{ row }">
-                <div class="player-name-cell">
-                  <span class="player-name-cn">{{ row.playerName }}</span>
-                  <span v-if="row.playerNameEn" class="player-name-en">{{ row.playerNameEn }}</span>
+                <div class="player-name-cell" :class="{ 'clickable': row.nbaPlayerId }" @click="row.nbaPlayerId && goPlayerDetail(row.nbaPlayerId)">
+                  <div v-if="row.nbaPlayerId" class="player-avatar-sm">
+                    <img :src="getHeadshotUrl(row.nbaPlayerId)" :alt="row.playerName" class="headshot-sm" @error="onHeadshotError" loading="lazy" />
+                  </div>
+                  <div v-else class="player-avatar-sm player-avatar-placeholder">{{ row.playerName?.charAt(0) }}</div>
+                  <div>
+                    <span class="player-name-cn">{{ row.playerName }}</span>
+                    <span v-if="row.playerNameEn" class="player-name-en">{{ row.playerNameEn }}</span>
+                  </div>
                 </div>
               </template>
             </el-table-column>
@@ -165,11 +177,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { fetchDraftPicks, createDraftPick, updateDraftPick, deleteDraftPick } from '@/api/draft'
 import type { DraftPick } from '@/api/types'
 import SyncButton from '@/components/common/SyncButton.vue'
+
+const router = useRouter()
 
 const auth = useAuthStore()
 const loading = ref(false)
@@ -198,6 +213,21 @@ const topPickTeam = computed(() => {
   const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
   return sorted.length > 0 ? sorted[0][0] : '—'
 })
+
+function getHeadshotUrl(nbaPlayerId: number): string {
+  return `https://ak-static.cms.nba.com/wp-content/uploads/headshots/nba/latest/260x190/${nbaPlayerId}.png`
+}
+
+function onHeadshotError(e: Event) {
+  const img = e.target as HTMLImageElement
+  img.style.display = 'none'
+  const fallback = img.nextElementSibling as HTMLElement
+  if (fallback) fallback.style.display = 'flex'
+}
+
+function goPlayerDetail(playerId: number) {
+  router.push({ path: '/players/detail', query: { id: String(playerId) } })
+}
 
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
@@ -475,17 +505,47 @@ onMounted(() => load())
 }
 .player-name-cell {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
+}
+.player-name-cell.clickable {
+  cursor: pointer;
+}
+.player-name-cell.clickable:hover .player-name-cn {
+  color: var(--accent);
+}
+.player-avatar-sm {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--purple) 0%, #5A4BD1 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.headshot-sm {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.player-avatar-placeholder {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-heading);
 }
 .player-name-cn {
   font-weight: 600;
   color: var(--text-primary);
+  display: block;
 }
 .player-name-en {
   font-size: 11px;
   color: var(--text-muted);
   font-weight: 400;
+  display: block;
 }
 .text-muted {
   color: var(--text-muted);

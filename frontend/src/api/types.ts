@@ -194,6 +194,7 @@ export interface DraftPick {
   teamNameEn: string
   playerName: string
   playerNameEn: string
+  nbaPlayerId: number | null
   notes: string
   createTime: string
 }

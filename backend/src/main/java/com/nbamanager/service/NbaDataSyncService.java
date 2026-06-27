@@ -551,6 +551,7 @@ public class NbaDataSyncService {
             String teamNameEn = draftData.optString("teamNameEn", "");
             String playerName = draftData.optString("playerName", "");
             String playerNameEn = draftData.optString("playerNameEn", "");
+            Long nbaPlayerId = draftData.has("nbaPlayerId") ? draftData.getLong("nbaPlayerId") : null;
             String playerPosition = draftData.optString("playerPosition", "");
             String fromTeamName = draftData.optString("fromTeamName", "");
             String notes = draftData.optString("notes", "");
@@ -567,6 +568,7 @@ public class NbaDataSyncService {
                 pick.setTeamNameEn(teamNameEn);
                 if (!playerName.isEmpty()) pick.setPlayerName(playerName);
                 if (!playerNameEn.isEmpty()) pick.setPlayerNameEn(playerNameEn);
+                if (nbaPlayerId != null) pick.setNbaPlayerId(nbaPlayerId);
                 if (!notes.isEmpty()) pick.setNotes(notes);
                 draftPickRepository.save(pick);
                 added++;

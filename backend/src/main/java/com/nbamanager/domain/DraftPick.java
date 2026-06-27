@@ -57,6 +57,10 @@ public class DraftPick {
     @Column(name = "player_name_en", length = 100)
     private String playerNameEn;
 
+    /** NBA球员ID（用于头像和跳转） */
+    @Column(name = "nba_player_id")
+    private Long nbaPlayerId;
+
     /** 备注 */
     @Column(length = 500)
     private String notes;
