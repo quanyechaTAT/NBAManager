@@ -557,6 +557,8 @@ onMounted(async () => {
 <style scoped>
 .page {
   max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
   min-height: calc(100vh - 108px);
   position: relative;
   border-radius: var(--radius-lg);
