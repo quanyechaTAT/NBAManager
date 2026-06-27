@@ -206,9 +206,16 @@ public class PostService {
     private PostDto toDto(Post post, Long currentUserId) {
         boolean likedByMe = currentUserId != null && postLikeRepository.existsByPostIdAndUserId(post.getId(), currentUserId);
         long favoriteCount = userFavoriteRepository.countByTargetTypeAndTargetId("POST", post.getId());
+        String username = userAccountRepository.findById(post.getUserId()).map(u -> u.getUsername()).orElse(null);
+        java.time.LocalDateTime lastReply = post.getLastReplyTime();
+        if (lastReply == null) {
+            lastReply = commentRepository.findTopByPostIdOrderByCreateTimeDesc(post.getId())
+                    .map(c -> c.getCreateTime()).orElse(null);
+        }
         return new PostDto(
                 post.getId(),
                 post.getUserId(),
+                username,
                 post.getTitle(),
                 post.getContent(),
                 post.getCategory(),
@@ -218,8 +225,10 @@ public class PostService {
                 post.getCommentCount(),
                 (int) favoriteCount,
                 post.getIsTop(),
+                post.getIsFeatured(),
                 post.getHasPoll(),
                 likedByMe,
+                lastReply,
                 post.getCreateTime());
     }
 
@@ -228,10 +237,17 @@ public class PostService {
      */
     private PostDto toDtoOptimized(Post post, Long currentUserId, Set<Long> likedPostIds, Set<Long> favoritedPostIds) {
         boolean likedByMe = currentUserId != null && likedPostIds.contains(post.getId());
-        long favoriteCount = favoritedPostIds.contains(post.getId()) ? 1 : 0;
+        long favoriteCount = userFavoriteRepository.countByTargetTypeAndTargetId("POST", post.getId());
+        String username = userAccountRepository.findById(post.getUserId()).map(u -> u.getUsername()).orElse(null);
+        java.time.LocalDateTime lastReply = post.getLastReplyTime();
+        if (lastReply == null) {
+            lastReply = commentRepository.findTopByPostIdOrderByCreateTimeDesc(post.getId())
+                    .map(c -> c.getCreateTime()).orElse(null);
+        }
         return new PostDto(
                 post.getId(),
                 post.getUserId(),
+                username,
                 post.getTitle(),
                 post.getContent(),
                 post.getCategory(),
@@ -241,8 +257,10 @@ public class PostService {
                 post.getCommentCount(),
                 (int) favoriteCount,
                 post.getIsTop(),
+                post.getIsFeatured(),
                 post.getHasPoll(),
                 likedByMe,
+                lastReply,
                 post.getCreateTime());
     }
 

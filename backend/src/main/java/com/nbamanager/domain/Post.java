@@ -56,7 +56,15 @@ public class Post {
     private Boolean isTop = false;
 
     @Column(nullable = false)
+    private Boolean isFeatured = false;
+
+    @Column(nullable = false)
     private Boolean hasPoll = false;
+
+    @Column(nullable = false)
+    private Integer favoriteCount = 0;
+
+    private LocalDateTime lastReplyTime;
 
     private LocalDateTime createTime;
 

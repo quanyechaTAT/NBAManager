@@ -285,7 +285,7 @@ function onBellClick() {
   color: var(--accent);
 }
 .notif-action-danger:hover {
-  background: rgba(255, 71, 87, 0.1);
+  background: var(--danger-glow);
   border-color: var(--danger);
   color: var(--danger);
 }
@@ -314,11 +314,11 @@ function onBellClick() {
   transform: translateX(2px);
 }
 .notif-unread {
-  background: rgba(0, 255, 136, 0.04);
+  background: var(--accent-lighter);
   border-left: 3px solid var(--accent);
 }
 .notif-unread:hover {
-  background: rgba(0, 255, 136, 0.08);
+  background: var(--accent-glow);
 }
 
 /* 未读标记点 */
@@ -433,5 +433,16 @@ function onBellClick() {
 .notif-list-leave-to {
   opacity: 0;
   transform: translateX(20px);
+}
+
+/* 浅色主题覆盖 */
+[data-theme="light"] .notif-unread {
+  background: rgba(232, 93, 38, 0.05);
+}
+[data-theme="light"] .notif-unread:hover {
+  background: rgba(232, 93, 38, 0.1);
+}
+[data-theme="light"] .notif-action-danger:hover {
+  background: rgba(220, 38, 38, 0.08);
 }
 </style>

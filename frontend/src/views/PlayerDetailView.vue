@@ -278,12 +278,14 @@ import { useAuthStore } from '@/stores/auth'
 import ShotChart from '@/components/ShotChart.vue'
 import type { ShotData } from '@/api/types'
 import request from '@/utils/request'
+import { useChartTheme } from '@/composables/useChartTheme'
 
 use([RadarChart, LineChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, RadarComponent, CanvasRenderer])
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const { colors, tooltipStyle, legendStyle, xAxisStyle, yAxisStyle } = useChartTheme()
 
 const playerId = computed(() => Number(route.query.id) || 0)
 const headshotUrl = computed(() => {
@@ -332,13 +334,10 @@ const keyStats = computed(() => {
 const radarOption = computed(() => {
   const p = player.value
   if (!p) return {}
+  const c = colors.value
   const normalize = (val: number, max: number) => Math.min((val / max) * 100, 100)
   return {
-    tooltip: {
-      backgroundColor: '#1C2333',
-      borderColor: '#30363D',
-      textStyle: { color: '#E6EDF3', fontSize: 12 },
-    },
+    tooltip: tooltipStyle.value,
     radar: {
       indicator: [
         { name: '得分', max: 100 },
@@ -350,10 +349,10 @@ const radarOption = computed(() => {
       ],
       shape: 'polygon',
       splitNumber: 4,
-      axisName: { color: '#8B949E', fontSize: 12 },
-      splitLine: { lineStyle: { color: '#30363D' } },
-      splitArea: { areaStyle: { color: ['rgba(108,92,231,0.02)', 'rgba(108,92,231,0.05)'] } },
-      axisLine: { lineStyle: { color: '#30363D' } },
+      axisName: { color: c.textMuted, fontSize: 12 },
+      splitLine: { lineStyle: { color: c.axisLine } },
+      splitArea: { areaStyle: { color: [c.splitArea1, c.splitArea2] } },
+      axisLine: { lineStyle: { color: c.axisLine } },
     },
     series: [{
       type: 'radar',
@@ -367,9 +366,9 @@ const radarOption = computed(() => {
           normalize(p.fieldGoalPct, 0.65),
         ],
         name: p.name,
-        areaStyle: { color: 'rgba(108, 92, 231, 0.25)' },
-        lineStyle: { color: '#6C5CE7', width: 2 },
-        itemStyle: { color: '#A29BFE' },
+        areaStyle: { color: `${c.purple}40` },
+        lineStyle: { color: c.purple, width: 2 },
+        itemStyle: { color: c.purpleLight },
       }],
     }],
   }
@@ -379,16 +378,12 @@ const radarOption = computed(() => {
 const careerOption = computed(() => {
   const rows = career.value
   if (!rows.length) return {}
+  const c = colors.value
   return {
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: '#1C2333',
-      borderColor: '#30363D',
-      textStyle: { color: '#E6EDF3', fontSize: 12 },
-    },
+    tooltip: { trigger: 'axis', ...tooltipStyle.value },
     legend: {
       data: ['得分', '篮板', '助攻'],
-      textStyle: { color: '#8B949E', fontSize: 12 },
+      ...legendStyle.value,
       top: 0,
       icon: 'roundRect',
       itemWidth: 12,
@@ -398,16 +393,11 @@ const careerOption = computed(() => {
     xAxis: {
       type: 'category',
       data: rows.map((r) => r.season),
-      axisLabel: { color: '#6E7681', fontSize: 11 },
-      axisLine: { lineStyle: { color: '#30363D' } },
-      axisTick: { show: false },
+      ...xAxisStyle.value,
     },
     yAxis: {
       type: 'value',
-      axisLabel: { color: '#6E7681', fontSize: 11 },
-      splitLine: { lineStyle: { color: '#1C2333', type: 'dashed' } },
-      axisLine: { show: false },
-      axisTick: { show: false },
+      ...yAxisStyle.value,
     },
     series: [
       {
@@ -415,8 +405,8 @@ const careerOption = computed(() => {
         type: 'line',
         smooth: true,
         data: rows.map((r) => r.pointsPerGame),
-        lineStyle: { color: '#6C5CE7', width: 2 },
-        itemStyle: { color: '#6C5CE7' },
+        lineStyle: { color: c.purple, width: 2 },
+        itemStyle: { color: c.purple },
         symbol: 'circle',
         symbolSize: 6,
       },
@@ -425,8 +415,8 @@ const careerOption = computed(() => {
         type: 'line',
         smooth: true,
         data: rows.map((r) => r.reboundsPerGame),
-        lineStyle: { color: '#00D2FF', width: 2 },
-        itemStyle: { color: '#00D2FF' },
+        lineStyle: { color: c.cyan, width: 2 },
+        itemStyle: { color: c.cyan },
         symbol: 'circle',
         symbolSize: 6,
       },
@@ -435,8 +425,8 @@ const careerOption = computed(() => {
         type: 'line',
         smooth: true,
         data: rows.map((r) => r.assistsPerGame),
-        lineStyle: { color: '#00E676', width: 2 },
-        itemStyle: { color: '#00E676' },
+        lineStyle: { color: c.accent, width: 2 },
+        itemStyle: { color: c.accent },
         symbol: 'circle',
         symbolSize: 6,
       },

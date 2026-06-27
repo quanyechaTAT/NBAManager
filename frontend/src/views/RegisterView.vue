@@ -204,7 +204,7 @@ h1 {
 .features span:hover {
   border-color: var(--accent);
   color: var(--accent);
-  background: rgba(0, 230, 118, 0.05);
+  background: var(--accent-lighter);
 }
 .card {
   width: 420px;
@@ -234,7 +234,7 @@ h1 {
   left: 0;
   right: 0;
   height: 120px;
-  background: linear-gradient(180deg, rgba(0, 230, 118, 0.04) 0%, transparent 100%);
+  background: linear-gradient(180deg, var(--accent-lighter) 0%, transparent 100%);
   pointer-events: none;
   z-index: 0;
 }
@@ -299,8 +299,8 @@ h1 {
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 .login-btn:hover {
-  background: linear-gradient(135deg, #33EB91 0%, #00E676 100%) !important;
-  border-color: #33EB91 !important;
+  background: linear-gradient(135deg, #D14E1F 0%, #E85D26 100%) !important;
+  border-color: #D14E1F !important;
   box-shadow: 0 6px 24px var(--accent-glow-strong);
   transform: translateY(-2px);
 }
@@ -327,7 +327,7 @@ h1 {
   font-weight: 500;
 }
 .link-row a:hover {
-  color: #33EB91;
+  color: var(--accent-light);
 }
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(30px); }
@@ -382,5 +382,28 @@ h1 {
   .card-head h2 {
     font-size: 20px;
   }
+}
+
+/* 浅色主题覆盖 */
+[data-theme="light"] .wrap::before {
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.88) 0%, rgba(248, 250, 252, 0.72) 100%);
+}
+
+[data-theme="light"] .card::after {
+  background: linear-gradient(180deg, rgba(232, 93, 38, 0.03) 0%, transparent 100%);
+}
+
+[data-theme="light"] .login-btn:hover {
+  background: linear-gradient(135deg, #D14E1F 0%, #E85D26 100%) !important;
+  border-color: #D14E1F !important;
+  box-shadow: 0 6px 24px rgba(232, 93, 38, 0.3);
+}
+
+[data-theme="light"] .link-row a:hover {
+  color: #D14E1F;
+}
+
+[data-theme="light"] .features span:hover {
+  background: rgba(232, 93, 38, 0.06);
 }
 </style>

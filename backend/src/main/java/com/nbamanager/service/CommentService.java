@@ -161,6 +161,7 @@ public class CommentService {
         comment.setParentId(req.parentId());
         Comment saved = commentRepository.save(comment);
         post.setCommentCount(post.getCommentCount() + 1);
+        post.setLastReplyTime(java.time.LocalDateTime.now());
         postRepository.save(post);
 
         // 发送通知

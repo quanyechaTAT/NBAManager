@@ -1,6 +1,13 @@
 <template>
   <div class="shot-chart-wrapper" :style="{ maxWidth: size + 'px' }">
+    <!-- 空数据提示 -->
+    <div v-if="!shots || shots.length === 0" class="shot-chart-empty">
+      <svg viewBox="0 0 24 24" fill="none" width="32" height="32"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" opacity=".3"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span>暂无投篮数据</span>
+      <span class="shot-chart-empty-sub">等待比赛数据同步</span>
+    </div>
     <svg
+      v-else
       ref="svgRef"
       class="shot-chart-svg"
       :viewBox="`0 0 ${courtW} ${courtH}`"
@@ -153,9 +160,10 @@ import { computed, watch } from 'vue'
 import type { ShotData } from '@/api/types'
 
 const props = withDefaults(defineProps<{
-  shots: ShotData[]
+  shots?: ShotData[]
   size?: number
 }>(), {
+  shots: () => [],
   size: 400,
 })
 
@@ -237,6 +245,27 @@ const threePointPath = computed(() => {
 .shot-chart-wrapper {
   width: 100%;
   margin: 0 auto;
+}
+
+.shot-chart-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.shot-chart-empty svg {
+  opacity: 0.4;
+}
+.shot-chart-empty-sub {
+  font-size: 12px;
+  color: var(--text-dim);
 }
 
 .shot-chart-svg {

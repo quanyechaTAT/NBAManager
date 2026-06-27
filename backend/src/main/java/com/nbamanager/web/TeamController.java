@@ -36,10 +36,24 @@ public class TeamController {
         return PageResponse.from(teamService.list(q, pageable));
     }
 
-    /** 东西部分区排名 */
+    /** 东西部联盟排名 */
     @GetMapping("/rankings")
     public Map<String, List<TeamRankDto>> rankings() {
         return teamService.getConferenceRankings();
+    }
+
+    /** 赛区排名 */
+    @GetMapping("/divisions")
+    public Map<String, List<TeamRankDto>> divisionRankings() {
+        return teamService.getDivisionRankings();
+    }
+
+    /** 初始化球队分区数据（管理员） */
+    @PostMapping("/init-divisions")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Map<String, Object> initDivisions() {
+        int updated = teamService.initDivisions();
+        return Map.of("updated", updated, "message", "已更新 " + updated + " 支球队的分区数据");
     }
 
     @GetMapping("/{id}")

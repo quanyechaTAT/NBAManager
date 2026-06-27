@@ -10,6 +10,7 @@ import com.nbamanager.service.SeasonManagementService;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
@@ -40,6 +41,116 @@ public class HistoricalDataController {
                 "available", syncedSeasons,
                 "configs", allConfigs
         ));
+    }
+
+    /**
+     * 获取指定赛季的联盟排名（从 team_season_stats 表）
+     * 兼容 "东部"/"西部" 和 "East"/"West" 两种格式
+     */
+    @GetMapping("/rankings")
+    public ResponseEntity<Map<String, List<Map<String, Object>>>> getRankings(
+            @RequestParam String season) {
+        List<TeamSeasonStats> teams = teamStatsRepo.findBySeasonOrderByWinsDesc(season);
+
+        Map<String, List<Map<String, Object>>> result = new java.util.LinkedHashMap<>();
+        Map<String, List<TeamSeasonStats>> grouped = teams.stream()
+                .filter(t -> t.getConference() != null && !t.getConference().isBlank())
+                .collect(Collectors.groupingBy(t -> normalizeConference(t.getConference())));
+
+        for (String conf : List.of("东部", "西部")) {
+            List<TeamSeasonStats> confTeams = grouped.getOrDefault(conf, List.of());
+            confTeams.sort((a, b) -> b.getWins() - a.getWins());
+            double firstDiff = confTeams.isEmpty() ? 0 : confTeams.get(0).getWins() - confTeams.get(0).getLosses();
+
+            List<Map<String, Object>> ranks = new java.util.ArrayList<>();
+            for (int i = 0; i < confTeams.size(); i++) {
+                TeamSeasonStats t = confTeams.get(i);
+                double gb = i == 0 ? 0 : (firstDiff - (t.getWins() - t.getLosses())) / 2.0;
+                Map<String, Object> row = new java.util.LinkedHashMap<>();
+                row.put("teamName", t.getTeamName());
+                row.put("wins", t.getWins());
+                row.put("losses", t.getLosses());
+                row.put("gamesBehind", Math.round(gb * 10.0) / 10.0);
+                row.put("conference", conf);
+                row.put("winPct", t.getWinPct() != null ? t.getWinPct().doubleValue() : 0);
+                // 历史赛季可能没有得分数据，返回 null 而非 0
+                double ppg = t.getPointsPerGame() != null ? t.getPointsPerGame().doubleValue() : 0;
+                double oppg = t.getOpponentsPointsPerGame() != null ? t.getOpponentsPointsPerGame().doubleValue() : 0;
+                row.put("pointsPerGame", ppg > 0 ? ppg : null);
+                row.put("oppPointsPerGame", oppg > 0 ? oppg : null);
+                ranks.add(row);
+            }
+            result.put(conf, ranks);
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 获取指定赛季的分区排名
+     * 兼容英文和中文赛区名
+     */
+    @GetMapping("/division-rankings")
+    public ResponseEntity<Map<String, List<Map<String, Object>>>> getDivisionRankings(
+            @RequestParam String season) {
+        List<TeamSeasonStats> teams = teamStatsRepo.findBySeasonOrderByWinsDesc(season);
+
+        Map<String, List<Map<String, Object>>> result = new java.util.LinkedHashMap<>();
+        Map<String, List<TeamSeasonStats>> grouped = teams.stream()
+                .filter(t -> t.getDivision() != null && !t.getDivision().isBlank())
+                .collect(Collectors.groupingBy(t -> normalizeDivision(t.getDivision())));
+
+        List<String> divisionOrder = List.of("大西洋", "中部", "东南", "西北", "太平洋", "西南");
+        for (String div : divisionOrder) {
+            List<TeamSeasonStats> divTeams = grouped.getOrDefault(div, List.of());
+            if (divTeams.isEmpty()) continue;
+
+            divTeams.sort((a, b) -> b.getWins() - a.getWins());
+            double firstDiff = divTeams.get(0).getWins() - divTeams.get(0).getLosses();
+            List<Map<String, Object>> ranks = new java.util.ArrayList<>();
+            for (int i = 0; i < divTeams.size(); i++) {
+                TeamSeasonStats t = divTeams.get(i);
+                double gb = i == 0 ? 0 : (firstDiff - (t.getWins() - t.getLosses())) / 2.0;
+                Map<String, Object> row = new java.util.LinkedHashMap<>();
+                row.put("teamName", t.getTeamName());
+                row.put("wins", t.getWins());
+                row.put("losses", t.getLosses());
+                row.put("gamesBehind", Math.round(gb * 10.0) / 10.0);
+                row.put("conference", normalizeConference(t.getConference()));
+                row.put("winPct", t.getWinPct() != null ? t.getWinPct().doubleValue() : 0);
+                // 历史赛季可能没有得分数据，返回 null 而非 0
+                double ppg = t.getPointsPerGame() != null ? t.getPointsPerGame().doubleValue() : 0;
+                double oppg = t.getOpponentsPointsPerGame() != null ? t.getOpponentsPointsPerGame().doubleValue() : 0;
+                row.put("pointsPerGame", ppg > 0 ? ppg : null);
+                row.put("oppPointsPerGame", oppg > 0 ? oppg : null);
+                ranks.add(row);
+            }
+            result.put(div, ranks);
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    /** 标准化联盟名（兼容中英文） */
+    private String normalizeConference(String conf) {
+        if (conf == null) return "未知";
+        return switch (conf.toLowerCase()) {
+            case "east", "东部", "东区" -> "东部";
+            case "west", "西部", "西区" -> "西部";
+            default -> conf;
+        };
+    }
+
+    /** 标准化赛区名（兼容中英文） */
+    private String normalizeDivision(String div) {
+        if (div == null) return "未知";
+        return switch (div.toLowerCase()) {
+            case "atlantic", "大西洋" -> "大西洋";
+            case "central", "中部" -> "中部";
+            case "southeast", "东南" -> "东南";
+            case "northwest", "西北" -> "西北";
+            case "pacific", "太平洋" -> "太平洋";
+            case "southwest", "西南" -> "西南";
+            default -> div;
+        };
     }
 
     /**

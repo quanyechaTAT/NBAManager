@@ -2,6 +2,7 @@ package com.nbamanager.repository;
 
 import com.nbamanager.domain.Comment;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CommentRepository extends JpaRepository<Comment, Long> {
@@ -21,4 +22,6 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
     void deleteByPostId(Long postId);
 
     void deleteByGameId(String gameId);
+
+    Optional<Comment> findTopByPostIdOrderByCreateTimeDesc(Long postId);
 }

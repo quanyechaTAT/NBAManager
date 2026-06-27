@@ -16,7 +16,7 @@ export function fetchNotifications(params: { page: number; size: number }) {
 }
 
 export function fetchUnreadCount() {
-  return request.get<number>('/notifications/unread-count')
+  return request.get<{ count: number }>('/notifications/unread-count')
 }
 
 export function markAsRead(id: number) {

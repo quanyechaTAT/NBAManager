@@ -4,6 +4,7 @@ import type { PageResponse } from '@/api/types'
 export interface Post {
   id: number
   userId: number
+  username?: string
   title: string
   content: string
   category: string
@@ -13,8 +14,10 @@ export interface Post {
   commentCount: number
   favoriteCount: number
   isTop: boolean
+  isFeatured?: boolean
   likedByMe: boolean
   createTime: string
+  lastReplyTime?: string
 }
 
 export interface Comment {
