@@ -191,7 +191,9 @@ export interface DraftPick {
   round: number
   pickNumber: number
   teamName: string
+  teamNameEn: string
   playerName: string
+  playerNameEn: string
   notes: string
   createTime: string
 }

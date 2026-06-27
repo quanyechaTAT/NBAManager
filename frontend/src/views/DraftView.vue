@@ -65,7 +65,10 @@
             </el-table-column>
             <el-table-column prop="playerName" label="球员" min-width="160">
               <template #default="{ row }">
-                <span class="player-name-cell">{{ row.playerName }}</span>
+                <div class="player-name-cell">
+                  <span class="player-name-cn">{{ row.playerName }}</span>
+                  <span v-if="row.playerNameEn" class="player-name-en">{{ row.playerNameEn }}</span>
+                </div>
               </template>
             </el-table-column>
             <el-table-column prop="teamName" label="选中球队" min-width="140" />
@@ -98,7 +101,10 @@
             </el-table-column>
             <el-table-column prop="playerName" label="球员" min-width="160">
               <template #default="{ row }">
-                <span class="player-name-cell">{{ row.playerName }}</span>
+                <div class="player-name-cell">
+                  <span class="player-name-cn">{{ row.playerName }}</span>
+                  <span v-if="row.playerNameEn" class="player-name-en">{{ row.playerNameEn }}</span>
+                </div>
               </template>
             </el-table-column>
             <el-table-column prop="teamName" label="选中球队" min-width="140" />
@@ -124,7 +130,7 @@
         <el-form :model="form" label-width="90px">
           <div class="form-row">
             <el-form-item label="年份" class="form-item-half">
-              <el-input-number v-model="form.year" :min="2020" :max="2026" style="width: 100%" />
+              <el-input-number v-model="form.year" :min="currentYear - 4" :max="currentYear" style="width: 100%" />
             </el-form-item>
             <el-form-item label="轮次" class="form-item-half">
               <el-select v-model="form.round" style="width: 100%">
@@ -172,9 +178,10 @@ const rows = ref<DraftPick[]>([])
 const selectedYear = ref(new Date().getFullYear())
 const positionOptions = ['控卫', '分卫', '小前锋', '大前锋', '中锋']
 
+const currentYear = new Date().getFullYear()
 const yearOptions = computed(() => {
   const years: number[] = []
-  for (let y = 2026; y >= 2020; y--) years.push(y)
+  for (let y = currentYear; y >= currentYear - 4; y--) years.push(y)
   return years
 })
 
@@ -467,8 +474,18 @@ onMounted(() => load())
   font-weight: 800;
 }
 .player-name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.player-name-cn {
   font-weight: 600;
   color: var(--text-primary);
+}
+.player-name-en {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 400;
 }
 .text-muted {
   color: var(--text-muted);
