@@ -215,13 +215,13 @@ const topPickTeam = computed(() => {
 })
 
 function getHeadshotUrl(nbaPlayerId: number): string {
-  return `https://ak-static.cms.nba.com/wp-content/uploads/headshots/nba/latest/260x190/${nbaPlayerId}.png`
+  return `https://cdn.nba.com/headshots/nba/latest/260x190/${nbaPlayerId}.png`
 }
 
 function onHeadshotError(e: Event) {
   const img = e.target as HTMLImageElement
   img.style.display = 'none'
-  const fallback = img.nextElementSibling as HTMLElement
+  const fallback = img.parentElement?.querySelector('.player-avatar-placeholder') as HTMLElement
   if (fallback) fallback.style.display = 'flex'
 }
 
