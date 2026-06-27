@@ -572,6 +572,13 @@ public class NbaDataSyncService {
                 if (!notes.isEmpty()) pick.setNotes(notes);
                 draftPickRepository.save(pick);
                 added++;
+            } else if (nbaPlayerId != null) {
+                // 更新现有记录的 nbaPlayerId（如果缺失）
+                var existing = draftPickRepository.findByYearAndRoundAndPickNumber(year, round, pickNumber);
+                if (existing.isPresent() && existing.get().getNbaPlayerId() == null) {
+                    existing.get().setNbaPlayerId(nbaPlayerId);
+                    draftPickRepository.save(existing.get());
+                }
             }
         }
 
