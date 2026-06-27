@@ -128,6 +128,7 @@ public class DraftService {
                 p.getTeamNameEn(),
                 p.getPlayerName(),
                 p.getPlayerNameEn(),
+                p.getNbaPlayerId(),
                 p.getNotes(),
                 p.getCreateTime());
     }

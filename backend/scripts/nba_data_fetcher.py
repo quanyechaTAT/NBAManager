@@ -2101,6 +2101,7 @@ def fetch_draft_history(year=None):
                     'teamNameEn': f"{d.get('TEAM_CITY', '')} {team_name}".strip(),
                     'playerName': cn_player,
                     'playerNameEn': player_name,
+                    'nbaPlayerId': _safe_int(d.get('PERSON_ID')),
                     'playerPosition': '',
                     'fromTeamName': '',
                     'notes': f"选秀顺位第{overall_pick}位",

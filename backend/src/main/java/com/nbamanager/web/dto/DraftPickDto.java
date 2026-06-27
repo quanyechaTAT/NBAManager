@@ -11,5 +11,6 @@ public record DraftPickDto(
         String teamNameEn,
         String playerName,
         String playerNameEn,
+        Long nbaPlayerId,
         String notes,
         LocalDateTime createTime) {}
