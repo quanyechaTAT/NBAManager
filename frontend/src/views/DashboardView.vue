@@ -121,13 +121,12 @@
         </div>
 
         <!-- 得分榜 -->
-        <div class="summary-card">
+        <div class="summary-card summary-card--with-footer">
           <div class="summary-header">
             <h3>得分榜</h3>
-            <router-link to="/players" class="section-link">球员排行</router-link>
           </div>
           <template v-if="loading && topScorers.length === 0">
-            <div v-for="i in 8" :key="i" class="skeleton-row">
+            <div v-for="i in 9" :key="i" class="skeleton-row">
               <div class="skeleton" style="width: 20px; height: 14px;"></div>
               <div class="skeleton" style="width: 36px; height: 36px; border-radius: 50%;"></div>
               <div style="flex: 1;">
@@ -562,6 +561,18 @@ function goPlayerDetail(playerId: number) {
   border: 1px solid var(--border-light);
   border-radius: 10px;
   padding: 16px;
+}
+.summary-card--with-footer {
+  display: flex;
+  flex-direction: column;
+}
+.summary-card--with-footer .player-list,
+.summary-card--with-footer .hot-list,
+.summary-card--with-footer .rank-list {
+  flex: 1;
+}
+.summary-card--with-footer .view-all-link {
+  margin-top: auto;
 }
 .summary-header {
   display: flex;
