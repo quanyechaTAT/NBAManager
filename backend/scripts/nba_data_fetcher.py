@@ -2041,73 +2041,160 @@ def fetch_nba_news(limit=20):
     return parsed_articles
 
 
-def fetch_draft_history(year=None):
-    """从nba_api获取选秀历史数据（最近5年）"""
-    if not HAS_DRAFT_API:
-        print("DraftHistory API不可用，请安装nba_api", file=sys.stderr)
-        return []
+def _fetch_draft_from_nba_stats(year, retries=3, timeout=30):
+    """直接请求 stats.nba.com/stats/drafthistory（带重试和正确 headers）"""
+    url = f"https://stats.nba.com/stats/drafthistory?LeagueID=00&Season={year}"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.7',
+        'Origin': 'https://www.nba.com',
+        'Referer': 'https://www.nba.com/',
+        'x-nba-stats-origin': 'stats',
+        'x-nba-stats-token': 'true',
+        'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-site',
+    }
 
-    # 如果指定了年份，只获取该年份；否则获取最近5年
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                content_type = resp.headers.get('Content-Type', '')
+                body = resp.read()
+
+                # 检查是否返回 JSON
+                if 'json' not in content_type and not body.strip().startswith(b'{'):
+                    body_preview = body[:200].decode('utf-8', errors='replace')
+                    print(f"stats.nba.com 返回非JSON: Status={resp.status}, CT={content_type}, Body={body_preview[:100]}", file=sys.stderr)
+                    if attempt < retries - 1:
+                        time.sleep(2 ** attempt)
+                        continue
+                    return None, f"stats.nba.com 返回非JSON (Content-Type: {content_type})"
+
+                data = json.loads(body)
+                return data, None
+
+        except Exception as e:
+            print(f"直接请求 stats.nba.com 失败 (attempt {attempt+1}/{retries}): {e}", file=sys.stderr)
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            return None, str(e)
+
+    return None, "所有重试均失败"
+
+
+def _parse_draft_data(data, yr):
+    """解析 NBA stats DraftHistory 响应数据"""
+    results = []
+    for rs in data.get('resultSets', []):
+        headers = rs.get('headers', [])
+        for row in rs.get('rowSet', []):
+            d = dict(zip(headers, row))
+
+            player_name = d.get('PLAYER_NAME', '')
+            team_abbr = d.get('TEAM_ABBREVIATION', '')
+            team_name = d.get('TEAM_NAME', '')
+
+            cn_player = PLAYER_CN_MAP.get(player_name, player_name)
+            cn_team = TEAM_ABBR_MAP.get(team_abbr, TEAM_NAME_MAP.get(
+                f"{d.get('TEAM_CITY', '')} {team_name}".strip(), team_name))
+
+            round_num = _safe_int(d.get('ROUND_NUMBER'))
+            round_pick = _safe_int(d.get('ROUND_PICK'))
+            overall_pick = _safe_int(d.get('OVERALL_PICK'))
+
+            if round_num > 2:
+                effective_round = 2
+            else:
+                effective_round = round_num if round_num > 0 else 1
+
+            results.append({
+                'year': _safe_int(d.get('SEASON', yr)),
+                'round': effective_round,
+                'pickNumber': overall_pick if overall_pick > 0 else round_pick,
+                'teamName': cn_team,
+                'teamNameEn': f"{d.get('TEAM_CITY', '')} {team_name}".strip(),
+                'playerName': cn_player,
+                'playerNameEn': player_name,
+                'nbaPlayerId': _safe_int(d.get('PERSON_ID')),
+                'playerPosition': '',
+                'fromTeamName': '',
+                'notes': f"选秀顺位第{overall_pick}位",
+            })
+    return results
+
+
+def fetch_draft_history(year=None):
+    """获取选秀历史数据（优先直接请求 stats.nba.com，兜底 nba_api）"""
     if year is not None:
         years_to_fetch = [year]
     else:
         current_year = datetime.now().year
-        years_to_fetch = [current_year - i for i in range(5)]  # 最近5年
+        years_to_fetch = [current_year - i for i in range(5)]
 
     all_result = []
+    errors = []
+
     for yr in years_to_fetch:
         print(f"正在获取{yr}年选秀历史数据...", file=sys.stderr)
 
-        try:
-            # 使用正确的参数名 season_year_nullable
-            draft = DraftHistory(season_year_nullable=yr, timeout=60)
-            data = draft.get_dict()
-            time.sleep(1.5)  # 避免请求过快
-        except Exception as e:
-            print(f"获取{yr}年选秀历史失败: {e}", file=sys.stderr)
-            continue
+        # 方法1: 直接请求 stats.nba.com
+        data, err = _fetch_draft_from_nba_stats(yr)
+        if data is not None:
+            parsed = _parse_draft_data(data, yr)
+            if parsed:
+                all_result.extend(parsed)
+                print(f"  通过 stats.nba.com 获取到 {len(parsed)} 条记录", file=sys.stderr)
+                time.sleep(1)
+                continue
+            else:
+                errors.append(f"{yr}: stats.nba.com 返回空数据")
+                print(f"  stats.nba.com 返回空数据", file=sys.stderr)
+        else:
+            errors.append(f"{yr}: stats.nba.com 请求失败: {err}")
+            print(f"  stats.nba.com 请求失败: {err}", file=sys.stderr)
 
-        # 解析数据
-        for rs in data.get('resultSets', []):
-            headers = rs.get('headers', [])
-            for row in rs.get('rowSet', []):
-                d = dict(zip(headers, row))
-
-                player_name = d.get('PLAYER_NAME', '')
-                team_abbr = d.get('TEAM_ABBREVIATION', '')
-                team_name = d.get('TEAM_NAME', '')
-
-                # 翻译球员名
-                cn_player = PLAYER_CN_MAP.get(player_name, player_name)
-                # 翻译球队名
-                cn_team = TEAM_ABBR_MAP.get(team_abbr, TEAM_NAME_MAP.get(
-                    f"{d.get('TEAM_CITY', '')} {team_name}".strip(), team_name))
-
-                round_num = _safe_int(d.get('ROUND_NUMBER'))
-                round_pick = _safe_int(d.get('ROUND_PICK'))
-                overall_pick = _safe_int(d.get('OVERALL_PICK'))
-
-                # 确定轮次（Round 3+ 通常算作第二轮）
-                if round_num > 2:
-                    effective_round = 2
+        # 方法2: 兜底 nba_api
+        if HAS_DRAFT_API:
+            try:
+                draft = DraftHistory(season_year_nullable=yr, timeout=60)
+                raw_data = draft.get_dict()
+                parsed = _parse_draft_data(raw_data, yr)
+                if parsed:
+                    all_result.extend(parsed)
+                    print(f"  通过 nba_api 获取到 {len(parsed)} 条记录", file=sys.stderr)
                 else:
-                    effective_round = round_num if round_num > 0 else 1
+                    errors.append(f"{yr}: nba_api 返回空数据")
+                    print(f"  nba_api 返回空数据", file=sys.stderr)
+            except Exception as e:
+                errors.append(f"{yr}: nba_api 失败: {e}")
+                print(f"  nba_api 失败: {e}", file=sys.stderr)
+        else:
+            errors.append(f"{yr}: nba_api 不可用")
 
-                all_result.append({
-                    'year': _safe_int(d.get('SEASON', yr)),
-                    'round': effective_round,
-                    'pickNumber': overall_pick if overall_pick > 0 else round_pick,
-                    'teamName': cn_team,
-                    'teamNameEn': f"{d.get('TEAM_CITY', '')} {team_name}".strip(),
-                    'playerName': cn_player,
-                    'playerNameEn': player_name,
-                    'nbaPlayerId': _safe_int(d.get('PERSON_ID')),
-                    'playerPosition': '',
-                    'fromTeamName': '',
-                    'notes': f"选秀顺位第{overall_pick}位",
-                })
+        time.sleep(1.5)
 
     print(f"共获取到 {len(all_result)} 条选秀记录", file=sys.stderr)
+
+    # 如果有错误且结果为空，返回错误信息
+    if not all_result and errors:
+        return {
+            'draftPicks': [],
+            'errors': errors,
+            'sourceStatus': 'failed',
+            'failedYears': years_to_fetch,
+        }
+
+    # 如果有错误但有部分数据，附加警告
+    if errors and all_result:
+        print(f"警告: 部分年份获取失败: {errors}", file=sys.stderr)
+
     return all_result
 
 
@@ -2311,8 +2398,15 @@ def main():
     if action in ('all', 'trades'):
         result['trades'] = fetch_transactions()
 
-    if action in ('all', 'draft'):
-        result['draftPicks'] = fetch_draft_history()
+    if action == 'all':
+        draft_result = fetch_draft_history()
+        if isinstance(draft_result, dict):
+            result['draftPicks'] = draft_result.get('draftPicks', [])
+            if draft_result.get('errors'):
+                result['draftErrors'] = draft_result['errors']
+                result['draftSourceStatus'] = draft_result.get('sourceStatus', 'partial')
+        else:
+            result['draftPicks'] = draft_result
 
     if action in ('all', 'playoff'):
         season = sys.argv[2] if len(sys.argv) > 2 else None
@@ -2341,9 +2435,21 @@ def main():
         season = sys.argv[3] if len(sys.argv) > 3 else None
         result['gameLog'] = fetch_player_gamelog(int(sys.argv[2]), season)
 
-    if action == 'draft' and len(sys.argv) > 2:
-        year = int(sys.argv[2])
-        result['draftPicks'] = fetch_draft_history(year)
+    if action == 'draft':
+        if len(sys.argv) > 2:
+            year = int(sys.argv[2])
+            draft_result = fetch_draft_history(year)
+        else:
+            draft_result = fetch_draft_history()
+
+        if isinstance(draft_result, dict):
+            result['draftPicks'] = draft_result.get('draftPicks', [])
+            if draft_result.get('errors'):
+                result['draftErrors'] = draft_result['errors']
+                result['draftSourceStatus'] = draft_result.get('sourceStatus', 'partial')
+                result['failedYears'] = draft_result.get('failedYears', [])
+        else:
+            result['draftPicks'] = draft_result
 
     if action == 'historical_players' and len(sys.argv) > 2:
         season = sys.argv[2]

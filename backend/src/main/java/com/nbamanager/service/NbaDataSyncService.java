@@ -105,15 +105,29 @@ public class NbaDataSyncService {
 
             // 5. 更新选秀记录
             int draftsAdded = 0;
+            boolean draftFailed = false;
+            String draftError = "";
             if (data.has("draftPicks")) {
                 JSONArray drafts = data.getJSONArray("draftPicks");
                 draftsAdded = updateDrafts(drafts);
+            }
+            // 检查选秀同步是否有错误
+            if (data.has("draftErrors") && !data.getJSONArray("draftErrors").isEmpty()) {
+                draftFailed = true;
+                draftError = data.getJSONArray("draftErrors").join("; ");
+                log.warn("选秀数据同步失败: {}", draftError);
+            }
+            if (draftsAdded == 0 && data.has("draftSourceStatus") && "failed".equals(data.optString("draftSourceStatus"))) {
+                draftFailed = true;
+                if (draftError.isEmpty()) {
+                    draftError = "NBA 官方选秀数据接口不可用";
+                }
             }
 
             // 7. 记录同步结果
             long duration = System.currentTimeMillis() - startTime;
             lastSyncTime = LocalDateTime.now();
-            lastSyncStatus = "同步成功";
+            lastSyncStatus = draftFailed ? "部分失败（选秀数据）" : "同步成功";
 
             syncResult.put("teamsUpdated", teamsUpdated);
             syncResult.put("teamsAdded", teamsAdded);
@@ -121,6 +135,9 @@ public class NbaDataSyncService {
             syncResult.put("playersAdded", playersAdded);
             syncResult.put("gamesAdded", gamesAdded);
             syncResult.put("draftsAdded", draftsAdded);
+            if (draftFailed) {
+                syncResult.put("draftError", draftError);
+            }
             syncResult.put("duration", duration);
             syncResult.put("timestamp", lastSyncTime.toString());
 
