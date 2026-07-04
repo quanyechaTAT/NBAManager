@@ -1,8 +1,12 @@
 package com.nbamanager.service;
 
 import com.nbamanager.domain.GameBoxScore;
+import com.nbamanager.domain.GameNews;
+import com.nbamanager.domain.MatchRecord;
 import com.nbamanager.domain.PlayByPlay;
 import com.nbamanager.repository.GameBoxScoreRepository;
+import com.nbamanager.repository.GameNewsRepository;
+import com.nbamanager.repository.MatchRecordRepository;
 import com.nbamanager.repository.PlayByPlayRepository;
 import com.nbamanager.web.dto.BoxScoreDto;
 import com.nbamanager.web.dto.BoxScorePlayerDto;
@@ -12,11 +16,13 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +41,8 @@ public class MatchDetailService {
     private final GameBoxScoreRepository gameBoxScoreRepository;
     private final PlayByPlayRepository playByPlayRepository;
     private final GameIdMappingService gameIdMappingService;
+    private final MatchRecordRepository matchRecordRepository;
+    private final GameNewsRepository gameNewsRepository;
 
     @Cacheable(value = "boxScore", key = "#gameId", unless = "#result.homeTeam.isEmpty()")
     @Transactional
@@ -51,7 +59,9 @@ public class MatchDetailService {
         }
 
         if (records.isEmpty()) {
-            return new BoxScoreDto(nbaGameId, "", "", List.of(), List.of(), List.of());
+            // 即使没有boxscore记录，也尝试获取比分
+            ScorePair scores = resolveScores(nbaGameId, "", "");
+            return new BoxScoreDto(nbaGameId, "", "", List.of(), List.of(), List.of(), scores.home, scores.away);
         }
 
         // 翻译未翻译的球员名
@@ -81,8 +91,42 @@ public class MatchDetailService {
 
         List<QuarterScoreDto> quarterScores = getQuarterScores(gameId);
 
-        return new BoxScoreDto(gameId, homeTeam, awayTeam, homePlayers, awayPlayers, quarterScores);
+        // 从MatchRecord/GameNews获取总比分
+        ScorePair scores = resolveScores(nbaGameId, homeTeam, awayTeam);
+
+        return new BoxScoreDto(gameId, homeTeam, awayTeam, homePlayers, awayPlayers, quarterScores, scores.home, scores.away);
     }
+
+    /**
+     * 从MatchRecord或GameNews解析总比分
+     */
+    private ScorePair resolveScores(String nbaGameId, String homeTeam, String awayTeam) {
+        // 优先从MatchRecord获取
+        if (nbaGameId != null && !nbaGameId.isBlank()) {
+            Optional<MatchRecord> match = matchRecordRepository.findByNbaGameId(nbaGameId);
+            if (match.isPresent() && match.get().getHomeScore() != null && match.get().getHomeScore() > 0) {
+                log.info("从MatchRecord获取比分: gameId={}, {}-{}", nbaGameId, match.get().getHomeScore(), match.get().getAwayScore());
+                return new ScorePair(match.get().getHomeScore(), match.get().getAwayScore());
+            }
+        }
+
+        // 其次从GameNews获取
+        if (nbaGameId != null && !nbaGameId.isBlank()) {
+            List<GameNews> newsList = gameNewsRepository.findByNbaGameId(nbaGameId);
+            if (!newsList.isEmpty()) {
+                GameNews news = newsList.get(0);
+                if (news.getHomeScore() != null && news.getHomeScore() > 0) {
+                    log.info("从GameNews获取比分: gameId={}, {}-{}", nbaGameId, news.getHomeScore(), news.getAwayScore());
+                    return new ScorePair(news.getHomeScore(), news.getAwayScore());
+                }
+            }
+        }
+
+        // 无法从数据库获取比分
+        return new ScorePair(null, null);
+    }
+
+    private record ScorePair(Integer home, Integer away) {}
 
     /**
      * 翻译未翻译的球员名（包含大量英文字母的视为未翻译）
@@ -230,31 +274,106 @@ public class MatchDetailService {
             allEvents = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(nbaGameId);
         }
 
-        // 从Play-by-Play数据计算逐节比分
-        Map<Integer, PlayByPlay> lastByPeriod = new LinkedHashMap<>();
-        for (PlayByPlay event : allEvents) {
-            lastByPeriod.put(event.getPeriod(), event);
-        }
+        // 从Play-by-Play数据计算逐节比分（取每节最后一个有有效累计比分的事件）
+        List<QuarterScoreDto> result = computeQuarterScoresFromPlayByPlay(allEvents);
 
-        List<QuarterScoreDto> result = lastByPeriod.entrySet().stream()
-                .map(e -> new QuarterScoreDto(e.getKey(), e.getValue().getHomeScore(), e.getValue().getAwayScore()))
-                .collect(Collectors.toList());
-
-        // 如果Play-by-Play没有数据，尝试从ScoreboardV3获取
-        if (result.isEmpty()) {
-            result = fetchQuarterScoresFromScoreboard(nbaGameId);
+        // 验证Play-by-Play结果是否有效
+        if (!isQuarterScoresValid(result, nbaGameId)) {
+            log.info("Play-by-Play逐节比分无效，尝试从ScoreboardV3获取: gameId={}", nbaGameId);
+            // 尝试从MatchRecord获取日期，传递给Python脚本
+            String matchDate = resolveMatchDate(nbaGameId);
+            List<QuarterScoreDto> scoreboardResult = fetchQuarterScoresFromScoreboard(nbaGameId, matchDate);
+            if (!scoreboardResult.isEmpty()) {
+                result = scoreboardResult;
+            }
         }
 
         return result;
     }
 
     /**
-     * 从ScoreboardV3获取逐节比分（备选方案）
+     * 从Play-by-Play事件计算逐节比分
+     * 取每节最后一个有有效累计比分的事件
      */
-    private List<QuarterScoreDto> fetchQuarterScoresFromScoreboard(String gameId) {
+    private List<QuarterScoreDto> computeQuarterScoresFromPlayByPlay(List<PlayByPlay> allEvents) {
+        Map<Integer, PlayByPlay> lastValidByPeriod = new LinkedHashMap<>();
+        for (PlayByPlay event : allEvents) {
+            // 只使用有有效累计比分的事件（至少一方得分>0）
+            if (event.getHomeScore() > 0 || event.getAwayScore() > 0) {
+                lastValidByPeriod.put(event.getPeriod(), event);
+            }
+        }
+
+        return lastValidByPeriod.entrySet().stream()
+                .map(e -> new QuarterScoreDto(e.getKey(), e.getValue().getHomeScore(), e.getValue().getAwayScore()))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 验证逐节比分是否有效
+     */
+    private boolean isQuarterScoresValid(List<QuarterScoreDto> scores, String nbaGameId) {
+        if (scores.isEmpty()) {
+            return false;
+        }
+
+        // 所有节都是0:0 → 无效
+        boolean allZero = scores.stream().allMatch(s -> s.homeScore() == 0 && s.awayScore() == 0);
+        if (allZero) {
+            return false;
+        }
+
+        // 已结束比赛：逐节总分不应明显低于MatchRecord中的总分
+        Optional<MatchRecord> match = matchRecordRepository.findByNbaGameId(nbaGameId);
+        if (match.isPresent() && "FINISHED".equals(match.get().getStatus())) {
+            int totalHome = scores.stream().mapToInt(QuarterScoreDto::homeScore).sum();
+            int totalAway = scores.stream().mapToInt(QuarterScoreDto::awayScore).sum();
+            int recordHome = match.get().getHomeScore() != null ? match.get().getHomeScore() : 0;
+            int recordAway = match.get().getAwayScore() != null ? match.get().getAwayScore() : 0;
+
+            // 如果逐节总分明显低于记录比分（差距>5分），视为无效
+            if (recordHome > 0 && (recordHome - totalHome > 5 || recordAway - totalAway > 5)) {
+                log.warn("逐节比分总分({}-{})明显低于记录比分({}-{})", totalHome, totalAway, recordHome, recordAway);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * 解析比赛日期（从MatchRecord获取）
+     */
+    private String resolveMatchDate(String nbaGameId) {
+        if (nbaGameId == null || nbaGameId.isBlank()) {
+            return null;
+        }
+        Optional<MatchRecord> match = matchRecordRepository.findByNbaGameId(nbaGameId);
+        if (match.isPresent() && match.get().getMatchDate() != null) {
+            return match.get().getMatchDate().toString();
+        }
+        return null;
+    }
+
+    /**
+     * 从ScoreboardV3获取逐节比分（备选方案）
+     * @param gameId NBA比赛ID
+     * @param matchDate 比赛日期（可选，格式：YYYY-MM-DD），用于缩小搜索范围
+     */
+    private List<QuarterScoreDto> fetchQuarterScoresFromScoreboard(String gameId, String matchDate) {
         try {
             String scriptPath = findScriptPath();
-            ProcessBuilder pb = new ProcessBuilder("python", scriptPath, "quarters", gameId);
+            List<String> cmd = new ArrayList<>();
+            cmd.add("python");
+            cmd.add(scriptPath);
+            cmd.add("quarters");
+            cmd.add(gameId);
+            // 传递日期参数给Python脚本
+            if (matchDate != null && !matchDate.isBlank()) {
+                cmd.add(matchDate);
+            }
+
+            ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.redirectErrorStream(false);
             pb.directory(new File(scriptPath).getParentFile());
             pb.environment().put("PYTHONIOENCODING", "utf-8");
@@ -518,7 +637,14 @@ public class MatchDetailService {
                 pbp.getAwayScore(),
                 pbp.getEventType(),
                 pbp.getPlayerId(),
-                pbp.getPlayerName()
+                pbp.getPlayerName(),
+                pbp.getSource(),
+                pbp.getActionType(),
+                pbp.getTeamName(),
+                pbp.getScoreMargin(),
+                pbp.getIsScoringPlay(),
+                pbp.getIsHighlightCandidate(),
+                pbp.getEventOrder()
         );
     }
 }
