@@ -16,11 +16,18 @@ export interface Matchup {
 }
 
 export interface PlayoffBracket {
+  season?: string
   eastern: Matchup[]
   western: Matchup[]
   finals?: {
-    t1: string
-    t2: string
+    team1Name?: string
+    team2Name?: string
+    team1Wins?: number
+    team2Wins?: number
+    winnerName?: string
+    // Legacy aliases (used by some views)
+    t1?: string
+    t2?: string
     w1?: number
     w2?: number
     winner?: string
