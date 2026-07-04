@@ -7,6 +7,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -52,5 +53,35 @@ public class PlayByPlay {
     private String playerName;
 
     private Long teamId;
+
+    @Column(length = 40)
+    private String source;
+
+    @Column(length = 80)
+    private String sourceEventId;
+
+    private Integer eventOrder;
+
+    @Column(length = 80)
+    private String actionType;
+
+    @Column(length = 120)
+    private String teamName;
+
+    private Integer scoreMargin;
+
+    private Boolean isScoringPlay;
+
+    private Boolean isHighlightCandidate;
+
+    @Column(columnDefinition = "JSON")
+    private String rawPayloadJson;
+
+    @Column(length = 64)
+    private String rawPayloadHash;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
 
 }
