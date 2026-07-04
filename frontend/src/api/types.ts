@@ -327,3 +327,78 @@ export interface LiveMatch {
   /** 比赛时间/状态描述 */
   timeStatus?: string
 }
+
+// AI Replay types
+export interface TimelineEvent {
+  id: number
+  period: number
+  gameClock: string
+  eventType: string
+  actionType: string
+  description: string
+  playerName: string
+  playerId: number | null
+  teamName: string
+  teamId: number | null
+  homeScore: number
+  awayScore: number
+  scoreMargin: number
+  isScoringPlay: boolean
+  isHighlightCandidate: boolean
+  eventOrder: number
+  source: string
+}
+
+export interface MomentumSnapshot {
+  id: number
+  eventOrder: number
+  period: number
+  gameClock: string
+  homeScore: number
+  awayScore: number
+  scoreMargin: number
+}
+
+export interface Highlight {
+  id: number
+  period: number
+  gameClock: string
+  highlightType: string
+  title: string
+  description: string
+  playerId: number | null
+  teamId: number | null
+  scoreAfter: string
+}
+
+export interface TurningPoint {
+  id: number
+  period: number
+  gameClock: string
+  type: string
+  confidence: number
+  factualReason: string
+  aiExplanation: string | null
+  citedEventIdsJson: string
+}
+
+export interface GameSummary {
+  gameId: string
+  summaryType: string
+  content: string | null
+  citedEventIdsJson: string | null
+  citedStatKeysJson: string | null
+  modelProvider: string | null
+  modelName: string | null
+}
+
+export interface EventExplain {
+  gameId: string
+  eventId: number
+  event: TimelineEvent
+  explanation: string | null
+  citedEventIdsJson: string | null
+  citedStatKeysJson: string | null
+  modelProvider: string | null
+  modelName: string | null
+}
