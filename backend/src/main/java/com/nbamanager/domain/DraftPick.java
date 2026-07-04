@@ -65,6 +65,10 @@ public class DraftPick {
     @Column(length = 500)
     private String notes;
 
+    /** 数据来源（nba_stats_drafthistory / nba_com_draft_tracker） */
+    @Column(length = 100)
+    private String source;
+
     /** 创建时间 */
     @Column(nullable = false)
     private LocalDateTime createTime;

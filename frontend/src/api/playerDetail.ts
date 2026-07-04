@@ -45,8 +45,8 @@ export interface PlayerGameLogItem {
   ftPct: number
   plusMinus: number
   result: string
-  teamScore: number
-  opponentScore: number
+  teamScore: number | null
+  opponentScore: number | null
 }
 
 export interface PlayerCareerStat {

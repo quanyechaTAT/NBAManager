@@ -202,6 +202,28 @@ public class RAGService {
     /**
      * 重建索引
      */
+    public RAGStats getStatsSnapshot() {
+        try {
+            if (!isServerRunning()) {
+                return new RAGStats(0, "not_started", "not_started");
+            }
+
+            JSONObject response = getJSON(RAG_SERVER_URL + "/stats");
+            if (response != null) {
+                return new RAGStats(
+                        response.optInt("document_count", 0),
+                        response.optString("embedding_model", "unknown"),
+                        response.optString("llm_model", "unknown")
+                );
+            }
+
+            return new RAGStats(0, "error", "error");
+        } catch (Exception e) {
+            log.debug("RAG stats snapshot unavailable: {}", e.getMessage());
+            return new RAGStats(0, "error", "error");
+        }
+    }
+
     public boolean rebuildIndex() {
         try {
             ensureServerStarted();

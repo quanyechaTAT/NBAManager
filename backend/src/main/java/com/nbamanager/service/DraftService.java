@@ -20,7 +20,6 @@ public class DraftService {
 
     private final DraftPickRepository draftPickRepository;
 
-    /** 按年份查询选秀记录 */
     @Transactional(readOnly = true)
     public List<DraftPickDto> listByYear(Integer year) {
         return draftPickRepository.findByYear(year).stream()
@@ -28,7 +27,6 @@ public class DraftService {
                 .collect(Collectors.toList());
     }
 
-    /** 按球队查询选秀记录 */
     @Transactional(readOnly = true)
     public List<DraftPickDto> listByTeam(String teamName) {
         return draftPickRepository.findByTeamName(teamName).stream()
@@ -36,7 +34,6 @@ public class DraftService {
                 .collect(Collectors.toList());
     }
 
-    /** 新增选秀记录 */
     @Transactional
     public DraftPickDto create(DraftPickRequest req) {
         DraftPick pick = new DraftPick();
@@ -44,7 +41,6 @@ public class DraftService {
         return toDto(draftPickRepository.save(pick));
     }
 
-    /** 修改选秀记录 */
     @Transactional
     public DraftPickDto update(Long id, DraftPickRequest req) {
         DraftPick pick = draftPickRepository.findById(id)
@@ -53,7 +49,6 @@ public class DraftService {
         return toDto(draftPickRepository.save(pick));
     }
 
-    /** 删除选秀记录 */
     @Transactional
     public void delete(Long id) {
         if (!draftPickRepository.existsById(id)) {
@@ -62,47 +57,42 @@ public class DraftService {
         draftPickRepository.deleteById(id);
     }
 
-    /**
-     * 批量导入选秀记录，跳过重复（按year+round+pickNumber去重）
-     *
-     * @return 导入成功数量
-     */
     @Transactional
     public int importDraftPicks(List<DraftPickDto> picks) {
-        int imported = 0;
-
+        int upserted = 0;
         for (DraftPickDto dto : picks) {
-            // 去重：使用 Repository 方法检查 year+round+pickNumber 是否已存在
-            boolean duplicate = draftPickRepository.existsByYearAndRoundAndPickNumber(
-                    dto.year(), dto.round(), dto.pickNumber());
-
-            if (duplicate) {
-                continue;
-            }
-
-            DraftPick pick = new DraftPick();
-            pick.setYear(dto.year());
-            pick.setRound(dto.round());
-            pick.setPickNumber(dto.pickNumber());
-            pick.setTeamName(dto.teamName());
-            if (dto.teamNameEn() != null) {
-                pick.setTeamNameEn(dto.teamNameEn());
-            }
-            if (dto.playerName() != null) {
-                pick.setPlayerName(dto.playerName());
-            }
-            if (dto.playerNameEn() != null) {
-                pick.setPlayerNameEn(dto.playerNameEn());
-            }
-            if (dto.notes() != null) {
-                pick.setNotes(dto.notes());
-            }
+            DraftPick pick = draftPickRepository
+                    .findByYearAndRoundAndPickNumber(dto.year(), dto.round(), dto.pickNumber())
+                    .orElseGet(DraftPick::new);
+            applyImport(pick, dto);
             draftPickRepository.save(pick);
-            imported++;
+            upserted++;
         }
 
-        log.info("批量导入选秀记录完成：成功{}条，跳过重复{}条", imported, picks.size() - imported);
-        return imported;
+        log.info("Draft picks import finished: upserted {}", upserted);
+        return upserted;
+    }
+
+    private void applyImport(DraftPick pick, DraftPickDto dto) {
+        pick.setYear(dto.year());
+        pick.setRound(dto.round());
+        pick.setPickNumber(dto.pickNumber());
+        pick.setTeamName(dto.teamName());
+        if (dto.teamNameEn() != null && !dto.teamNameEn().isBlank()) {
+            pick.setTeamNameEn(dto.teamNameEn());
+        }
+        if (dto.playerName() != null && !dto.playerName().isBlank()) {
+            pick.setPlayerName(dto.playerName());
+        }
+        if (dto.playerNameEn() != null && !dto.playerNameEn().isBlank()) {
+            pick.setPlayerNameEn(dto.playerNameEn());
+        }
+        if (dto.nbaPlayerId() != null && dto.nbaPlayerId() > 0) {
+            pick.setNbaPlayerId(dto.nbaPlayerId());
+        }
+        if (dto.notes() != null && !dto.notes().isBlank()) {
+            pick.setNotes(dto.notes());
+        }
     }
 
     private void apply(DraftPick pick, DraftPickRequest req) {
@@ -134,6 +124,6 @@ public class DraftService {
     }
 
     private static ApiException notFound(Long id) {
-        throw new ApiException(HttpStatus.NOT_FOUND, "选秀记录不存在: " + id);
+        return new ApiException(HttpStatus.NOT_FOUND, "Draft pick not found: " + id);
     }
 }

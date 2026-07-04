@@ -17,8 +17,21 @@ import com.nbamanager.web.dto.PlayerGameLogDto;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.HashMap;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +48,23 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 @RequiredArgsConstructor
 public class PlayerDetailService {
+
+    private static final HttpClient ESPN_HTTP_CLIENT = HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(5))
+            .build();
+    private static final DateTimeFormatter ESPN_DATE = DateTimeFormatter.BASIC_ISO_DATE;
+    private static final DateTimeFormatter NBA_LOG_DATE = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH);
+    private static final Map<String, String> ESPN_TEAM_NAMES = Map.ofEntries(
+            Map.entry("ATL", "老鹰"), Map.entry("BOS", "凯尔特人"), Map.entry("BKN", "篮网"),
+            Map.entry("CHA", "黄蜂"), Map.entry("CHI", "公牛"), Map.entry("CLE", "骑士"),
+            Map.entry("DAL", "独行侠"), Map.entry("DEN", "掘金"), Map.entry("DET", "活塞"),
+            Map.entry("GS", "勇士"), Map.entry("HOU", "火箭"), Map.entry("IND", "步行者"),
+            Map.entry("LAC", "快船"), Map.entry("LAL", "湖人"), Map.entry("MEM", "灰熊"),
+            Map.entry("MIA", "热火"), Map.entry("MIL", "雄鹿"), Map.entry("MIN", "森林狼"),
+            Map.entry("NO", "鹈鹕"), Map.entry("NY", "尼克斯"), Map.entry("OKC", "雷霆"),
+            Map.entry("ORL", "魔术"), Map.entry("PHI", "76人"), Map.entry("PHX", "太阳"),
+            Map.entry("POR", "开拓者"), Map.entry("SA", "马刺"), Map.entry("SAC", "国王"),
+            Map.entry("TOR", "猛龙"), Map.entry("UTAH", "爵士"), Map.entry("WSH", "奇才"));
 
     private final PlayerRepository playerRepository;
     private final PlayerGameLogRepository playerGameLogRepository;
@@ -166,10 +196,20 @@ public class PlayerDetailService {
         }
 
         // 过滤掉球员没上场的比赛（得分、篮板、助攻都为0的比赛）
-        Page<PlayerGameLog> filteredPage = page.map(g -> g);
+        String playerTeamName = player.getTeam().getName();
+        List<String> gameIds = page.getContent().stream()
+                .map(PlayerGameLog::getGameId)
+                .filter(id -> id != null && !id.isBlank())
+                .distinct()
+                .collect(Collectors.toList());
+        Map<String, MatchRecord> matchesByGameId = gameIds.isEmpty()
+                ? Map.of()
+                : matchRecordRepository.findByNbaGameIdIn(gameIds).stream()
+                        .collect(Collectors.toMap(MatchRecord::getNbaGameId, m -> m, (first, ignored) -> first));
+        Map<String, List<EspnGameScore>> espnGamesByDate = loadEspnScoresByDate(page.getContent(), matchesByGameId);
         List<PlayerGameLogDto> filteredContent = page.getContent().stream()
                 .filter(g -> g.getPoints() > 0 || g.getRebounds() > 0 || g.getAssists() > 0)
-                .map(this::toGameLogDto)
+                .map(g -> toGameLogDto(g, playerTeamName, matchesByGameId.get(g.getGameId()), espnGamesByDate))
                 .collect(Collectors.toList());
 
         return new org.springframework.data.domain.PageImpl<>(
@@ -392,7 +432,25 @@ public class PlayerDetailService {
                 s.getEfficiency());
     }
 
-    private PlayerGameLogDto toGameLogDto(PlayerGameLog g) {
+    private PlayerGameLogDto toGameLogDto(
+            PlayerGameLog g,
+            String teamName,
+            MatchRecord match,
+            Map<String, List<EspnGameScore>> espnGamesByDate) {
+        Integer teamScore = null;
+        Integer opponentScore = null;
+        if (match != null) {
+            boolean isHome = teamName.equals(match.getHomeTeam());
+            teamScore = isHome ? match.getHomeScore() : match.getAwayScore();
+            opponentScore = isHome ? match.getAwayScore() : match.getHomeScore();
+        } else {
+            Optional<GameScore> espnScore = resolveEspnScore(g, teamName, espnGamesByDate);
+            if (espnScore.isPresent()) {
+                teamScore = espnScore.get().teamScore();
+                opponentScore = espnScore.get().opponentScore();
+            }
+        }
+
         return new PlayerGameLogDto(
                 g.getGameId(),
                 g.getMatchDate(),
@@ -410,9 +468,154 @@ public class PlayerDetailService {
                 g.getFtPct(),
                 g.getPlusMinus(),
                 g.getResult(),
-                0,  // 旧格式无球队比分
-                0);
+                teamScore,
+                opponentScore);
     }
+
+    private Map<String, List<EspnGameScore>> loadEspnScoresByDate(
+            List<PlayerGameLog> logs,
+            Map<String, MatchRecord> matchesByGameId) {
+        Set<String> missingScoreDates = logs.stream()
+                .filter(g -> !matchesByGameId.containsKey(g.getGameId()))
+                .map(PlayerGameLog::getMatchDate)
+                .map(PlayerDetailService::parseGameLogDate)
+                .flatMap(Optional::stream)
+                .map(ESPN_DATE::format)
+                .collect(Collectors.toSet());
+        Map<String, List<EspnGameScore>> scoresByDate = new HashMap<>();
+        for (String date : missingScoreDates) {
+            fetchEspnGamesByDate(date).ifPresent(games -> scoresByDate.put(date, games));
+        }
+        return scoresByDate;
+    }
+
+    private Optional<List<EspnGameScore>> fetchEspnGamesByDate(String date) {
+        String url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates="
+                + date + "&limit=100";
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                    .timeout(java.time.Duration.ofSeconds(8))
+                    .header("User-Agent", "Mozilla/5.0")
+                    .header("Accept", "application/json")
+                    .GET()
+                    .build();
+            HttpResponse<String> response = ESPN_HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.warn("ESPN scoreboard returned status {} for {}", response.statusCode(), date);
+                return Optional.empty();
+            }
+            return Optional.of(parseEspnScoreboardGames(response.body()));
+        } catch (Exception e) {
+            log.warn("ESPN scoreboard fetch failed for {}: {}", date, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private static Optional<GameScore> resolveEspnScore(
+            PlayerGameLog log,
+            String teamName,
+            Map<String, List<EspnGameScore>> espnGamesByDate) {
+        Optional<LocalDate> matchDate = parseGameLogDate(log.getMatchDate());
+        if (matchDate.isEmpty()) {
+            return Optional.empty();
+        }
+        List<EspnGameScore> games = espnGamesByDate.getOrDefault(ESPN_DATE.format(matchDate.get()), List.of());
+        return games.stream()
+                .filter(g -> Objects.equals(g.status(), "FINISHED"))
+                .filter(g -> isSameMatch(log, teamName, g))
+                .findFirst()
+                .map(g -> {
+                    boolean teamIsHome = teamName.equals(g.homeTeam());
+                    return new GameScore(
+                            teamIsHome ? g.homeScore() : g.awayScore(),
+                            teamIsHome ? g.awayScore() : g.homeScore());
+                });
+    }
+
+    private static boolean isSameMatch(PlayerGameLog log, String teamName, EspnGameScore game) {
+        boolean sameTeams = (teamName.equals(game.homeTeam()) && log.getOpponent().equals(game.awayTeam()))
+                || (teamName.equals(game.awayTeam()) && log.getOpponent().equals(game.homeTeam()));
+        if (!sameTeams) {
+            return false;
+        }
+        boolean teamIsHome = teamName.equals(game.homeTeam());
+        return log.isHome() == teamIsHome;
+    }
+
+    static List<EspnGameScore> parseEspnScoreboardGames(String json) {
+        JSONObject root = new JSONObject(json);
+        JSONArray events = root.optJSONArray("events");
+        if (events == null) {
+            return List.of();
+        }
+        return java.util.stream.IntStream.range(0, events.length())
+                .mapToObj(events::getJSONObject)
+                .map(PlayerDetailService::toEspnGameScore)
+                .flatMap(Optional::stream)
+                .collect(Collectors.toList());
+    }
+
+    private static Optional<EspnGameScore> toEspnGameScore(JSONObject event) {
+        JSONArray competitions = event.optJSONArray("competitions");
+        if (competitions == null || competitions.isEmpty()) {
+            return Optional.empty();
+        }
+        JSONArray competitors = competitions.getJSONObject(0).optJSONArray("competitors");
+        if (competitors == null || competitors.length() < 2) {
+            return Optional.empty();
+        }
+        JSONObject home = null;
+        JSONObject away = null;
+        for (int i = 0; i < competitors.length(); i++) {
+            JSONObject competitor = competitors.getJSONObject(i);
+            if ("home".equals(competitor.optString("homeAway"))) {
+                home = competitor;
+            } else if ("away".equals(competitor.optString("homeAway"))) {
+                away = competitor;
+            }
+        }
+        if (home == null || away == null) {
+            return Optional.empty();
+        }
+        String status = competitions.getJSONObject(0)
+                .optJSONObject("status")
+                .optJSONObject("type")
+                .optString("name", "");
+        return Optional.of(new EspnGameScore(
+                teamNameFromEspn(home),
+                teamNameFromEspn(away),
+                home.optInt("score", 0),
+                away.optInt("score", 0),
+                "STATUS_FINAL".equals(status) ? "FINISHED" : status));
+    }
+
+    private static String teamNameFromEspn(JSONObject competitor) {
+        JSONObject team = competitor.optJSONObject("team");
+        if (team == null) {
+            return "";
+        }
+        String abbreviation = team.optString("abbreviation", "");
+        return ESPN_TEAM_NAMES.getOrDefault(abbreviation, team.optString("shortDisplayName", ""));
+    }
+
+    private static Optional<LocalDate> parseGameLogDate(String rawDate) {
+        if (rawDate == null || rawDate.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(LocalDate.parse(rawDate));
+        } catch (DateTimeParseException ignored) {
+            try {
+                return Optional.of(LocalDate.parse(rawDate, NBA_LOG_DATE));
+            } catch (DateTimeParseException ignoredAgain) {
+                return Optional.empty();
+            }
+        }
+    }
+
+    record GameScore(Integer teamScore, Integer opponentScore) {}
+
+    record EspnGameScore(String homeTeam, String awayTeam, Integer homeScore, Integer awayScore, String status) {}
 
     private static ApiException notFound(Long id) {
         return new ApiException(HttpStatus.NOT_FOUND, "球员不存在: " + id);

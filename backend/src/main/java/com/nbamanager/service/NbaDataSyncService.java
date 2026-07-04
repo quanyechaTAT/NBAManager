@@ -7,6 +7,7 @@ import com.nbamanager.repository.DraftPickRepository;
 import com.nbamanager.repository.MatchRecordRepository;
 import com.nbamanager.repository.PlayerRepository;
 import com.nbamanager.repository.TeamRepository;
+import com.nbamanager.web.dto.DraftPickDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONArray;
@@ -39,6 +40,7 @@ public class NbaDataSyncService {
     private final PlayerRepository playerRepository;
     private final MatchRecordRepository matchRecordRepository;
     private final DraftPickRepository draftPickRepository;
+    private final DraftService draftService;
 
     // 同步状态管理 - 使用AtomicBoolean保证原子性
     private final AtomicBoolean syncing = new AtomicBoolean(false);
@@ -115,12 +117,16 @@ public class NbaDataSyncService {
             if (data.has("draftErrors") && !data.getJSONArray("draftErrors").isEmpty()) {
                 draftFailed = true;
                 draftError = data.getJSONArray("draftErrors").join("; ");
-                log.warn("选秀数据同步失败: {}", draftError);
+                log.warn("选秀数据同步错误: {}", draftError);
             }
-            if (draftsAdded == 0 && data.has("draftSourceStatus") && "failed".equals(data.optString("draftSourceStatus"))) {
+            if (data.has("draftSourceStatus") && "failed".equals(data.optString("draftSourceStatus"))) {
                 draftFailed = true;
                 if (draftError.isEmpty()) {
                     draftError = "NBA 官方选秀数据接口不可用";
+                }
+                // draftPicks 为空且 sourceStatus=failed → 标记为失败，不是部分失败
+                if (draftsAdded == 0) {
+                    lastSyncStatus = "同步失败（选秀数据）";
                 }
             }
 
@@ -557,50 +563,28 @@ public class NbaDataSyncService {
      * 更新选秀记录
      */
     private int updateDrafts(JSONArray drafts) {
-        int added = 0;
+        java.util.ArrayList<DraftPickDto> picks = new java.util.ArrayList<>();
 
         for (int i = 0; i < drafts.length(); i++) {
             JSONObject draftData = drafts.getJSONObject(i);
-            int year = draftData.optInt("year", 2024);
-            int round = draftData.optInt("round", 1);
-            int pickNumber = draftData.optInt("pickNumber", i + 1);
-            String teamName = draftData.optString("teamName", "");
-            String teamNameEn = draftData.optString("teamNameEn", "");
-            String playerName = draftData.optString("playerName", "");
-            String playerNameEn = draftData.optString("playerNameEn", "");
-            Long nbaPlayerId = draftData.has("nbaPlayerId") ? draftData.getLong("nbaPlayerId") : null;
-            String playerPosition = draftData.optString("playerPosition", "");
-            String fromTeamName = draftData.optString("fromTeamName", "");
-            String notes = draftData.optString("notes", "");
-
-            // 检查是否已存在（按年份+轮次+顺位去重）
-            boolean exists = draftPickRepository.existsByYearAndRoundAndPickNumber(year, round, pickNumber);
-
-            if (!exists) {
-                com.nbamanager.domain.DraftPick pick = new com.nbamanager.domain.DraftPick();
-                pick.setYear(year);
-                pick.setRound(round);
-                pick.setPickNumber(pickNumber);
-                pick.setTeamName(teamName);
-                pick.setTeamNameEn(teamNameEn);
-                if (!playerName.isEmpty()) pick.setPlayerName(playerName);
-                if (!playerNameEn.isEmpty()) pick.setPlayerNameEn(playerNameEn);
-                if (nbaPlayerId != null) pick.setNbaPlayerId(nbaPlayerId);
-                if (!notes.isEmpty()) pick.setNotes(notes);
-                draftPickRepository.save(pick);
-                added++;
-            } else if (nbaPlayerId != null) {
-                // 更新现有记录的 nbaPlayerId（如果缺失）
-                var existing = draftPickRepository.findByYearAndRoundAndPickNumber(year, round, pickNumber);
-                if (existing.isPresent() && existing.get().getNbaPlayerId() == null) {
-                    existing.get().setNbaPlayerId(nbaPlayerId);
-                    draftPickRepository.save(existing.get());
-                }
-            }
+            Long nbaPlayerId = draftData.has("nbaPlayerId") ? draftData.optLong("nbaPlayerId", 0) : null;
+            picks.add(new DraftPickDto(
+                    null,
+                    draftData.optInt("year", 2024),
+                    draftData.optInt("round", 1),
+                    draftData.optInt("pickNumber", i + 1),
+                    draftData.optString("teamName", ""),
+                    draftData.optString("teamNameEn", ""),
+                    draftData.optString("playerName", ""),
+                    draftData.optString("playerNameEn", ""),
+                    nbaPlayerId != null && nbaPlayerId > 0 ? nbaPlayerId : null,
+                    draftData.optString("notes", ""),
+                    null));
         }
 
-        log.info("选秀记录更新完成: 新增{}", added);
-        return added;
+        int upserted = draftService.importDraftPicks(picks);
+        log.info("Draft records upsert finished: {}", upserted);
+        return upserted;
     }
 
     /**

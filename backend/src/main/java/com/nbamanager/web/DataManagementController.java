@@ -35,6 +35,7 @@ public class DataManagementController {
     private final HistoricalDataSyncService historicalDataSyncService;
     private final SeasonManagementService seasonManagementService;
     private final TranslationRetryService translationRetryService;
+    private final DraftSyncService draftSyncService;
 
     // 各模块同步状态跟踪
     private static final Map<String, ModuleSyncInfo> moduleStatus = new ConcurrentHashMap<>();
@@ -137,10 +138,17 @@ public class DataManagementController {
                     case "teams":
                     case "players":
                     case "matches":
-                    case "draft":
                         // 这些模块通过全量同步一起更新
                         info.progress = 20;
                         dataSyncService.syncAll();
+                        info.progress = 100;
+                        info.status = "success";
+                        info.lastSyncTime = LocalDateTime.now();
+                        break;
+
+                    case "draft":
+                        info.progress = 20;
+                        draftSyncService.syncDraftYear(LocalDateTime.now().getYear());
                         info.progress = 100;
                         info.status = "success";
                         info.lastSyncTime = LocalDateTime.now();

@@ -21,6 +21,7 @@ public class AdminController {
     private final NbaLiveSyncService liveSyncService;
     private final NbaDataService nbaDataService;
     private final MatchRecordService matchRecordService;
+    private final DraftSyncService draftSyncService;
 
     // 各模块同步状态跟踪
     private final Map<String, String> moduleSyncStatus = new ConcurrentHashMap<>();
@@ -145,7 +146,18 @@ public class AdminController {
     @PostMapping("/sync/draft")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, String>> syncDraft() {
-        return triggerModuleSync("draft", "选秀数据");
+        if (draftSyncService.isSyncing()) {
+            return ResponseEntity.ok(Map.of(
+                    "message", "选秀数据同步正在进行中",
+                    "status", "syncing"
+            ));
+        }
+        draftSyncService.syncCurrentDraftYearAsync();
+        moduleSyncStatus.put("draft", "syncing");
+        return ResponseEntity.ok(Map.of(
+                "message", "选秀数据同步已触发",
+                "status", "started"
+        ));
     }
 
     /**

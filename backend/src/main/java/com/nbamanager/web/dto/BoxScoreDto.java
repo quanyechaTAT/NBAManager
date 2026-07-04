@@ -8,5 +8,7 @@ public record BoxScoreDto(
         String awayTeam,
         List<BoxScorePlayerDto> homePlayers,
         List<BoxScorePlayerDto> awayPlayers,
-        List<QuarterScoreDto> quarterScores
+        List<QuarterScoreDto> quarterScores,
+        Integer homeScore,
+        Integer awayScore
 ) {}

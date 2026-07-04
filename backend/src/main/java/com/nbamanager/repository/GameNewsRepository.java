@@ -43,4 +43,7 @@ public interface GameNewsRepository extends JpaRepository<GameNews, Long> {
     /** 查找nbaGameId为空的新闻（且主队不为待定） */
     @Query("SELECT g FROM GameNews g WHERE (g.nbaGameId IS NULL OR g.nbaGameId = '') AND g.homeTeam <> '待定'")
     List<GameNews> findByNbaGameIdIsNullOrNbaGameIdEmpty();
+
+    /** 按nbaGameId查找新闻 */
+    List<GameNews> findByNbaGameId(String nbaGameId);
 }

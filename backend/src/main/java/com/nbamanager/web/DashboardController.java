@@ -1,6 +1,8 @@
 package com.nbamanager.web;
 
 import com.nbamanager.service.DashboardService;
+import com.nbamanager.service.DashboardOverviewService;
+import com.nbamanager.web.dto.DashboardOverviewDto;
 import com.nbamanager.web.dto.DashboardStatsDto;
 import com.nbamanager.web.dto.PlayerDto;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +18,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class DashboardController {
 
     private final DashboardService dashboardService;
+    private final DashboardOverviewService dashboardOverviewService;
+
+    @GetMapping("/overview")
+    public DashboardOverviewDto overview() {
+        return dashboardOverviewService.buildOverview();
+    }
 
     @GetMapping("/stats")
     public DashboardStatsDto stats() {

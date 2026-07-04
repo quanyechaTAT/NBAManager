@@ -79,7 +79,7 @@
             </div>
           </div>
           <el-card shadow="never" class="quarter-card">
-            <el-table :data="quarterScores" stripe v-loading="quarterLoading" empty-text="暂无逐节比分数据">
+            <el-table :data="quarterScores" stripe v-loading="quarterLoading" :empty-text="quarterEmptyText">
               <el-table-column label="节次" width="120" align="center">
                 <template #default="{ row }">
                   <span class="period-label">{{ periodLabel(row.period) }}</span>
@@ -349,13 +349,23 @@ const quarterScores = ref<QuarterScore[]>([])
 const loading = ref(false)
 const boxscoreLoading = ref(false)
 const quarterLoading = ref(false)
+const quarterFallbackAttempted = ref(false)
+
+const quarterEmptyText = computed(() => {
+  if (quarterLoading.value) return '暂无逐节比分，正在尝试从官方比分源补全'
+  if (quarterFallbackAttempted.value) return '该场比赛官方逐节数据暂不可用'
+  return '暂无逐节比分数据'
+})
 
 const homeTotalScore = computed(() => {
-  if (queryHomeScore.value !== null) return String(queryHomeScore.value)
+  // 优先级: query比分 > 后端返回比分 > boxScore球员得分求和 > '--'
+  if (queryHomeScore.value !== null && queryHomeScore.value > 0) return String(queryHomeScore.value)
+  if (boxScore.value?.homeScore != null && boxScore.value.homeScore > 0) return String(boxScore.value.homeScore)
   if (!boxScore.value) return '--'
   const players = boxScore.value.homePlayers ?? []
   if (!players.length) return '--'
-  return players.reduce((sum: number, p: any) => sum + (p.points ?? 0), 0)
+  const sum = players.reduce((s: number, p: any) => s + (p.points ?? 0), 0)
+  return sum > 0 ? sum : '--'
 })
 
 const homeTeamLogo = computed(() => {
@@ -368,11 +378,14 @@ const awayTeamLogo = computed(() => {
 })
 
 const awayTotalScore = computed(() => {
-  if (queryAwayScore.value !== null) return String(queryAwayScore.value)
+  // 优先级: query比分 > 后端返回比分 > boxScore球员得分求和 > '--'
+  if (queryAwayScore.value !== null && queryAwayScore.value > 0) return String(queryAwayScore.value)
+  if (boxScore.value?.awayScore != null && boxScore.value.awayScore > 0) return String(boxScore.value.awayScore)
   if (!boxScore.value) return '--'
   const players = boxScore.value.awayPlayers ?? []
   if (!players.length) return '--'
-  return players.reduce((sum: number, p: any) => sum + (p.points ?? 0), 0)
+  const sum = players.reduce((s: number, p: any) => s + (p.points ?? 0), 0)
+  return sum > 0 ? sum : '--'
 })
 
 function sortPlayers(players: BoxScorePlayer[]): BoxScorePlayer[] {
@@ -470,9 +483,11 @@ async function loadQuarterScores() {
     const { data } = await fetchQuarterScores(gameId.value)
     if (data && data.length > 0) {
       quarterScores.value = data
+    } else {
+      quarterFallbackAttempted.value = true
     }
   } catch {
-    // 加载失败时不做处理
+    quarterFallbackAttempted.value = true
   } finally {
     quarterLoading.value = false
   }

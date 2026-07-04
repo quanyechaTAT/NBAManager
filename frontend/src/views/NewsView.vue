@@ -1496,10 +1496,39 @@ onMounted(async () => {
 .detail-actions {
   margin-top: 20px;
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 12px;
+  flex-wrap: wrap;
   padding-top: 16px;
   border-top: 1px solid var(--border-light);
+}
+
+.detail-actions :deep(.el-button),
+.detail-actions :deep(.share-trigger),
+.detail-actions :deep(.el-tooltip__trigger) {
+  height: 36px !important;
+  min-height: 36px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  line-height: 1 !important;
+  vertical-align: middle !important;
+}
+
+.detail-actions :deep(.el-button > span),
+.detail-actions :deep(.share-trigger > span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1;
+}
+
+.detail-actions :deep(svg) {
+  display: block;
+  flex-shrink: 0;
 }
 
 /* 浅色主题覆盖 */

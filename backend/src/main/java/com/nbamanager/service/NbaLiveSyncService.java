@@ -124,7 +124,7 @@ public class NbaLiveSyncService {
      * 每小时同步NBA新闻
      */
     @Scheduled(fixedRate = 3600000) // 1小时
-    @CacheEvict(value = {"news", "todayGames"}, allEntries = true)
+    @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
     public void syncNbaNews() {
         try {
             JSONObject data = fetchNewsData();
@@ -628,7 +628,7 @@ public class NbaLiveSyncService {
      * 每5分钟同步今日比赛比分（仅在有比赛时执行）
      */
     @Scheduled(fixedRate = 300000) // 5分钟
-    @CacheEvict(value = {"news", "todayGames"}, allEntries = true)
+    @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
     public void syncTodayGames() {
         try {
             JSONObject data = fetchTodayGamesData();

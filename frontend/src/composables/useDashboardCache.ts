@@ -1,13 +1,9 @@
 import { ref, onMounted } from 'vue'
-import { fetchDashboardStats } from '@/api/dashboard'
-import { fetchTodayNews } from '@/api/news'
-import { fetchRankings } from '@/api/team'
-import { fetchHotPosts } from '@/api/community'
-import request from '@/utils/request'
+import { fetchDashboardOverview } from '@/api/dashboard'
 import type { DashboardStats, TeamRank, GameNews, Post } from '@/api/types'
 
 const CACHE_KEY = 'nba_dashboard_cache'
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000
 
 interface DashboardCache {
   stats: DashboardStats | null
@@ -39,7 +35,7 @@ function saveCache(data: Omit<DashboardCache, 'timestamp'>) {
   try {
     sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ...data, timestamp: Date.now() }))
   } catch {
-    // ignore quota errors
+    // Ignore storage quota/private mode failures.
   }
 }
 
@@ -53,33 +49,27 @@ export function useDashboardCache() {
   const docCount = ref(0)
   const loading = ref(true)
 
-  async function fetchData() {
-    const [statsRes, todayRes, rankRes, hotRes, ragRes] = await Promise.allSettled([
-      fetchDashboardStats(),
-      fetchTodayNews(),
-      fetchRankings(),
-      fetchHotPosts({ page: 0, size: 5 }),
-      request.get('/rag/stats'),
-    ])
-    if (statsRes.status === 'fulfilled') {
-      stats.value = statsRes.value.data
-      topScorers.value = stats.value?.topScorers ?? []
-    }
-    if (todayRes.status === 'fulfilled') {
-      const INVALID = new Set(['待定', 'TBD', 'tbd', ''])
-      todayGames.value = (todayRes.value.data ?? [])
-        .filter((g: GameNews) => g.nbaGameId && !INVALID.has(g.homeTeam?.trim()) && !INVALID.has(g.awayTeam?.trim()))
-        .slice(0, 10)
-    }
-    if (rankRes.status === 'fulfilled') {
-      const r = rankRes.value.data
-      westStandings.value = r?.西部 ?? r?.western ?? []
-      eastStandings.value = r?.东部 ?? r?.eastern ?? []
-    }
-    if (hotRes.status === 'fulfilled') hotPosts.value = (hotRes.value.data?.content ?? []).slice(0, 5)
-    if (ragRes.status === 'fulfilled') docCount.value = ragRes.value.data?.documentCount || 0
+  function applyCache(cached: Omit<DashboardCache, 'timestamp'>) {
+    stats.value = cached.stats
+    todayGames.value = cached.todayGames
+    westStandings.value = cached.westStandings
+    eastStandings.value = cached.eastStandings
+    topScorers.value = cached.topScorers
+    hotPosts.value = cached.hotPosts
+    docCount.value = cached.docCount
+  }
 
-    // Save to cache
+  async function fetchData() {
+    const { data } = await fetchDashboardOverview()
+    applyCache({
+      stats: data.stats,
+      todayGames: data.todayGames ?? [],
+      westStandings: data.westStandings ?? [],
+      eastStandings: data.eastStandings ?? [],
+      topScorers: data.topScorers ?? data.stats?.topScorers ?? [],
+      hotPosts: data.hotPosts ?? [],
+      docCount: data.docCount || 0,
+    })
     saveCache({
       stats: stats.value,
       todayGames: todayGames.value,
@@ -92,23 +82,30 @@ export function useDashboardCache() {
   }
 
   onMounted(async () => {
-    // Try loading from cache first
     const cached = loadCache()
     if (cached) {
-      stats.value = cached.stats
-      todayGames.value = cached.todayGames
-      westStandings.value = cached.westStandings
-      eastStandings.value = cached.eastStandings
-      topScorers.value = cached.topScorers
-      hotPosts.value = cached.hotPosts
-      docCount.value = cached.docCount
+      applyCache(cached)
       loading.value = false
-      // Silent refresh in background
-      fetchData()
-    } else {
-      // No cache, show loading
-      loading.value = true
+      fetchData().catch(() => {
+        // Keep the warm cache visible when the background refresh fails.
+      })
+      return
+    }
+
+    loading.value = true
+    try {
       await fetchData()
+    } catch {
+      applyCache({
+        stats: null,
+        todayGames: [],
+        westStandings: [],
+        eastStandings: [],
+        topScorers: [],
+        hotPosts: [],
+        docCount: 0,
+      })
+    } finally {
       loading.value = false
     }
   })

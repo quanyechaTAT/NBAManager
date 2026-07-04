@@ -207,9 +207,9 @@
           <el-table-column label="比分" width="120" align="center">
             <template #default="{ row }">
               <div class="score-cell">
-                <span class="score-team" :class="{ 'score-win': row.result === 'W' }">{{ row.teamScore || '-' }}</span>
+                <span class="score-team" :class="{ 'score-win': row.result === 'W' }">{{ formatGameScoreValue(row.teamScore) }}</span>
                 <span class="score-sep">:</span>
-                <span class="score-opp">{{ row.opponentScore || '-' }}</span>
+                <span class="score-opp">{{ formatGameScoreValue(row.opponentScore) }}</span>
               </div>
             </template>
           </el-table-column>
@@ -279,6 +279,7 @@ import ShotChart from '@/components/ShotChart.vue'
 import type { ShotData } from '@/api/types'
 import request from '@/utils/request'
 import { useChartTheme } from '@/composables/useChartTheme'
+import { formatGameScoreValue } from '@/utils/gameScore'
 
 use([RadarChart, LineChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, RadarComponent, CanvasRenderer])
 
@@ -465,16 +466,23 @@ function goBack() {
 
 function goToMatchDetail(row: any) {
   if (!row.gameId) return
-  const params = new URLSearchParams({
+  const params: Record<string, string> = {
     gameId: row.gameId,
     status: 'FINISHED',
     homeTeam: row.isHome ? (player.value?.teamName || '') : row.opponent,
     awayTeam: row.isHome ? row.opponent : (player.value?.teamName || ''),
-    homeScore: String(row.isHome ? (row.teamScore || 0) : (row.opponentScore || 0)),
-    awayScore: String(row.isHome ? (row.opponentScore || 0) : (row.teamScore || 0)),
     returnTo: `/players/detail?id=${playerId.value}`,
-  })
-  router.push(`/match-detail?${params.toString()}`)
+  }
+  // 只有比分非空时才传递，否则让MatchDetailView走后端兜底
+  const homeScore = row.isHome ? row.teamScore : row.opponentScore
+  const awayScore = row.isHome ? row.opponentScore : row.teamScore
+  if (homeScore != null && homeScore > 0) {
+    params.homeScore = String(homeScore)
+  }
+  if (awayScore != null && awayScore > 0) {
+    params.awayScore = String(awayScore)
+  }
+  router.push(`/match-detail?${new URLSearchParams(params).toString()}`)
 }
 
 /* 加载数据 */
@@ -734,6 +742,7 @@ const displayShots = computed<ShotData[]>(() => {
 <style scoped>
 .page {
   max-width: 1200px;
+  margin: 0 auto;
   min-height: calc(100vh - 108px);
   position: relative;
   border-radius: var(--radius-lg);

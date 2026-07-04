@@ -214,18 +214,21 @@ function goToMatchDetail(row: MatchRecord) {
     ElMessage.warning('该比赛暂无详细数据')
     return
   }
-  router.push({
-    path: '/match-detail',
-    query: {
-      gameId: row.nbaGameId,
-      status: row.status,
-      homeTeam: row.homeTeam,
-      awayTeam: row.awayTeam,
-      homeScore: String(row.homeScore),
-      awayScore: String(row.awayScore),
-      returnTo: `/teams/detail?name=${teamName.value}`,
-    },
-  })
+  const query: Record<string, string> = {
+    gameId: row.nbaGameId,
+    status: row.status,
+    homeTeam: row.homeTeam,
+    awayTeam: row.awayTeam,
+    returnTo: `/teams/detail?name=${teamName.value}`,
+  }
+  // 只有比分有效时才传递
+  if (row.homeScore != null && row.homeScore > 0) {
+    query.homeScore = String(row.homeScore)
+  }
+  if (row.awayScore != null && row.awayScore > 0) {
+    query.awayScore = String(row.awayScore)
+  }
+  router.push({ path: '/match-detail', query })
 }
 
 const headToHeadStats = computed(() => {
@@ -288,6 +291,7 @@ onMounted(() => {
 <style scoped>
 .page {
   max-width: 1100px;
+  margin: 0 auto;
   min-height: calc(100vh - 108px);
   position: relative;
   animation: pageFadeIn 0.3s ease forwards;

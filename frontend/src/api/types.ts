@@ -66,6 +66,18 @@ export interface DashboardStats {
   topScorers: { id: number; playerName: string; ppg: number; teamName: string; nbaPlayerId: number | null }[]
 }
 
+export interface DashboardOverview {
+  stats: DashboardStats | null
+  todayGames: GameNews[]
+  westStandings: TeamRank[]
+  eastStandings: TeamRank[]
+  topScorers: { id: number; playerName: string; ppg: number; teamName: string; nbaPlayerId: number | null }[]
+  hotPosts: Post[]
+  docCount: number
+  generatedAt: string
+  partialErrors: string[]
+}
+
 export interface GameNews {
   id: number
   title: string
@@ -86,6 +98,26 @@ export interface GameNews {
   viewCount: number
   favoriteCount: number
   favoritedByMe: boolean
+}
+
+export interface Post {
+  id: number
+  userId: number
+  username?: string
+  title: string
+  content: string
+  category: string
+  tags: string
+  viewCount: number
+  likeCount: number
+  commentCount: number
+  favoriteCount: number
+  isTop: boolean
+  isFeatured?: boolean
+  hasPoll?: boolean
+  likedByMe: boolean
+  createTime: string
+  lastReplyTime?: string
 }
 
 export interface MatchRecord {
@@ -131,6 +163,8 @@ export interface BoxScore {
   homePlayers: BoxScorePlayer[]
   awayPlayers: BoxScorePlayer[]
   quarterScores: QuarterScore[]
+  homeScore: number | null
+  awayScore: number | null
 }
 
 export interface PlayByPlayEvent {

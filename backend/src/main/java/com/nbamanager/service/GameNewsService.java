@@ -87,7 +87,7 @@ public class GameNewsService {
     }
 
     /** 新增赛事资讯 */
-    @CacheEvict(value = {"news", "todayGames"}, allEntries = true)
+    @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
     @Transactional
     public GameNewsDto create(GameNewsRequest req) {
         GameNews g = new GameNews();
@@ -97,7 +97,7 @@ public class GameNewsService {
     }
 
     /** 修改赛事资讯 */
-    @CacheEvict(value = {"news", "todayGames"}, allEntries = true)
+    @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
     @Transactional
     public GameNewsDto update(Long id, GameNewsRequest req) {
         GameNews g = gameNewsRepository.findById(id)
@@ -107,7 +107,7 @@ public class GameNewsService {
     }
 
     /** 删除赛事资讯 */
-    @CacheEvict(value = {"news", "todayGames"}, allEntries = true)
+    @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
     @Transactional
     public void delete(Long id) {
         if (!gameNewsRepository.existsById(id)) {
@@ -117,7 +117,7 @@ public class GameNewsService {
     }
 
     /** 清空所有赛事资讯 */
-    @CacheEvict(value = {"news", "todayGames"}, allEntries = true)
+    @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
     @Transactional
     public int deleteAll() {
         long count = gameNewsRepository.count();
@@ -126,7 +126,7 @@ public class GameNewsService {
     }
 
     /** 清理超出100条的旧资讯，同步删除浏览历史和收藏 */
-    @CacheEvict(value = {"news", "todayGames"}, allEntries = true)
+    @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
     @Transactional
     public int cleanupOldNews(int keepCount) {
         List<GameNews> allNews = gameNewsRepository.findAll(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createTime"));
