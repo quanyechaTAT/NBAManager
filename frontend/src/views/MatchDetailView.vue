@@ -193,12 +193,28 @@
               <h2>比赛回放</h2>
             </div>
           </div>
-          <div v-loading="pbpLoading" class="pbp-container">
-            <div v-if="playByPlay.length === 0 && !pbpLoading" class="empty-inline">暂无比赛回放数据</div>
-            <div v-for="(event, idx) in playByPlay" :key="idx" class="pbp-event">
-              <span class="pbp-period">Q{{ event.period }}</span>
-              <span class="pbp-time">{{ event.clock }}</span>
-              <span class="pbp-desc">{{ event.description }}</span>
+          <div v-if="replayLoading" class="loading-state">加载中...</div>
+          <div v-else class="replay-container">
+            <div class="replay-summary">
+              <MomentumChart :data="momentumData" @point-click="handleMomentumClick" />
+            </div>
+            <div class="replay-main">
+              <div class="replay-left">
+                <ReplayTimeline :events="timelineEvents" :selected-event="selectedTimelineEvent" @select="selectedTimelineEvent = $event" />
+              </div>
+              <div class="replay-right" v-if="selectedTimelineEvent">
+                <div class="event-detail-panel">
+                  <h4>事件详情</h4>
+                  <div class="detail-row"><span>时间：</span>Q{{ selectedTimelineEvent.period }} {{ selectedTimelineEvent.gameClock }}</div>
+                  <div class="detail-row"><span>比分：</span>{{ selectedTimelineEvent.homeScore }}-{{ selectedTimelineEvent.awayScore }}</div>
+                  <div class="detail-row"><span>描述：</span>{{ selectedTimelineEvent.description }}</div>
+                  <div v-if="selectedTimelineEvent.playerName" class="detail-row"><span>球员：</span>{{ selectedTimelineEvent.playerName }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="replay-bottom">
+              <HighlightCards :highlights="highlightsData" />
+              <TurningPointList :points="turningPointsData" />
             </div>
           </div>
         </el-tab-pane>
@@ -284,12 +300,17 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fetchBoxScore, fetchQuarterScores, fetchPlayByPlay } from '@/api/matchDetail'
+import { fetchTimeline, fetchMomentum, fetchHighlights, fetchTurningPoints } from '@/api/aiReplay'
 import { fetchGameComments, createComment, deleteComment, toggleCommentLike } from '@/api/community'
 import EmojiPicker from '@/components/EmojiPicker.vue'
 import { useEmojiPicker } from '@/composables/useEmojiPicker'
 import ShotChart from '@/components/ShotChart.vue'
 import LiveChat from '@/components/LiveChat.vue'
-import type { BoxScore, BoxScorePlayer, QuarterScore } from '@/api/types'
+import ReplayTimeline from '@/components/replay/ReplayTimeline.vue'
+import MomentumChart from '@/components/replay/MomentumChart.vue'
+import HighlightCards from '@/components/replay/HighlightCards.vue'
+import TurningPointList from '@/components/replay/TurningPointList.vue'
+import type { BoxScore, BoxScorePlayer, QuarterScore, TimelineEvent, MomentumSnapshot, Highlight, TurningPoint } from '@/api/types'
 import type { Comment } from '@/api/community'
 import { getTeamLogo } from '@/utils/teamLogos'
 import { useAuthStore } from '@/stores/auth'
@@ -325,7 +346,10 @@ const activeTab = ref('stats')
 
 // Tab 切换时加载对应数据
 watch(activeTab, (tab) => {
-  if (tab === 'playbyplay') loadPlayByPlay()
+  if (tab === 'playbyplay') {
+    loadPlayByPlay()
+    loadReplayData(gameId.value)
+  }
   if (tab === 'comments') loadComments()
 })
 
@@ -459,6 +483,14 @@ async function loadBoxScore() {
 const playByPlay = ref<any[]>([])
 const pbpLoading = ref(false)
 
+// AI Replay data
+const timelineEvents = ref<TimelineEvent[]>([])
+const momentumData = ref<MomentumSnapshot[]>([])
+const highlightsData = ref<Highlight[]>([])
+const turningPointsData = ref<TurningPoint[]>([])
+const selectedTimelineEvent = ref<TimelineEvent | null>(null)
+const replayLoading = ref(false)
+
 async function loadPlayByPlay() {
   if (!gameId.value || playByPlay.value.length) return
   pbpLoading.value = true
@@ -469,6 +501,31 @@ async function loadPlayByPlay() {
     ElMessage.error('加载比赛回放失败')
   } finally {
     pbpLoading.value = false
+  }
+}
+
+async function loadReplayData(gameIdStr: string) {
+  replayLoading.value = true
+  try {
+    const [timeline, momentum, highlights, turningPoints] = await Promise.all([
+      fetchTimeline(gameIdStr).catch(() => []),
+      fetchMomentum(gameIdStr).catch(() => []),
+      fetchHighlights(gameIdStr).catch(() => []),
+      fetchTurningPoints(gameIdStr).catch(() => [])
+    ])
+    timelineEvents.value = timeline
+    momentumData.value = momentum
+    highlightsData.value = highlights
+    turningPointsData.value = turningPoints
+  } finally {
+    replayLoading.value = false
+  }
+}
+
+function handleMomentumClick(snapshot: MomentumSnapshot) {
+  const event = timelineEvents.value.find(e => e.eventOrder === snapshot.eventOrder)
+  if (event) {
+    selectedTimelineEvent.value = event
   }
 }
 
@@ -1135,5 +1192,19 @@ onMounted(async () => {
   color: var(--text-muted);
   padding: 40px 0;
   font-size: 14px;
+}
+
+/* AI Replay layout */
+.replay-container { display: flex; flex-direction: column; gap: 24px; }
+.replay-main { display: grid; grid-template-columns: 1fr 350px; gap: 16px; }
+.replay-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.event-detail-panel { padding: 16px; border-radius: 10px; background: var(--el-bg-color-page); border: 1px solid var(--el-border-color-lighter); position: sticky; top: 16px; }
+.event-detail-panel h4 { margin-bottom: 12px; color: var(--el-text-color-primary); }
+.detail-row { margin-bottom: 8px; color: var(--el-text-color-regular); }
+.detail-row span { color: var(--el-text-color-secondary); }
+.loading-state { text-align: center; padding: 60px; color: var(--el-text-color-secondary); }
+@media (max-width: 768px) {
+  .replay-main { grid-template-columns: 1fr; }
+  .replay-bottom { grid-template-columns: 1fr; }
 }
 </style>
