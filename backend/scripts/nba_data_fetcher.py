@@ -1260,7 +1260,11 @@ def fetch_playoff_bracket(season=None):
     print(f"从ESPN API获取到 {len(games_data)} 场比赛", file=sys.stderr)
 
     # 第三步：结合系列赛结构和比赛数据构建对阵图
-    matchups = build_bracket(series_data, games_data)
+    if series_data:
+        matchups = build_bracket(series_data, games_data)
+    else:
+        # NBA API 系列赛结构不可用，仅从 ESPN 比赛数据推断对阵图
+        matchups = build_bracket_from_games(games_data)
 
     print(f"最终构建 {len(matchups)} 组系列赛", file=sys.stderr)
     return {'matchups': matchups, 'games': games_data}
