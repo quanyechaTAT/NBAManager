@@ -11,6 +11,8 @@ import os
 import sys
 import time
 import urllib.request
+import re
+from html import unescape
 from datetime import datetime, timedelta
 
 # 确保stdout使用UTF-8编码（Windows兼容）
@@ -47,26 +49,39 @@ PROXY_HOST = os.environ.get('NBA_PROXY_HOST', '')
 PROXY_PORT = os.environ.get('NBA_PROXY_PORT', '')
 PROXY_URL = ''
 
+def _build_proxy_url(host, port):
+    """从 host/port 构建代理 URL，兼容 host 已包含 scheme 和引号的情况"""
+    if not host or not port:
+        return ''
+    # 去除引号
+    host = host.strip('"').strip("'")
+    port = port.strip('"').strip("'")
+    # 如果 host 已经是完整 URL（如 http://127.0.0.1:7890），直接使用
+    if host.startswith('http://') or host.startswith('https://'):
+        return host
+    return f'http://{host}:{port}'
+
 if PROXY_HOST and PROXY_PORT:
-    PROXY_URL = f'http://{PROXY_HOST}:{PROXY_PORT}'
-    proxy_handler = urllib.request.ProxyHandler({
-        'https': PROXY_URL,
-        'http': PROXY_URL,
-    })
-    proxy_opener = urllib.request.build_opener(proxy_handler)
-    urllib.request.install_opener(proxy_opener)
-    # 设置requests库的代理环境变量
-    os.environ['HTTP_PROXY'] = PROXY_URL
-    print(f"已配置代理: {PROXY_HOST}:{PROXY_PORT}", file=sys.stderr)
+    PROXY_URL = _build_proxy_url(PROXY_HOST, PROXY_PORT)
+    if PROXY_URL:
+        proxy_handler = urllib.request.ProxyHandler({
+            'https': PROXY_URL,
+            'http': PROXY_URL,
+        })
+        proxy_opener = urllib.request.build_opener(proxy_handler)
+        urllib.request.install_opener(proxy_opener)
+        os.environ['HTTP_PROXY'] = PROXY_URL
+        print(f"已配置代理: {PROXY_URL}", file=sys.stderr)
+    else:
+        print("代理配置无效，使用直连", file=sys.stderr)
 else:
     # 显式清除所有代理环境变量，防止系统代理干扰
     for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']:
         os.environ.pop(key, None)
-    # 安装无代理的opener
     proxy_handler = urllib.request.ProxyHandler({})
     proxy_opener = urllib.request.build_opener(proxy_handler)
     urllib.request.install_opener(proxy_opener)
-    print("未配置代理，使用直连（已清除系统代理）", file=sys.stderr)
+    print("未配置代理，使用直连", file=sys.stderr)
 
 try:
     from nba_api.stats.endpoints import (
@@ -1723,19 +1738,103 @@ def fetch_playbyplay(game_id, start_period=0, end_period=10):
     return events
 
 
-def fetch_quarter_scores_from_scoreboard(game_id):
-    """从ScoreboardV3获取逐节比分（更可靠的备选方案）"""
+def fetch_espn_playbyplay(game_id):
+    """从 ESPN 获取 Play-by-Play 数据"""
+    print(f"正在从 ESPN 获取比赛 {game_id} 的 Play-by-Play...", file=sys.stderr)
+
+    try:
+        url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event={game_id}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print(f"ESPN API 请求失败: {e}", file=sys.stderr)
+        return []
+
+    plays = data.get("plays", [])
+    events = []
+
+    for play in plays:
+        period_num = play.get("period", {}).get("number", 1) if isinstance(play.get("period"), dict) else play.get("period", 1)
+        clock = play.get("clock", {}).get("displayValue", "12:00") if isinstance(play.get("clock"), dict) else str(play.get("clock", "12:00"))
+        text = play.get("text", "")
+        home_score = _safe_int(play.get("homeScore", 0))
+        away_score = _safe_int(play.get("awayScore", 0))
+        event_type = play.get("type", {}).get("text", "") if isinstance(play.get("type"), dict) else str(play.get("type", ""))
+
+        if not text:
+            continue
+
+        events.append({
+            "period": period_num,
+            "gameClock": clock,
+            "description": text,
+            "homeScore": home_score,
+            "awayScore": away_score,
+            "eventType": event_type,
+            "playerId": None,
+            "playerName": "",
+            "teamId": None,
+            "teamName": "",
+            "source": "ESPN_PLAY_BY_PLAY",
+        })
+
+    print(f"ESPN 获取到 {len(events)} 条事件", file=sys.stderr)
+    return events
+
+
+def fetch_quarter_scores_from_scoreboard(game_id, match_date=None):
+    """从ScoreboardV3获取逐节比分（更可靠的备选方案）
+
+    Args:
+        game_id: NBA比赛ID
+        match_date: 比赛日期（可选，格式：YYYY-MM-DD），用于缩小搜索范围
+    """
     print(f"正在从ScoreboardV3获取比赛 {game_id} 的逐节比分...", file=sys.stderr)
 
     try:
-        # 从gameId提取日期 (格式: 00YYMMDDNNN → 20YY-MM-DD)
+        from datetime import datetime, timedelta
+
+        # 如果提供了日期，先尝试该日期
+        if match_date:
+            print(f"尝试指定日期: {match_date}", file=sys.stderr)
+            sb = ScoreboardV3(game_date=match_date, timeout=30)
+            sb_data = sb.get_dict()
+            games = sb_data.get('scoreboard', {}).get('games', [])
+            for g in games:
+                if g.get('gameId') == game_id:
+                    home_periods = g.get('homeTeam', {}).get('periods', [])
+                    away_periods = g.get('awayTeam', {}).get('periods', [])
+                    if home_periods and away_periods:
+                        result = []
+                        for hp, ap in zip(home_periods, away_periods):
+                            result.append({
+                                'period': hp.get('period'),
+                                'homeScore': hp.get('score'),
+                                'awayScore': ap.get('score'),
+                            })
+                        print(f"从指定日期获取到 {len(result)} 节比分", file=sys.stderr)
+                        return result
+
+        # 从gameId提取年份，扩大搜索范围
+        # gameId格式: 0022400001 → 22 = 2022年
         season_year = int(game_id[1:3])
         full_year = 2000 + season_year
-        # 用BoxScoreV3的gameId查找对应日期
-        # 先尝试直接用ScoreboardV3获取最近日期的比赛
+
+        # 根据赛季确定搜索范围（常规赛10月-4月，季后赛4月-6月）
+        # 搜索整个赛季范围而不是仅最近30天
         from datetime import datetime, timedelta
-        # 逐日搜索最近30天
-        for days_ago in range(0, 30):
+
+        # 如果年份是当前年份或去年，搜索范围扩大到整个赛季
+        current_year = datetime.now().year
+        if full_year >= current_year - 1:
+            # 搜索最近180天（覆盖整个赛季）
+            search_days = 180
+        else:
+            # 历史赛季，搜索范围扩大到365天
+            search_days = 365
+
+        for days_ago in range(0, search_days):
             search_date = (datetime.now() - timedelta(days=days_ago)).strftime('%Y-%m-%d')
             sb = ScoreboardV3(game_date=search_date, timeout=30)
             sb_data = sb.get_dict()
@@ -2041,6 +2140,26 @@ def fetch_nba_news(limit=20):
     return parsed_articles
 
 
+def normalize_draft_pick(raw, source):
+    """统一选秀数据格式，确保所有字段存在且类型正确"""
+    now_iso = datetime.now().isoformat()
+    return {
+        'year': _safe_int(raw.get('year')),
+        'round': _safe_int(raw.get('round', 1)),
+        'pickNumber': _safe_int(raw.get('pickNumber')),
+        'teamName': raw.get('teamName', ''),
+        'teamNameEn': raw.get('teamNameEn', ''),
+        'playerName': raw.get('playerName', ''),
+        'playerNameEn': raw.get('playerNameEn', ''),
+        'nbaPlayerId': _safe_int(raw.get('nbaPlayerId')),
+        'playerPosition': raw.get('playerPosition', ''),
+        'fromTeamName': raw.get('fromTeamName', ''),
+        'notes': raw.get('notes', ''),
+        'source': source,
+        'sourceUpdatedAt': raw.get('sourceUpdatedAt', now_iso),
+    }
+
+
 def _fetch_draft_from_nba_stats(year, retries=3, timeout=30):
     """直接请求 stats.nba.com/stats/drafthistory（带重试和正确 headers）"""
     url = f"https://stats.nba.com/stats/drafthistory?LeagueID=00&Season={year}"
@@ -2067,7 +2186,6 @@ def _fetch_draft_from_nba_stats(year, retries=3, timeout=30):
                 content_type = resp.headers.get('Content-Type', '')
                 body = resp.read()
 
-                # 检查是否返回 JSON
                 if 'json' not in content_type and not body.strip().startswith(b'{'):
                     body_preview = body[:200].decode('utf-8', errors='replace')
                     print(f"stats.nba.com 返回非JSON: Status={resp.status}, CT={content_type}, Body={body_preview[:100]}", file=sys.stderr)
@@ -2089,8 +2207,8 @@ def _fetch_draft_from_nba_stats(year, retries=3, timeout=30):
     return None, "所有重试均失败"
 
 
-def _parse_draft_data(data, yr):
-    """解析 NBA stats DraftHistory 响应数据"""
+def _parse_draft_from_stats(data, yr):
+    """解析 NBA stats DraftHistory 响应数据，返回 normalize_draft_pick 格式"""
     results = []
     for rs in data.get('resultSets', []):
         headers = rs.get('headers', [])
@@ -2114,7 +2232,7 @@ def _parse_draft_data(data, yr):
             else:
                 effective_round = round_num if round_num > 0 else 1
 
-            results.append({
+            results.append(normalize_draft_pick({
                 'year': _safe_int(d.get('SEASON', yr)),
                 'round': effective_round,
                 'pickNumber': overall_pick if overall_pick > 0 else round_pick,
@@ -2123,15 +2241,339 @@ def _parse_draft_data(data, yr):
                 'playerName': cn_player,
                 'playerNameEn': player_name,
                 'nbaPlayerId': _safe_int(d.get('PERSON_ID')),
-                'playerPosition': '',
-                'fromTeamName': '',
                 'notes': f"选秀顺位第{overall_pick}位",
-            })
+            }, source='nba_stats_drafthistory'))
     return results
 
 
+def _fetch_draft_from_nba_com_tracker(year, retries=3, timeout=30):
+    """从 NBA.com 官方选秀页面抓取 __NEXT_DATA__ 中的选秀数据"""
+    url = f"https://www.nba.com/draft/{year}"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.7',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'none',
+        'sec-fetch-user': '?1',
+    }
+
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                content_type = resp.headers.get('Content-Type', '')
+                if 'html' not in content_type and 'text' not in content_type:
+                    return None, f"NBA.com 返回非HTML (Content-Type: {content_type})"
+
+                body = resp.read().decode('utf-8', errors='replace')
+
+            # 提取 __NEXT_DATA__ JSON
+            marker_start = '<script id="__NEXT_DATA__" type="application/json">'
+            marker_end = '</script>'
+            start_idx = body.find(marker_start)
+            if start_idx == -1:
+                # 尝试备选：查找 application/json 类型的 script 标签
+                import re
+                match = re.search(r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>', body, re.DOTALL)
+                if not match:
+                    if attempt < retries - 1:
+                        time.sleep(2 ** attempt)
+                        continue
+                    return None, "NBA.com 页面中未找到 __NEXT_DATA__"
+                json_str = match.group(1)
+            else:
+                start_idx += len(marker_start)
+                end_idx = body.find(marker_end, start_idx)
+                if end_idx == -1:
+                    return None, "NBA.com __NEXT_DATA__ JSON 未闭合"
+                json_str = body[start_idx:end_idx]
+
+            data = json.loads(json_str)
+            return data, None
+
+        except Exception as e:
+            print(f"请求 NBA.com draft 页面失败 (attempt {attempt+1}/{retries}): {e}", file=sys.stderr)
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            return None, str(e)
+
+    return None, "所有重试均失败"
+
+
+def _fetch_draft_from_nba_news_order(year, retries=3, timeout=30):
+    """Fetch NBA.com official draft results/news pages."""
+    urls = [
+        f"https://www.nba.com/news/{year}-nba-draft-order",
+        f"https://www.nba.com/news/{year}-nba-draft-results",
+    ]
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.7',
+    }
+
+    last_error = ""
+    for url in urls:
+        for attempt in range(retries):
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    content_type = resp.headers.get('Content-Type', '')
+                    if 'html' not in content_type and 'text' not in content_type:
+                        last_error = f"NBA.com news returned non-HTML content: {content_type}"
+                        continue
+                    return resp.read().decode('utf-8', errors='replace'), None
+            except Exception as e:
+                last_error = str(e)
+                print(f"NBA.com draft news request failed ({url}, attempt {attempt+1}/{retries}): {e}", file=sys.stderr)
+                if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+    return None, last_error or "NBA.com draft news page unavailable"
+
+
+def _strip_html(value):
+    value = re.sub(r'<script\b[^>]*>.*?</script>', ' ', value or '', flags=re.I | re.S)
+    value = re.sub(r'<style\b[^>]*>.*?</style>', ' ', value, flags=re.I | re.S)
+    value = re.sub(r'<[^>]+>', ' ', value)
+    value = unescape(value)
+    value = re.sub(r'\s+', ' ', value)
+    return value.strip()
+
+
+def _clean_draft_name(value):
+    value = re.sub(r'\([^)]*\)', '', value or '')
+    value = value.replace('\u00a0', ' ')
+    value = value.strip(" \t\r\n-:;,.")
+    return re.sub(r'\s+', ' ', value).strip()
+
+
+def _parse_pick_line(line):
+    colon_match = re.match(
+        r'^(?P<pick>[1-9][0-9]?)\.\s+(?P<team>[^:]+):\s+(?P<player>[^,\n]+)(?:,\s*(?P<position>[A-Z][A-Z/.-]*))?(?:,\s*(?P<extra>.*))?$',
+        line.strip(),
+    )
+    if colon_match:
+        return {
+            'pick': _safe_int(colon_match.group('pick')),
+            'team': _clean_draft_name(colon_match.group('team')),
+            'player': _clean_draft_name(colon_match.group('player')),
+            'position': _clean_draft_name(colon_match.group('position') or ''),
+            'extra': _clean_draft_name(colon_match.group('extra') or ''),
+        }
+
+    numbered = re.match(r'^(?P<pick>[1-9][0-9]?)\.\s+(?P<body>.+)$', line.strip())
+    if numbered:
+        body = numbered.group('body')
+        team_names = sorted(TEAM_NAME_MAP.keys(), key=len, reverse=True)
+        for team_name in team_names:
+            if not body.startswith(team_name + ' '):
+                continue
+            rest = body[len(team_name):].strip()
+            rest = re.sub(
+                r'^(?:draft|select|selected|take|took|choose|chose|from)\s+',
+                '',
+                rest,
+                flags=re.I,
+            ).strip()
+            if not rest:
+                break
+            player = re.split(r'\s+\(', rest, maxsplit=1)[0]
+            extra_match = re.search(r'\(([^)]*)\)', rest)
+            return {
+                'pick': _safe_int(numbered.group('pick')),
+                'team': _clean_draft_name(team_name),
+                'player': _clean_draft_name(player),
+                'position': '',
+                'extra': _clean_draft_name(extra_match.group(1) if extra_match else ''),
+            }
+
+    sentence_match = re.match(
+        r'^(?P<pick>[1-9][0-9]?)\.\s+(?P<team>.+?)\s+(?:draft|select|selected|take|took|choose|chose)\s+(?P<player>.+?)(?:\s+\((?P<extra>[^)]*)\))?$',
+        line.strip(),
+        flags=re.I,
+    )
+    if not sentence_match:
+        return None
+    return {
+        'pick': _safe_int(sentence_match.group('pick')),
+        'team': _clean_draft_name(sentence_match.group('team')),
+        'player': _clean_draft_name(sentence_match.group('player')),
+        'position': '',
+        'extra': _clean_draft_name(sentence_match.group('extra') or ''),
+    }
+
+
+def _parse_draft_from_nba_news_order(html, yr):
+    """Parse NBA.com news/order pages that list picks as text."""
+    line_html = (html or '').replace('</p>', '\n').replace('</li>', '\n').replace('<br>', '\n').replace('<br/>', '\n')
+    line_text = re.sub(r'<script\b[^>]*>.*?</script>', ' ', line_html, flags=re.I | re.S)
+    line_text = re.sub(r'<style\b[^>]*>.*?</style>', ' ', line_text, flags=re.I | re.S)
+    line_text = re.sub(r'<[^>]+>', ' ', line_text)
+    line_text = unescape(line_text)
+    candidates = [
+        re.sub(r'\s+', ' ', item).strip()
+        for item in re.split(r'[\r\n]+', line_text)
+        if re.match(r'^[1-9][0-9]?\.\s+', item.strip())
+    ]
+
+    if not candidates:
+        compact_text = _strip_html(html)
+        pattern = re.compile(r'([1-9][0-9]?\.\s+.+?)(?=\s+[1-9][0-9]?\.\s+|$)')
+        candidates = [match.group(1).strip() for match in pattern.finditer(compact_text)]
+
+    normalized = []
+    seen = set()
+    for candidate in candidates:
+        parsed = _parse_pick_line(candidate)
+        if not parsed or parsed['pick'] <= 0 or parsed['pick'] > 90:
+            continue
+        pick_num = parsed['pick']
+        if pick_num in seen:
+            continue
+        seen.add(pick_num)
+
+        team_name_en = parsed['team']
+        player_name_en = parsed['player']
+        team_name = TEAM_NAME_MAP.get(team_name_en, TEAM_ABBR_MAP.get(team_name_en, team_name_en))
+        player_name = PLAYER_CN_MAP.get(player_name_en, player_name_en)
+        normalized.append(normalize_draft_pick({
+            'year': yr,
+            'round': 1 if pick_num <= 30 else 2,
+            'pickNumber': pick_num,
+            'teamName': team_name,
+            'teamNameEn': team_name_en,
+            'playerName': player_name,
+            'playerNameEn': player_name_en,
+            'playerPosition': parsed['position'],
+            'notes': f"选秀顺位第{pick_num}位",
+        }, source='nba_com_news_draft_order'))
+
+    return sorted(normalized, key=lambda item: item['pickNumber'])
+
+
+def _draft_snapshot_path(year):
+    return os.path.join(os.path.dirname(__file__), 'runtime', 'draft_snapshots', f'{year}.json')
+
+
+def _save_draft_snapshot(year, picks):
+    try:
+        path = _draft_snapshot_path(year)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'year': year,
+                'savedAt': datetime.now().isoformat(),
+                'draftPicks': picks,
+            }, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Failed to save draft snapshot for {year}: {e}", file=sys.stderr)
+
+
+def _load_draft_snapshot(year):
+    path = _draft_snapshot_path(year)
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        picks = data.get('draftPicks', [])
+        for pick in picks:
+            pick['source'] = f"{pick.get('source', 'unknown')}_snapshot"
+        return picks
+    except Exception as e:
+        print(f"Failed to load draft snapshot for {year}: {e}", file=sys.stderr)
+        return []
+
+
+def _parse_draft_from_nba_com(data, yr):
+    """解析 NBA.com __NEXT_DATA__ 中的选秀数据
+
+    NBA.com 的 draft 页面结构可能随版本变化，此函数做防御性解析。
+    """
+    results = []
+
+    # 在 __NEXT_DATA__ 中递归查找包含选秀数据的节点
+    def find_draft_picks(obj, depth=0):
+        if depth > 15:
+            return
+        if isinstance(obj, dict):
+            # 检查是否是选秀数据节点（包含 picks 或 draftPicks 键）
+            picks = obj.get('picks') or obj.get('draftPicks') or obj.get('draft_picks')
+            if isinstance(picks, list) and len(picks) > 0:
+                for pick in picks:
+                    if isinstance(pick, dict):
+                        results.append(pick)
+                return
+            for v in obj.values():
+                find_draft_picks(v, depth + 1)
+        elif isinstance(obj, list):
+            for item in obj:
+                find_draft_picks(item, depth + 1)
+
+    find_draft_picks(data)
+
+    if not results:
+        return []
+
+    normalized = []
+    for raw in results:
+        player_name = (
+            raw.get('playerName') or raw.get('player_name')
+            or raw.get('PLAYER_NAME') or raw.get('player', {}).get('name', '')
+            or raw.get('firstName', '') + ' ' + raw.get('lastName', '')
+        ).strip()
+
+        team_name_en = (
+            raw.get('teamName') or raw.get('team_name')
+            or raw.get('TEAM_NAME') or raw.get('team', {}).get('name', '')
+        ).strip()
+        team_abbr = (
+            raw.get('teamAbbreviation') or raw.get('TEAM_ABBREVIATION')
+            or raw.get('team', {}).get('abbreviation', '')
+        ).strip()
+
+        cn_player = PLAYER_CN_MAP.get(player_name, player_name)
+        cn_team = TEAM_ABBR_MAP.get(team_abbr, TEAM_NAME_MAP.get(team_name_en, team_name_en))
+
+        nba_id = _safe_int(raw.get('personId') or raw.get('PERSON_ID') or raw.get('nbaPlayerId') or raw.get('playerId'))
+
+        round_num = _safe_int(raw.get('round') or raw.get('ROUND_NUMBER') or raw.get('roundNumber'))
+        pick_num = _safe_int(raw.get('pick') or raw.get('OVERALL_PICK') or raw.get('overallPick') or raw.get('pickNumber'))
+        round_pick = _safe_int(raw.get('roundPick') or raw.get('ROUND_PICK') or raw.get('pickInRound'))
+
+        if round_num > 2:
+            effective_round = 2
+        elif round_num < 1:
+            effective_round = 1
+        else:
+            effective_round = round_num
+
+        normalized.append(normalize_draft_pick({
+            'year': yr,
+            'round': effective_round,
+            'pickNumber': pick_num if pick_num > 0 else round_pick,
+            'teamName': cn_team,
+            'teamNameEn': team_name_en,
+            'playerName': cn_player,
+            'playerNameEn': player_name,
+            'nbaPlayerId': nba_id,
+            'notes': f"选秀顺位第{pick_num}位",
+        }, source='nba_com_draft_tracker'))
+
+    return normalized
+
+
 def fetch_draft_history(year=None):
-    """获取选秀历史数据（优先直接请求 stats.nba.com，兜底 nba_api）"""
+    """获取选秀历史数据（多 provider 链式尝试，全部失败则返回明确错误）
+
+    执行顺序：
+    1. stats.nba.com DraftHistory API
+    2. nba_api DraftHistory 封装
+    3. NBA.com 官方选秀页面 (__NEXT_DATA__)
+    """
     if year is not None:
         years_to_fetch = [year]
     else:
@@ -2142,47 +2584,90 @@ def fetch_draft_history(year=None):
     errors = []
 
     for yr in years_to_fetch:
-        print(f"正在获取{yr}年选秀历史数据...", file=sys.stderr)
+        print(f"正在获取{yr}年选秀数据...", file=sys.stderr)
+        got_data = False
 
-        # 方法1: 直接请求 stats.nba.com
+        # === Provider 1: stats.nba.com DraftHistory ===
         data, err = _fetch_draft_from_nba_stats(yr)
         if data is not None:
-            parsed = _parse_draft_data(data, yr)
+            parsed = _parse_draft_from_stats(data, yr)
             if parsed:
                 all_result.extend(parsed)
-                print(f"  通过 stats.nba.com 获取到 {len(parsed)} 条记录", file=sys.stderr)
-                time.sleep(1)
-                continue
+                print(f"  [stats.nba.com] 获取到 {len(parsed)} 条记录", file=sys.stderr)
+                got_data = True
             else:
                 errors.append(f"{yr}: stats.nba.com 返回空数据")
-                print(f"  stats.nba.com 返回空数据", file=sys.stderr)
+                print(f"  [stats.nba.com] 返回空数据", file=sys.stderr)
         else:
             errors.append(f"{yr}: stats.nba.com 请求失败: {err}")
-            print(f"  stats.nba.com 请求失败: {err}", file=sys.stderr)
+            print(f"  [stats.nba.com] 失败: {err}", file=sys.stderr)
 
-        # 方法2: 兜底 nba_api
-        if HAS_DRAFT_API:
+        # === Provider 2: nba_api DraftHistory ===
+        if not got_data and HAS_DRAFT_API:
             try:
                 draft = DraftHistory(season_year_nullable=yr, timeout=60)
                 raw_data = draft.get_dict()
-                parsed = _parse_draft_data(raw_data, yr)
+                parsed = _parse_draft_from_stats(raw_data, yr)
                 if parsed:
                     all_result.extend(parsed)
-                    print(f"  通过 nba_api 获取到 {len(parsed)} 条记录", file=sys.stderr)
+                    print(f"  [nba_api] 获取到 {len(parsed)} 条记录", file=sys.stderr)
+                    got_data = True
                 else:
                     errors.append(f"{yr}: nba_api 返回空数据")
-                    print(f"  nba_api 返回空数据", file=sys.stderr)
+                    print(f"  [nba_api] 返回空数据", file=sys.stderr)
             except Exception as e:
                 errors.append(f"{yr}: nba_api 失败: {e}")
-                print(f"  nba_api 失败: {e}", file=sys.stderr)
-        else:
-            errors.append(f"{yr}: nba_api 不可用")
+                print(f"  [nba_api] 失败: {e}", file=sys.stderr)
+
+        # === Provider 3: NBA.com 官方选秀页面 ===
+        if not got_data:
+            print(f"  尝试从 NBA.com 选秀页面获取...", file=sys.stderr)
+            news_html, news_err = _fetch_draft_from_nba_news_order(yr)
+            if news_html is not None:
+                parsed = _parse_draft_from_nba_news_order(news_html, yr)
+                if parsed:
+                    all_result.extend(parsed)
+                    _save_draft_snapshot(yr, parsed)
+                    print(f"  [nba.com news] got {len(parsed)} records", file=sys.stderr)
+                    got_data = True
+                else:
+                    errors.append(f"{yr}: NBA.com draft result news page parsed empty")
+                    print(f"  [nba.com news] parsed empty", file=sys.stderr)
+            else:
+                errors.append(f"{yr}: NBA.com draft result news page failed: {news_err}")
+                print(f"  [nba.com news] failed: {news_err}", file=sys.stderr)
+
+        if not got_data:
+            nba_data, nba_err = _fetch_draft_from_nba_com_tracker(yr)
+            if nba_data is not None:
+                parsed = _parse_draft_from_nba_com(nba_data, yr)
+                if parsed:
+                    all_result.extend(parsed)
+                    _save_draft_snapshot(yr, parsed)
+                    print(f"  [nba.com] 获取到 {len(parsed)} 条记录", file=sys.stderr)
+                    got_data = True
+                else:
+                    errors.append(f"{yr}: NBA.com 选秀页面无有效数据")
+                    print(f"  [nba.com] 页面解析为空", file=sys.stderr)
+            else:
+                errors.append(f"{yr}: NBA.com 选秀页面请求失败: {nba_err}")
+                print(f"  [nba.com] 失败: {nba_err}", file=sys.stderr)
+
+        if not got_data:
+            snapshot = _load_draft_snapshot(yr)
+            if snapshot:
+                all_result.extend(snapshot)
+                got_data = True
+                print(f"  [snapshot] restored {len(snapshot)} records", file=sys.stderr)
+
+        if not got_data:
+            errors.append(f"{yr}: NBA official draft data for {yr} is not available yet")
+            print(f"  所有 NBA 官方渠道均未获取到 {yr} 年选秀数据", file=sys.stderr)
 
         time.sleep(1.5)
 
     print(f"共获取到 {len(all_result)} 条选秀记录", file=sys.stderr)
 
-    # 如果有错误且结果为空，返回错误信息
     if not all_result and errors:
         return {
             'draftPicks': [],
@@ -2191,7 +2676,6 @@ def fetch_draft_history(year=None):
             'failedYears': years_to_fetch,
         }
 
-    # 如果有错误但有部分数据，附加警告
     if errors and all_result:
         print(f"警告: 部分年份获取失败: {errors}", file=sys.stderr)
 
@@ -2425,8 +2909,13 @@ def main():
     if action == 'playbyplay' and len(sys.argv) > 2:
         result['playByPlay'] = fetch_playbyplay(sys.argv[2])
 
+    if action == 'espn_playbyplay' and len(sys.argv) > 2:
+        result['playByPlay'] = fetch_espn_playbyplay(sys.argv[2])
+
     if action == 'quarters' and len(sys.argv) > 2:
-        result['quarterScores'] = fetch_quarter_scores_from_scoreboard(sys.argv[2])
+        game_id = sys.argv[2]
+        match_date = sys.argv[3] if len(sys.argv) > 3 else None
+        result['quarterScores'] = fetch_quarter_scores_from_scoreboard(game_id, match_date)
 
     if action == 'player_career' and len(sys.argv) > 2:
         result['career'] = fetch_player_career(int(sys.argv[2]))
@@ -2697,7 +3186,7 @@ def fetch_games_by_date(date_str):
         date = datetime.strptime(date_str, '%Y%m%d')
 
         # 使用ScoreboardV3获取指定日期的比赛
-        scoreboard = ScoreboardV3(game_date=date.strftime('%Y-%m-%d'), timeout=30)
+        scoreboard = ScoreboardV3(game_date=date.strftime('%m/%d/%Y'), timeout=30)
         data = scoreboard.get_dict()
         time.sleep(0.5)
 
