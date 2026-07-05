@@ -3161,6 +3161,8 @@ def fetch_game_shot_chart(game_id):
         from nba_api.stats.endpoints import ShotChartDetail
 
         shots = ShotChartDetail(
+            team_id=0,
+            player_id=0,
             game_id_nullable=game_id,
             context_measure_simple='FGA',
             timeout=60

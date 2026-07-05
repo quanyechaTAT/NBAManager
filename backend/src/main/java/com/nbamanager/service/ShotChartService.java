@@ -242,7 +242,7 @@ public class ShotChartService {
 
     private List<GameShotChart> fetchGameShotsFromApi(String gameId) {
         try {
-            JSONObject result = scriptRunner.execute("shot_chart", new String[]{"game", gameId}, 60);
+            JSONObject result = scriptRunner.execute("game_shot_chart", new String[]{gameId}, 60);
             if (result == null || !result.has("shots")) {
                 return new ArrayList<>();
             }
