@@ -1708,35 +1708,62 @@ def fetch_playbyplay(game_id, start_period=0, end_period=10):
     print(f"正在获取比赛 {game_id} 的Play-by-Play...", file=sys.stderr)
 
     try:
-        pbp = PlayByPlayV3(game_id=game_id, start_period=start_period, end_period=end_period, timeout=30)
+        # NBA API 通过代理可能被阻断，临时跳过代理
+        saved_proxy = {}
+        proxy_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+        for k in proxy_keys:
+            saved_proxy[k] = os.environ.pop(k, None)
+        try:
+            pbp = PlayByPlayV3(game_id=game_id, start_period=start_period, end_period=end_period, timeout=30, proxy='')
+        finally:
+            for k, v in saved_proxy.items():
+                if v is not None:
+                    os.environ[k] = v
         data = pbp.get_dict()
         time.sleep(0.5)
     except Exception as e:
         print(f"获取Play-by-Play失败: {e}", file=sys.stderr)
         return []
 
-    # V3格式: resultSets → rowSet + headers
-    result_sets = data.get('resultSet', {})
-    headers = result_sets.get('headers', [])
-    rows = result_sets.get('rowSet', [])
+    # V3格式: game.actions (新格式) 或 resultSets → rowSet + headers (旧格式)
     events = []
 
-    for row in rows:
-        d = dict(zip(headers, row))
-        desc = d.get('homeDescription') or d.get('visitorDescription') or d.get('neutralDescription', '')
-        if not desc:
-            continue
-        en_name = d.get('playerNameI', '') or d.get('personId', '')
-        events.append({
-            'period': _safe_int(d.get('period')),
-            'gameClock': _format_minutes(d.get('gameClock', '')),
-            'description': desc,
-            'homeScore': _safe_int(d.get('scoreHome')),
-            'awayScore': _safe_int(d.get('scoreAway')),
-            'eventType': d.get('eventType', ''),
-            'playerId': _safe_int(d.get('personId')),
-            'playerName': str(d.get('playerName', '')),
-        })
+    actions = data.get('game', {}).get('actions', [])
+    if actions:
+        for a in actions:
+            desc = a.get('description', '')
+            if not desc:
+                continue
+            events.append({
+                'period': _safe_int(a.get('period')),
+                'gameClock': _format_minutes(a.get('clock', '')),
+                'description': desc,
+                'homeScore': _safe_int(a.get('scoreHome')),
+                'awayScore': _safe_int(a.get('scoreAway')),
+                'eventType': a.get('actionType', ''),
+                'playerId': _safe_int(a.get('personId')),
+                'playerName': str(a.get('playerName', '')),
+            })
+    else:
+        # 旧格式回退
+        result_sets = data.get('resultSet', {})
+        headers = result_sets.get('headers', [])
+        rows = result_sets.get('rowSet', [])
+        for row in rows:
+            d = dict(zip(headers, row))
+            desc = d.get('homeDescription') or d.get('visitorDescription') or d.get('neutralDescription', '')
+            if not desc:
+                continue
+            events.append({
+                'period': _safe_int(d.get('period')),
+                'gameClock': _format_minutes(d.get('gameClock', '')),
+                'description': desc,
+                'homeScore': _safe_int(d.get('scoreHome')),
+                'awayScore': _safe_int(d.get('scoreAway')),
+                'eventType': d.get('eventType', ''),
+                'playerId': _safe_int(d.get('personId')),
+                'playerName': str(d.get('playerName', '')),
+            })
 
     print(f"获取到 {len(events)} 条Play-by-Play事件", file=sys.stderr)
     return events
