@@ -223,64 +223,78 @@ public class ShotChartService {
         List<GameShotChart> cached = gameShotChartRepository.findByGameId(gameId);
         if (!cached.isEmpty()) {
             log.info("从缓存返回比赛投篮数据: gameId={}, count={}", gameId, cached.size());
-            return buildGameResult(cached);
+            return buildGameResult(cached, "NBA_SHOTCHARTDETAIL", "REAL_SHOT_CHART", "从缓存获取");
         }
 
         // 2. 调用 Python 获取
         log.info("从API获取比赛投篮数据: gameId={}", gameId);
-        List<GameShotChart> shots = fetchGameShotsFromApi(gameId);
+        JSONObject apiResult = fetchGameShotsFromApi(gameId);
 
-        if (!shots.isEmpty()) {
+        String source = apiResult.optString("source", "NONE");
+        String mode = apiResult.optString("mode", "UNAVAILABLE");
+        String message = apiResult.optString("message", "");
+        JSONArray shotsArray = apiResult.optJSONArray("shots");
+
+        if (shotsArray != null && shotsArray.length() > 0) {
+            List<GameShotChart> shots = parseShots(gameId, shotsArray, source);
             gameShotChartRepository.saveAll(shots);
-            log.info("保存比赛投篮数据: gameId={}, count={}", gameId, shots.size());
-            return buildGameResult(shots);
+            log.info("保存比赛投篮数据: gameId={}, count={}, source={}", gameId, shots.size(), source);
+            return buildGameResult(shots, source, mode, message);
         }
 
         // 3. 返回空状态（禁止模拟数据）
-        return createEmptyGameResult("暂无投篮数据，该场比赛尚未同步官方投篮坐标");
+        return createEmptyGameResult(message.isEmpty() ? "暂无投篮数据，该场比赛尚未同步官方投篮坐标" : message);
     }
 
-    private List<GameShotChart> fetchGameShotsFromApi(String gameId) {
+    private JSONObject fetchGameShotsFromApi(String gameId) {
         try {
-            JSONObject result = scriptRunner.execute("game_shot_chart", new String[]{gameId}, 60);
-            if (result == null || !result.has("shots")) {
-                return new ArrayList<>();
+            JSONObject result = scriptRunner.execute("game_shot_chart", new String[]{gameId}, 180);
+            if (result == null) {
+                JSONObject empty = new JSONObject();
+                empty.put("shots", new JSONArray());
+                empty.put("source", "NONE");
+                empty.put("mode", "UNAVAILABLE");
+                empty.put("message", "Python 脚本无响应");
+                return empty;
             }
-
-            JSONArray shotsArray = result.getJSONArray("shots");
-            List<GameShotChart> shots = new ArrayList<>();
-
-            for (int i = 0; i < shotsArray.length(); i++) {
-                JSONObject shot = shotsArray.getJSONObject(i);
-
-                GameShotChart entity = new GameShotChart();
-                entity.setGameId(gameId);
-                entity.setTeamId(shot.has("teamId") ? shot.optLong("teamId") : null);
-                entity.setTeamName(shot.optString("teamName", ""));
-                entity.setPlayerId(shot.has("playerId") ? shot.optLong("playerId") : null);
-                entity.setPlayerName(shot.optString("playerName", ""));
-                entity.setPeriod(shot.optInt("period", 0));
-                entity.setGameClock(shot.optString("gameClock", ""));
-                entity.setLocX(shot.optInt("locX", 0));
-                entity.setLocY(shot.optInt("locY", 0));
-                entity.setChartX(toChartX(shot.optInt("locX", 0)));
-                entity.setChartY(toChartY(shot.optInt("locY", 0)));
-                entity.setMade(shot.optBoolean("made", false));
-                entity.setShotType(shot.optString("shotType", ""));
-                entity.setActionType(shot.optString("actionType", ""));
-                entity.setPoints(shot.optInt("points", 0));
-                entity.setDistance(shot.optInt("distance", 0));
-                entity.setSource("NBA_SHOTCHARTDETAIL");
-                entity.setCreatedAt(LocalDateTime.now());
-
-                shots.add(entity);
-            }
-
-            return shots;
+            return result;
         } catch (Exception e) {
             log.error("获取比赛投篮数据失败: gameId={}", gameId, e);
-            return new ArrayList<>();
+            JSONObject empty = new JSONObject();
+            empty.put("shots", new JSONArray());
+            empty.put("source", "NONE");
+            empty.put("mode", "UNAVAILABLE");
+            empty.put("message", "数据获取失败: " + e.getMessage());
+            return empty;
         }
+    }
+
+    private List<GameShotChart> parseShots(String gameId, JSONArray shotsArray, String source) {
+        List<GameShotChart> shots = new ArrayList<>();
+        for (int i = 0; i < shotsArray.length(); i++) {
+            JSONObject shot = shotsArray.getJSONObject(i);
+            GameShotChart entity = new GameShotChart();
+            entity.setGameId(gameId);
+            entity.setTeamId(shot.has("teamId") ? shot.optLong("teamId") : null);
+            entity.setTeamName(shot.optString("teamName", ""));
+            entity.setPlayerId(shot.has("playerId") ? shot.optLong("playerId") : null);
+            entity.setPlayerName(shot.optString("playerName", ""));
+            entity.setPeriod(shot.optInt("period", 0));
+            entity.setGameClock(shot.optString("gameClock", ""));
+            entity.setLocX(shot.optInt("locX", 0));
+            entity.setLocY(shot.optInt("locY", 0));
+            entity.setChartX(toChartX(shot.optInt("locX", 0)));
+            entity.setChartY(toChartY(shot.optInt("locY", 0)));
+            entity.setMade(shot.optBoolean("made", false));
+            entity.setShotType(shot.optString("shotType", ""));
+            entity.setActionType(shot.optString("actionType", ""));
+            entity.setPoints(shot.optInt("points", 0));
+            entity.setDistance(shot.optInt("distance", 0));
+            entity.setSource(source);
+            entity.setCreatedAt(LocalDateTime.now());
+            shots.add(entity);
+        }
+        return shots;
     }
 
     private double toChartX(int locX) {
@@ -291,7 +305,7 @@ public class ShotChartService {
         return Math.max(0, Math.min(47, 5.25 + locY / 10.0));
     }
 
-    private Map<String, Object> buildGameResult(List<GameShotChart> shots) {
+    private Map<String, Object> buildGameResult(List<GameShotChart> shots, String source, String mode, String message) {
         Map<String, Object> result = new HashMap<>();
 
         if (!shots.isEmpty()) {
@@ -365,8 +379,10 @@ public class ShotChartService {
         summary.put("threePct", threeAttempted > 0 ? Math.round((double) threeMade / threeAttempted * 1000.0) / 1000.0 : 0);
         result.put("summary", summary);
 
-        result.put("source", "NBA_SHOTCHARTDETAIL");
+        result.put("source", source);
+        result.put("mode", mode);
         result.put("status", "OK");
+        result.put("message", message);
 
         return result;
     }

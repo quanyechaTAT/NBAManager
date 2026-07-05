@@ -2962,7 +2962,11 @@ def main():
         result['shots'] = fetch_shot_chart(player_id, season)
 
     if action == 'game_shot_chart' and len(sys.argv) > 2:
-        result['shots'] = fetch_game_shot_chart(sys.argv[2])
+        shot_result = fetch_game_shot_chart(sys.argv[2])
+        result['shots'] = shot_result.get('shots', [])
+        result['source'] = shot_result.get('source', 'NONE')
+        result['mode'] = shot_result.get('mode', 'UNAVAILABLE')
+        result['message'] = shot_result.get('message', '')
 
     # 输出JSON到文件（支持自定义输出文件名，避免竞争条件）
     output_filename = os.environ.get('OUTPUT_FILE', 'output.json')
@@ -3152,88 +3156,213 @@ def fetch_shot_chart(player_id, season=None):
         return []
 
 
-def fetch_game_shot_chart(game_id):
-    """获取比赛级投篮数据（使用 ShotChartDetail API）"""
-    _init_team_map()
-    print(f"正在获取比赛 {game_id} 的投篮数据...", file=sys.stderr)
-
+def _call_shotchartdetail_noproxy(**kwargs):
+    """调用 ShotChartDetail，临时跳过代理"""
+    from nba_api.stats.endpoints import ShotChartDetail
+    saved_proxy = {}
+    proxy_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+    for k in proxy_keys:
+        saved_proxy[k] = os.environ.pop(k, None)
     try:
-        from nba_api.stats.endpoints import ShotChartDetail
+        result = ShotChartDetail(**kwargs, proxy='')
+    finally:
+        for k, v in saved_proxy.items():
+            if v is not None:
+                os.environ[k] = v
+    return result
 
-        # NBA API 通过代理可能被阻断，临时跳过代理
+
+def _parse_shotchart_rows(data):
+    """从 ShotChartDetail 返回的 dict 中提取投篮记录"""
+    for row in data.get('resultSets', []):
+        if row.get('name') == 'Shot_Chart_Detail':
+            headers = row.get('headers', [])
+            return [dict(zip(headers, r)) for r in row.get('rowSet', [])]
+    return []
+
+
+def _normalize_shot(d):
+    """将 ShotChartDetail 行转换为标准投篮记录"""
+    loc_x = d.get('LOC_X', 0)
+    loc_y = d.get('LOC_Y', 0)
+    chart_x = max(0, min(50, 25.0 + loc_x / 10.0))
+    chart_y = max(0, min(47, 5.25 + loc_y / 10.0))
+    made = d.get('SHOT_MADE_FLAG', 0) == 1
+    shot_type = d.get('SHOT_TYPE', '')
+    points = 3 if '3PT' in shot_type else 2
+    team_id = d.get('TEAM_ID', 0)
+    team_name = TEAM_ID_TO_CN.get(team_id, d.get('TEAM_NAME', ''))
+    return {
+        'x': round(chart_x, 2), 'y': round(chart_y, 2), 'made': made,
+        'teamId': team_id, 'teamName': team_name,
+        'playerId': d.get('PLAYER_ID', 0), 'playerName': d.get('PLAYER_NAME', ''),
+        'period': d.get('PERIOD', 0), 'gameClock': d.get('GAME_CLOCK', ''),
+        'shotType': shot_type, 'actionType': d.get('ACTION_TYPE', ''),
+        'points': points, 'distance': d.get('SHOT_DISTANCE', 0),
+        'locX': loc_x, 'locY': loc_y,
+    }
+
+
+def _dedupe_shots(shots):
+    """按唯一 key 去重"""
+    seen = set()
+    result = []
+    for s in shots:
+        key = (s.get('teamId'), s.get('playerId'), s.get('period'),
+               s.get('gameClock'), s.get('locX'), s.get('locY'),
+               s.get('actionType'), s.get('shotType'))
+        if key not in seen:
+            seen.add(key)
+            result.append(s)
+    return result
+
+
+def _fetch_shots_by_params(game_id, team_id=0, player_id=0, season_type='Playoffs'):
+    """单次 ShotChartDetail 请求"""
+    from nba_api.stats.endpoints import ShotChartDetail
+    try:
+        sc = _call_shotchartdetail_noproxy(
+            team_id=team_id, player_id=player_id,
+            game_id_nullable=game_id,
+            context_measure_simple='FGA',
+            season_type_all_star=season_type,
+            timeout=60
+        )
+        rows = _parse_shotchart_rows(sc.get_dict())
+        time.sleep(0.8)
+        return [_normalize_shot(r) for r in rows]
+    except Exception as e:
+        print(f"  ShotChartDetail 请求失败 (team={team_id}, player={player_id}): {e}", file=sys.stderr)
+        return []
+
+
+def _get_game_team_ids(game_id):
+    """从 BoxScore 获取比赛的主客队 ID"""
+    try:
+        from nba_api.stats.endpoints import BoxScoreTraditionalV3
+        bs = _call_shotchartdetail_noproxy.__wrapped__(game_id) if hasattr(_call_shotchartdetail_noproxy, '__wrapped__') else None
+        # 直接用 nba_api 获取
         saved_proxy = {}
         proxy_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
         for k in proxy_keys:
             saved_proxy[k] = os.environ.pop(k, None)
         try:
-            shots = ShotChartDetail(
-                team_id=0,
-                player_id=0,
-                game_id_nullable=game_id,
-                context_measure_simple='FGA',
-                timeout=60,
-                proxy=''
-            )
+            box = BoxScoreTraditionalV3(game_id=game_id, timeout=30, proxy='')
         finally:
-            # 恢复代理环境变量
             for k, v in saved_proxy.items():
                 if v is not None:
                     os.environ[k] = v
-        data = shots.get_dict()
-        time.sleep(1.0)
-
-        result = []
-        for row in data.get('resultSets', []):
-            if row.get('name') == 'Shot_Chart_Detail':
-                headers = row.get('headers', [])
-                for shot_row in row.get('rowSet', []):
-                    d = dict(zip(headers, shot_row))
-
-                    loc_x = d.get('LOC_X', 0)
-                    loc_y = d.get('LOC_Y', 0)
-
-                    # 坐标转换（以篮筐为参考点）
-                    # chartX = clamp(25.0 + LOC_X / 10.0, 0, 50)
-                    # chartY = clamp(5.25 + LOC_Y / 10.0, 0, 47)
-                    chart_x = max(0, min(50, 25.0 + loc_x / 10.0))
-                    chart_y = max(0, min(47, 5.25 + loc_y / 10.0))
-
-                    made = d.get('SHOT_MADE_FLAG', 0) == 1
-                    shot_type = d.get('SHOT_TYPE', '')
-
-                    # 计算得分
-                    points = 3 if '3PT' in shot_type else 2
-
-                    team_id = d.get('TEAM_ID', 0)
-                    team_name = TEAM_ID_TO_CN.get(team_id, d.get('TEAM_NAME', ''))
-
-                    player_id = d.get('PLAYER_ID', 0)
-                    player_name = d.get('PLAYER_NAME', '')
-
-                    result.append({
-                        'x': round(chart_x, 2),
-                        'y': round(chart_y, 2),
-                        'made': made,
-                        'teamId': team_id,
-                        'teamName': team_name,
-                        'playerId': player_id,
-                        'playerName': player_name,
-                        'period': d.get('PERIOD', 0),
-                        'gameClock': d.get('GAME_CLOCK', ''),
-                        'shotType': shot_type,
-                        'actionType': d.get('ACTION_TYPE', ''),
-                        'points': points,
-                        'distance': d.get('SHOT_DISTANCE', 0),
-                        'locX': loc_x,
-                        'locY': loc_y,
-                    })
-
-        print(f"获取到 {len(result)} 次投篮记录", file=sys.stderr)
-        return result
-
+        data = box.get_dict()
+        team_ids = []
+        for rs in data.get('boxScoreTraditional', {}).get('homeTeam', {}).get('teamId', []):
+            pass
+        home_id = data.get('boxScoreTraditional', {}).get('homeTeam', {}).get('teamId', 0)
+        away_id = data.get('boxScoreTraditional', {}).get('awayTeam', {}).get('teamId', 0)
+        if home_id and away_id:
+            return [home_id, away_id]
     except Exception as e:
-        print(f"获取比赛 {game_id} 投篮数据失败: {e}", file=sys.stderr)
-        return []
+        print(f"  获取球队 ID 失败: {e}", file=sys.stderr)
+    return []
+
+
+def _get_game_player_ids(game_id):
+    """从 BoxScore 获取本场出场球员 ID"""
+    try:
+        from nba_api.stats.endpoints import BoxScoreTraditionalV3
+        saved_proxy = {}
+        proxy_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+        for k in proxy_keys:
+            saved_proxy[k] = os.environ.pop(k, None)
+        try:
+            box = BoxScoreTraditionalV3(game_id=game_id, timeout=30, proxy='')
+        finally:
+            for k, v in saved_proxy.items():
+                if v is not None:
+                    os.environ[k] = v
+        data = box.get_dict()
+        player_ids = []
+        for team_key in ['homeTeam', 'awayTeam']:
+            players = data.get('boxScoreTraditional', {}).get(team_key, {}).get('players', [])
+            for p in players:
+                pid = p.get('personId', 0)
+                minutes = p.get('statistics', {}).get('minutes', '')
+                if pid and minutes and minutes != '0:00' and minutes != '':
+                    player_ids.append(pid)
+        return player_ids
+    except Exception as e:
+        print(f"  获取球员 ID 失败: {e}", file=sys.stderr)
+    return []
+
+
+def fetch_game_shot_chart(game_id):
+    """获取比赛级投篮数据（多策略）"""
+    _init_team_map()
+    print(f"正在获取比赛 {game_id} 的投篮数据（多策略）...", file=sys.stderr)
+
+    # 确定赛季类型
+    season_type = 'Playoffs' if game_id.startswith('004') or game_id.startswith('005') else 'Regular Season'
+
+    # Strategy 1: 全场查询
+    print(f"  [Strategy 1] 全场查询...", file=sys.stderr)
+    shots = _fetch_shots_by_params(game_id, team_id=0, player_id=0, season_type=season_type)
+    if shots:
+        print(f"  [Strategy 1] 成功: {len(shots)} 条", file=sys.stderr)
+        return {'shots': _dedupe_shots(shots), 'source': 'NBA_SHOTCHARTDETAIL', 'mode': 'REAL_SHOT_CHART',
+                'message': '已通过全场维度获取投篮坐标'}
+
+    # Strategy 1b: 尝试 Regular Season（季后赛比赛有时用 RS 类型查询）
+    if season_type == 'Playoffs':
+        print(f"  [Strategy 1b] 尝试 Regular Season 类型...", file=sys.stderr)
+        shots = _fetch_shots_by_params(game_id, team_id=0, player_id=0, season_type='Regular Season')
+        if shots:
+            print(f"  [Strategy 1b] 成功: {len(shots)} 条", file=sys.stderr)
+            return {'shots': _dedupe_shots(shots), 'source': 'NBA_SHOTCHARTDETAIL', 'mode': 'REAL_SHOT_CHART',
+                    'message': '已通过全场维度获取投篮坐标'}
+
+    # Strategy 2: 按球队分别查询
+    print(f"  [Strategy 2] 按球队查询...", file=sys.stderr)
+    team_ids = _get_game_team_ids(game_id)
+    if team_ids:
+        print(f"  [Strategy 2] 球队 ID: {team_ids}", file=sys.stderr)
+        for tid in team_ids:
+            team_shots = _fetch_shots_by_params(game_id, team_id=tid, player_id=0, season_type=season_type)
+            if team_shots:
+                shots.extend(team_shots)
+        if season_type == 'Playoffs' and not shots:
+            for tid in team_ids:
+                team_shots = _fetch_shots_by_params(game_id, team_id=tid, player_id=0, season_type='Regular Season')
+                if team_shots:
+                    shots.extend(team_shots)
+        shots = _dedupe_shots(shots)
+        if shots:
+            print(f"  [Strategy 2] 成功: {len(shots)} 条", file=sys.stderr)
+            return {'shots': shots, 'source': 'NBA_SHOTCHARTDETAIL_TEAM', 'mode': 'REAL_SHOT_CHART',
+                    'message': '已通过球队维度获取季后赛投篮坐标'}
+
+    # Strategy 3: 按球员逐个查询
+    print(f"  [Strategy 3] 按球员查询...", file=sys.stderr)
+    player_ids = _get_game_player_ids(game_id)
+    if player_ids:
+        print(f"  [Strategy 3] 出场球员 {len(player_ids)} 人", file=sys.stderr)
+        for pid in player_ids:
+            player_shots = _fetch_shots_by_params(game_id, team_id=0, player_id=pid, season_type=season_type)
+            if player_shots:
+                shots.extend(player_shots)
+        if season_type == 'Playoffs' and not shots:
+            for pid in player_ids:
+                player_shots = _fetch_shots_by_params(game_id, team_id=0, player_id=pid, season_type='Regular Season')
+                if player_shots:
+                    shots.extend(player_shots)
+        shots = _dedupe_shots(shots)
+        if shots:
+            print(f"  [Strategy 3] 成功: {len(shots)} 条", file=sys.stderr)
+            return {'shots': shots, 'source': 'NBA_SHOTCHARTDETAIL_PLAYER', 'mode': 'REAL_SHOT_CHART',
+                    'message': '已通过球员维度获取季后赛投篮坐标'}
+
+    # 全部失败
+    print(f"  所有策略均未获取到投篮坐标", file=sys.stderr)
+    return {'shots': [], 'source': 'NONE', 'mode': 'UNAVAILABLE',
+            'message': '暂无官方投篮坐标，系统不会生成模拟投篮点'}
 
 
 def determine_zone(x, y):

@@ -180,18 +180,30 @@
 
         <el-tab-pane label="投篮图" name="shotchart">
           <div class="shotchart-panel" v-loading="shotChartLoading">
-            <div class="shotchart-toolbar">
-              <el-segmented v-model="shotTeamFilter" :options="teamFilterOptions" />
-              <el-segmented v-model="shotResultFilter" :options="resultFilterOptions" />
-            </div>
-            <div class="shotchart-summary" v-if="gameShots.length">
-              <span>投篮 {{ shotSummary.made }}/{{ shotSummary.total }}（{{ shotSummary.fgPct }}%）</span>
-              <span class="summary-sep">|</span>
-              <span>三分 {{ shotSummary.threeMade }}/{{ shotSummary.threeAttempted }}（{{ shotSummary.threePct }}%）</span>
-            </div>
-            <ShotChart :shots="filteredGameShots" :size="560" />
-            <div v-if="!shotChartLoading && !gameShots.length" class="shotchart-empty-msg">
-              暂无投篮数据，该场比赛尚未同步官方投篮坐标
+            <!-- 加载提示 -->
+            <div v-if="shotChartLoading" class="shotchart-loading-msg">正在获取官方投篮坐标...</div>
+
+            <!-- REAL_SHOT_CHART 模式 -->
+            <template v-if="!shotChartLoading && shotChartMode === 'REAL_SHOT_CHART'">
+              <div class="shotchart-toolbar">
+                <el-segmented v-model="shotTeamFilter" :options="teamFilterOptions" />
+                <el-segmented v-model="shotResultFilter" :options="resultFilterOptions" />
+              </div>
+              <div class="shotchart-summary">
+                <span>投篮 {{ shotSummary.made }}/{{ shotSummary.total }}（{{ shotSummary.fgPct }}%）</span>
+                <span class="summary-sep">|</span>
+                <span>三分 {{ shotSummary.threeMade }}/{{ shotSummary.threeAttempted }}（{{ shotSummary.threePct }}%）</span>
+              </div>
+              <ShotChart :shots="filteredGameShots" :size="560" />
+              <div class="shotchart-source">
+                数据源：{{ shotChartSourceLabel }}
+              </div>
+            </template>
+
+            <!-- UNAVAILABLE 模式 -->
+            <div v-if="!shotChartLoading && shotChartMode === 'UNAVAILABLE'" class="shotchart-empty-msg">
+              <div class="empty-title">暂无官方投篮坐标</div>
+              <div class="empty-sub">{{ shotChartMessage || '系统不会生成模拟投篮点，以保证数据真实性。' }}</div>
             </div>
           </div>
         </el-tab-pane>
@@ -512,6 +524,9 @@ const replayLoading = ref(false)
 // 投篮图状态
 const shotChartLoading = ref(false)
 const gameShots = ref<ShotData[]>([])
+const shotChartMode = ref<string>('UNAVAILABLE')
+const shotChartSource = ref<string>('')
+const shotChartMessage = ref<string>('')
 const shotTeamFilter = ref<'all' | 'home' | 'away'>('all')
 const shotResultFilter = ref<'all' | 'made' | 'missed'>('all')
 const teamFilterOptions = [
@@ -607,17 +622,32 @@ const shotSummary = computed(() => {
   }
 })
 
+const shotChartSourceLabel = computed(() => {
+  const source = shotChartSource.value
+  if (source === 'NBA_SHOTCHARTDETAIL') return 'NBA ShotChartDetail · 全场'
+  if (source === 'NBA_SHOTCHARTDETAIL_TEAM') return 'NBA ShotChartDetail · 球队维度'
+  if (source === 'NBA_SHOTCHARTDETAIL_PLAYER') return 'NBA ShotChartDetail · 球员维度'
+  if (source === 'NBA_LIVE_PBP') return 'NBA Live Play-by-Play'
+  return source || '未知'
+})
+
 async function loadGameShotChart(gameIdStr: string) {
   shotChartLoading.value = true
   try {
     const { data } = await getGameShotChart(gameIdStr)
     gameShots.value = data.shots ?? []
+    shotChartMode.value = data.mode || 'UNAVAILABLE'
+    shotChartSource.value = data.source || ''
+    shotChartMessage.value = data.message || ''
     homeTeamIdForShot.value = data.homeTeamId ?? null
     awayTeamIdForShot.value = data.awayTeamId ?? null
     homeTeamNameForShot.value = data.homeTeam ?? ''
     awayTeamNameForShot.value = data.awayTeam ?? ''
   } catch {
     gameShots.value = []
+    shotChartMode.value = 'UNAVAILABLE'
+    shotChartSource.value = ''
+    shotChartMessage.value = '数据获取失败'
   } finally {
     shotChartLoading.value = false
   }
@@ -1307,5 +1337,9 @@ onMounted(async () => {
 .shotchart-toolbar { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
 .shotchart-summary { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--text-secondary); }
 .summary-sep { color: var(--border-medium); }
-.shotchart-empty-msg { text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px; }
+.shotchart-source { font-size: 12px; color: var(--text-muted); text-align: center; }
+.shotchart-loading-msg { text-align: center; padding: 60px 0; color: var(--text-secondary); font-size: 14px; }
+.shotchart-empty-msg { text-align: center; padding: 60px 24px; color: var(--text-muted); }
+.empty-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.empty-sub { font-size: 13px; color: var(--text-dim); }
 </style>

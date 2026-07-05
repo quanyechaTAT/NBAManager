@@ -221,6 +221,7 @@ export interface GameShotChartResponse {
     threePct: number
   }
   source: string
+  mode: string
   status: string
   message?: string
 }
