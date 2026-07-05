@@ -65,7 +65,7 @@ const threeArc = computed(() => {
   const cx = W/2; const cy = 5.25; const r = 23.75
   const dy = threeCornerY - cy
   const dx = Math.sqrt(Math.max(0, r*r - dy*dy))
-  return `M ${cx-dx} ${threeCornerY} A ${r} ${r} 0 0 1 ${cx+dx} ${threeCornerY}`
+  return `M ${cx-dx} ${threeCornerY} A ${r} ${r} 0 0 0 ${cx+dx} ${threeCornerY}`
 })
 
 function tooltipStyle(s: ShotData) {

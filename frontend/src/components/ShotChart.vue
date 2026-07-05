@@ -229,7 +229,7 @@ const threePointPath = computed(() => {
   const arcLeftX = cx - dx
   const arcRightX = cx + dx
 
-  return `M ${arcLeftX} ${cornerTopY} A ${r} ${r} 0 0 1 ${arcRightX} ${cornerTopY}`
+  return `M ${arcLeftX} ${cornerTopY} A ${r} ${r} 0 0 0 ${arcRightX} ${cornerTopY}`
 })
 </script>
 
