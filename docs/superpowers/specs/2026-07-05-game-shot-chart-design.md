@@ -1,7 +1,7 @@
 # 比赛级投篮图 - 设计规格
 
 日期：2026-07-05
-状态：待批准
+状态：已批准
 
 ## 1. 目标
 
@@ -86,6 +86,16 @@ public interface GameShotChartRepository extends JpaRepository<GameShotChart, Lo
 }
 ```
 
+### 3.2.1 建表方案
+
+项目使用 `spring.jpa.hibernate.ddl-auto=update`，Hibernate 自动建表。但需手动添加索引：
+
+```sql
+-- 执行方式：通过 MySQL 客户端手动执行，或放入 db/migration/V2__game_shot_chart_index.sql
+CREATE INDEX idx_gsc_game_id ON game_shot_chart(game_id);
+CREATE INDEX idx_gsc_game_team ON game_shot_chart(game_id, team_id);
+```
+
 ### 3.3 ShotChartService 新增 getGameShots
 
 ```java
@@ -101,10 +111,45 @@ public Map<String, Object> getGameShots(String gameId) {
         return buildGameResult(shots);
     }
 
-    // 3. 返回空
-    return createEmptyGameResult();
+    // 3. 返回空（禁止模拟数据）
+    return createEmptyGameResult("暂无投篮数据，该场比赛尚未同步官方投篮坐标");
 }
 ```
+
+### 3.3.1 API 返回结构
+
+成功时：
+```json
+{
+  "gameId": "0022500001",
+  "homeTeam": "尼克斯",
+  "awayTeam": "马刺",
+  "homeTeamId": 1610612752,
+  "awayTeamId": 1610612759,
+  "shots": [...],
+  "summary": { "totalShots": 87, "madeShots": 41, "fgPct": 0.471, "threeMade": 12, "threeAttempted": 33, "threePct": 0.364 },
+  "source": "NBA_SHOTCHARTDETAIL",
+  "status": "OK"
+}
+```
+
+失败/无数据时：
+```json
+{
+  "gameId": "0022500001",
+  "homeTeam": "",
+  "awayTeam": "",
+  "homeTeamId": null,
+  "awayTeamId": null,
+  "shots": [],
+  "summary": { "totalShots": 0, "madeShots": 0, "fgPct": 0, "threeMade": 0, "threeAttempted": 0, "threePct": 0 },
+  "source": "NONE",
+  "status": "EMPTY",
+  "message": "暂无投篮数据，该场比赛尚未同步官方投篮坐标"
+}
+```
+
+前端筛选逻辑：优先用 teamId 匹配，若 teamId 为 null 则用 teamName 兜底。
 
 ### 3.4 ShotChartController 新增端点
 
@@ -126,21 +171,28 @@ def fetch_game_shot_chart(game_id):
         context_measure_simple='FGA',
         timeout=60
     )
-    # 解析并转换坐标
-    # LOC_X: -250~250 → chartX: 0~50
-    # LOC_Y: -50~470 → chartY: 0~47
+    # 坐标转换（以篮筐为参考点）:
+    # chartX = clamp(25.0 + LOC_X / 10.0, 0, 50)
+    # chartY = clamp(5.25 + LOC_Y / 10.0, 0, 47)
+    # 失败时返回 {"shots": [], "summary": {...}, "source": "NONE", "status": "EMPTY", "message": "..."}
+    # 禁止返回模拟数据
 ```
 
 ### 3.6 坐标转换
 
+以 ShotChart.vue 的篮筐中心 (x=25, y=5.25) 为参考点，NBA LOC_X/LOC_Y 以篮筐为原点：
+
 ```java
 private double toChartX(int locX) {
-    return Math.max(0, Math.min(50, (locX + 250.0) / 10.0));
+    return Math.max(0, Math.min(50, 25.0 + locX / 10.0));
 }
 private double toChartY(int locY) {
-    return Math.max(0, Math.min(47, (locY + 50.0) / 11.0));
+    return Math.max(0, Math.min(47, 5.25 + locY / 10.0));
 }
 ```
+
+LOC_X=0 → chartX=25（篮筐正下方），LOC_X=250 → chartX=50（右侧边线）。
+LOC_Y=0 → chartY=5.25（篮筐高度），LOC_Y=420 → chartY=47（中线附近）。
 
 ### 3.7 SecurityConfig
 
@@ -170,7 +222,11 @@ export function getGameShotChart(gameId: string) {
 }
 ```
 
-### 4.3 MatchDetailView.vue 改造
+### 4.3 清理 ShotChart.vue 调试代码
+
+移除 ShotChart.vue 中的 `watch` 调试 `console.log`（第 171-176 行）。
+
+### 4.4 MatchDetailView.vue 改造
 
 替换 shotchart tab 内容：
 
