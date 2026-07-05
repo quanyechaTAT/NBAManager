@@ -26,6 +26,14 @@ public class ShotChartController {
     }
 
     /**
+     * 获取比赛投篮数据
+     */
+    @GetMapping("/game/{gameId}")
+    public ResponseEntity<Map<String, Object>> getGameShots(@PathVariable String gameId) {
+        return ResponseEntity.ok(shotChartService.getGameShots(gameId));
+    }
+
+    /**
      * 清除球员投篮缓存（管理员）
      */
     @DeleteMapping("/player/{playerId}/cache")

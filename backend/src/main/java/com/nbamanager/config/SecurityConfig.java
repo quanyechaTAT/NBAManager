@@ -107,6 +107,8 @@ public class SecurityConfig {
                                 .permitAll()
                                 .requestMatchers(HttpMethod.GET, "/api/nba/**")
                                 .permitAll()
+                                .requestMatchers(HttpMethod.GET, "/api/shot-chart/**")
+                                .permitAll()
                                 .requestMatchers(HttpMethod.POST, "/api/nba/playoff/sync")
                                 .permitAll()
                                 .requestMatchers(HttpMethod.GET, "/api/rag/**")
