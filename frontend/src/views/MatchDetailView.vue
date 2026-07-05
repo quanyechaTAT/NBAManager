@@ -428,7 +428,12 @@ const comparisonItems = computed(() => {
   const h = boxScore.value.homePlayers ?? []
   const a = boxScore.value.awayPlayers ?? []
   const sum = (players: any[], field: string) => players.reduce((s: number, p: any) => s + (p[field] ?? 0), 0)
-  const avg = (players: any[], field: string) => players.length ? (sum(players, field) / players.length).toFixed(1) : '0'
+  const shootingPct = (players: any[], madeField: string, attemptedField: string) => {
+    const made = sum(players, madeField)
+    const attempted = sum(players, attemptedField)
+    if (!attempted) return '0.0%'
+    return ((made / attempted) * 100).toFixed(1) + '%'
+  }
   return [
     { label: '总得分', homeValue: String(sum(h, 'points')), awayValue: String(sum(a, 'points')) },
     { label: '总篮板', homeValue: String(sum(h, 'rebounds')), awayValue: String(sum(a, 'rebounds')) },
@@ -436,8 +441,8 @@ const comparisonItems = computed(() => {
     { label: '总抢断', homeValue: String(sum(h, 'steals')), awayValue: String(sum(a, 'steals')) },
     { label: '总盖帽', homeValue: String(sum(h, 'blocks')), awayValue: String(sum(a, 'blocks')) },
     { label: '总失误', homeValue: String(sum(h, 'turnovers')), awayValue: String(sum(a, 'turnovers')) },
-    { label: '投篮命中率', homeValue: avg(h, 'fgPct') + '%', awayValue: avg(a, 'fgPct') + '%' },
-    { label: '三分命中率', homeValue: avg(h, 'threePct') + '%', awayValue: avg(a, 'threePct') + '%' },
+    { label: '投篮命中率', homeValue: shootingPct(h, 'fgMade', 'fgAttempted'), awayValue: shootingPct(a, 'fgMade', 'fgAttempted') },
+    { label: '三分命中率', homeValue: shootingPct(h, 'threeMade', 'threeAttempted'), awayValue: shootingPct(a, 'threeMade', 'threeAttempted') },
   ]
 })
 
