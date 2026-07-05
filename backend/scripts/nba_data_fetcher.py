@@ -1484,8 +1484,10 @@ def build_bracket(series_data, games_data):
         if teams not in games_by_teams:
             games_by_teams[teams] = []
             series_info_by_teams[teams] = {
-                'homeSeriesWins': 0,
-                'awaySeriesWins': 0,
+                # Series wins must be keyed by team, not by home/away. Home court
+                # alternates during a series, so storing the latest game's
+                # home/away wins can swap series scores in the bracket.
+                'winsByTeam': {},
                 'seriesCompleted': False,
                 'seriesSummary': ''
             }
@@ -1493,8 +1495,9 @@ def build_bracket(series_data, games_data):
 
         # 更新系列赛信息（使用最新的数据）
         if game.get('homeSeriesWins', 0) > 0 or game.get('awaySeriesWins', 0) > 0:
-            series_info_by_teams[teams]['homeSeriesWins'] = game['homeSeriesWins']
-            series_info_by_teams[teams]['awaySeriesWins'] = game['awaySeriesWins']
+            wins_by_team = series_info_by_teams[teams]['winsByTeam']
+            wins_by_team[game['homeTeam']] = max(wins_by_team.get(game['homeTeam'], 0), game['homeSeriesWins'])
+            wins_by_team[game['awayTeam']] = max(wins_by_team.get(game['awayTeam'], 0), game['awaySeriesWins'])
         if game.get('seriesCompleted'):
             series_info_by_teams[teams]['seriesCompleted'] = True
         if game.get('seriesSummary'):
@@ -1538,13 +1541,9 @@ def build_bracket(series_data, games_data):
         # 优先使用ESPN API的系列赛数据（更准确）
         if teams_tuple in series_info_by_teams:
             info = series_info_by_teams[teams_tuple]
-            # 确定哪个是team1（主场球队）
-            if s['homeTeam'] == teams_tuple[0]:
-                matchup['team1Wins'] = info['homeSeriesWins']
-                matchup['team2Wins'] = info['awaySeriesWins']
-            else:
-                matchup['team1Wins'] = info['awaySeriesWins']
-                matchup['team2Wins'] = info['homeSeriesWins']
+            wins_by_team = info.get('winsByTeam', {})
+            matchup['team1Wins'] = wins_by_team.get(matchup['team1Name'], 0)
+            matchup['team2Wins'] = wins_by_team.get(matchup['team2Name'], 0)
 
             if info['seriesCompleted']:
                 matchup['status'] = 'COMPLETED'
@@ -1555,7 +1554,7 @@ def build_bracket(series_data, games_data):
             elif matchup['team2Wins'] >= 4:
                 matchup['status'] = 'COMPLETED'
                 matchup['winner'] = matchup['team2Name']
-            elif info['homeSeriesWins'] > 0 or info['awaySeriesWins'] > 0:
+            elif matchup['team1Wins'] > 0 or matchup['team2Wins'] > 0:
                 matchup['status'] = 'IN_PROGRESS'
 
         # 添加比赛记录
@@ -1590,6 +1589,7 @@ def build_bracket(series_data, games_data):
     matchups = []
     for sid, m in series_map.items():
         matchup = {
+            'seriesId': m['seriesId'],
             'team1Name': m['team1Name'],
             'team2Name': m['team2Name'],
             'team1Wins': m['team1Wins'],
@@ -2961,6 +2961,9 @@ def main():
         season = sys.argv[3] if len(sys.argv) > 3 else _get_current_season()
         result['shots'] = fetch_shot_chart(player_id, season)
 
+    if action == 'game_shot_chart' and len(sys.argv) > 2:
+        result['shots'] = fetch_game_shot_chart(sys.argv[2])
+
     # 输出JSON到文件（支持自定义输出文件名，避免竞争条件）
     output_filename = os.environ.get('OUTPUT_FILE', 'output.json')
     output_file = os.path.join(os.path.dirname(__file__), output_filename)
@@ -3146,6 +3149,77 @@ def fetch_shot_chart(player_id, season=None):
 
     except Exception as e:
         print(f"获取球员 {player_id} 投篮数据失败: {e}", file=sys.stderr)
+        return []
+
+
+def fetch_game_shot_chart(game_id):
+    """获取比赛级投篮数据（使用 ShotChartDetail API）"""
+    _init_team_map()
+    print(f"正在获取比赛 {game_id} 的投篮数据...", file=sys.stderr)
+
+    try:
+        from nba_api.stats.endpoints import ShotChartDetail
+
+        shots = ShotChartDetail(
+            game_id_nullable=game_id,
+            context_measure_simple='FGA',
+            timeout=60
+        )
+        data = shots.get_dict()
+        time.sleep(1.0)
+
+        result = []
+        for row in data.get('resultSets', []):
+            if row.get('name') == 'Shot_Chart_Detail':
+                headers = row.get('headers', [])
+                for shot_row in row.get('rowSet', []):
+                    d = dict(zip(headers, shot_row))
+
+                    loc_x = d.get('LOC_X', 0)
+                    loc_y = d.get('LOC_Y', 0)
+
+                    # 坐标转换（以篮筐为参考点）
+                    # chartX = clamp(25.0 + LOC_X / 10.0, 0, 50)
+                    # chartY = clamp(5.25 + LOC_Y / 10.0, 0, 47)
+                    chart_x = max(0, min(50, 25.0 + loc_x / 10.0))
+                    chart_y = max(0, min(47, 5.25 + loc_y / 10.0))
+
+                    made = d.get('SHOT_MADE_FLAG', 0) == 1
+                    shot_type = d.get('SHOT_TYPE', '')
+
+                    # 计算得分
+                    points = 3 if '3PT' in shot_type else 2
+
+                    team_id = d.get('TEAM_ID', 0)
+                    team_name = _team_map.get(str(team_id), d.get('TEAM_NAME', ''))
+
+                    player_id = d.get('PLAYER_ID', 0)
+                    player_name_raw = d.get('PLAYER_NAME', '')
+                    player_name = _player_map.get(str(player_id), player_name_raw)
+
+                    result.append({
+                        'x': round(chart_x, 2),
+                        'y': round(chart_y, 2),
+                        'made': made,
+                        'teamId': team_id,
+                        'teamName': team_name,
+                        'playerId': player_id,
+                        'playerName': player_name,
+                        'period': d.get('PERIOD', 0),
+                        'gameClock': d.get('GAME_CLOCK', ''),
+                        'shotType': shot_type,
+                        'actionType': d.get('ACTION_TYPE', ''),
+                        'points': points,
+                        'distance': d.get('SHOT_DISTANCE', 0),
+                        'locX': loc_x,
+                        'locY': loc_y,
+                    })
+
+        print(f"获取到 {len(result)} 次投篮记录", file=sys.stderr)
+        return result
+
+    except Exception as e:
+        print(f"获取比赛 {game_id} 投篮数据失败: {e}", file=sys.stderr)
         return []
 
 
