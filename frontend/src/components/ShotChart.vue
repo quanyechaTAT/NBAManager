@@ -156,7 +156,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import type { ShotData } from '@/api/types'
 
 const props = withDefaults(defineProps<{
@@ -166,14 +166,6 @@ const props = withDefaults(defineProps<{
   shots: () => [],
   size: 400,
 })
-
-// 调试：监听shots变化
-watch(() => props.shots, (newShots) => {
-  console.log('ShotChart: shots changed, count =', newShots.length)
-  if (newShots.length > 0) {
-    console.log('ShotChart: first shot =', newShots[0])
-  }
-}, { immediate: true })
 
 // SVG coordinate system: x 0-50, y 0-47 (half court)
 const courtW = 50

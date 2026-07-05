@@ -179,12 +179,21 @@
         </el-tab-pane>
 
         <el-tab-pane label="投篮图" name="shotchart">
-          <div class="section-header">
-            <div class="section-header-left">
-              <h2>投篮分布</h2>
+          <div class="shotchart-panel" v-loading="shotChartLoading">
+            <div class="shotchart-toolbar">
+              <el-segmented v-model="shotTeamFilter" :options="teamFilterOptions" />
+              <el-segmented v-model="shotResultFilter" :options="resultFilterOptions" />
+            </div>
+            <div class="shotchart-summary" v-if="gameShots.length">
+              <span>投篮 {{ shotSummary.made }}/{{ shotSummary.total }}（{{ shotSummary.fgPct }}%）</span>
+              <span class="summary-sep">|</span>
+              <span>三分 {{ shotSummary.threeMade }}/{{ shotSummary.threeAttempted }}（{{ shotSummary.threePct }}%）</span>
+            </div>
+            <ShotChart :shots="filteredGameShots" :size="560" />
+            <div v-if="!shotChartLoading && !gameShots.length" class="shotchart-empty-msg">
+              暂无投篮数据，该场比赛尚未同步官方投篮坐标
             </div>
           </div>
-          <ShotChart :game-id="gameId" />
         </el-tab-pane>
 
         <el-tab-pane label="比赛回放" name="playbyplay">
@@ -301,6 +310,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fetchBoxScore, fetchQuarterScores, fetchPlayByPlay } from '@/api/matchDetail'
 import { fetchTimeline, fetchMomentum, fetchHighlights, fetchTurningPoints } from '@/api/aiReplay'
+import { getGameShotChart } from '@/api/shotChart'
 import { fetchGameComments, createComment, deleteComment, toggleCommentLike } from '@/api/community'
 import EmojiPicker from '@/components/EmojiPicker.vue'
 import { useEmojiPicker } from '@/composables/useEmojiPicker'
@@ -310,7 +320,7 @@ import ReplayTimeline from '@/components/replay/ReplayTimeline.vue'
 import MomentumChart from '@/components/replay/MomentumChart.vue'
 import HighlightCards from '@/components/replay/HighlightCards.vue'
 import TurningPointList from '@/components/replay/TurningPointList.vue'
-import type { BoxScore, BoxScorePlayer, QuarterScore, TimelineEvent, MomentumSnapshot, Highlight, TurningPoint } from '@/api/types'
+import type { BoxScore, BoxScorePlayer, QuarterScore, TimelineEvent, MomentumSnapshot, Highlight, TurningPoint, ShotData } from '@/api/types'
 import type { Comment } from '@/api/community'
 import { getTeamLogo } from '@/utils/teamLogos'
 import { useAuthStore } from '@/stores/auth'
@@ -349,6 +359,9 @@ watch(activeTab, (tab) => {
   if (tab === 'playbyplay') {
     loadPlayByPlay()
     loadReplayData(gameId.value)
+  }
+  if (tab === 'shotchart' && gameId.value && !gameShots.value.length) {
+    loadGameShotChart(gameId.value)
   }
   if (tab === 'comments') loadComments()
 })
@@ -496,6 +509,22 @@ const turningPointsData = ref<TurningPoint[]>([])
 const selectedTimelineEvent = ref<TimelineEvent | null>(null)
 const replayLoading = ref(false)
 
+// 投篮图状态
+const shotChartLoading = ref(false)
+const gameShots = ref<ShotData[]>([])
+const shotTeamFilter = ref<'all' | 'home' | 'away'>('all')
+const shotResultFilter = ref<'all' | 'made' | 'missed'>('all')
+const teamFilterOptions = [
+  { label: '全部', value: 'all' },
+  { label: '主队', value: 'home' },
+  { label: '客队', value: 'away' }
+]
+const resultFilterOptions = [
+  { label: '全部', value: 'all' },
+  { label: '命中', value: 'made' },
+  { label: '未中', value: 'missed' }
+]
+
 async function loadPlayByPlay() {
   if (!gameId.value || playByPlay.value.length) return
   pbpLoading.value = true
@@ -531,6 +560,66 @@ function handleMomentumClick(snapshot: MomentumSnapshot) {
   const event = timelineEvents.value.find(e => e.eventOrder === snapshot.eventOrder)
   if (event) {
     selectedTimelineEvent.value = event
+  }
+}
+
+// 投篮图过滤
+const homeTeamIdForShot = ref<number | null>(null)
+const awayTeamIdForShot = ref<number | null>(null)
+const homeTeamNameForShot = ref('')
+const awayTeamNameForShot = ref('')
+
+const filteredGameShots = computed(() => {
+  return gameShots.value.filter(s => {
+    if (shotTeamFilter.value === 'home') {
+      if (homeTeamIdForShot.value != null && s.teamId != null) {
+        if (s.teamId !== homeTeamIdForShot.value) return false
+      } else if (homeTeamNameForShot.value) {
+        if (s.teamName !== homeTeamNameForShot.value) return false
+      }
+    }
+    if (shotTeamFilter.value === 'away') {
+      if (awayTeamIdForShot.value != null && s.teamId != null) {
+        if (s.teamId !== awayTeamIdForShot.value) return false
+      } else if (awayTeamNameForShot.value) {
+        if (s.teamName !== awayTeamNameForShot.value) return false
+      }
+    }
+    if (shotResultFilter.value === 'made' && !s.made) return false
+    if (shotResultFilter.value === 'missed' && s.made) return false
+    return true
+  })
+})
+
+const shotSummary = computed(() => {
+  const shots = filteredGameShots.value
+  const total = shots.length
+  const made = shots.filter(s => s.made).length
+  const threeAttempted = shots.filter(s => s.shotType?.includes('3PT')).length
+  const threeMade = shots.filter(s => s.made && s.shotType?.includes('3PT')).length
+  return {
+    total,
+    made,
+    fgPct: total > 0 ? ((made / total) * 100).toFixed(1) : '0.0',
+    threeMade,
+    threeAttempted,
+    threePct: threeAttempted > 0 ? ((threeMade / threeAttempted) * 100).toFixed(1) : '0.0'
+  }
+})
+
+async function loadGameShotChart(gameIdStr: string) {
+  shotChartLoading.value = true
+  try {
+    const data = await getGameShotChart(gameIdStr)
+    gameShots.value = data.shots ?? []
+    homeTeamIdForShot.value = data.homeTeamId ?? null
+    awayTeamIdForShot.value = data.awayTeamId ?? null
+    homeTeamNameForShot.value = data.homeTeam ?? ''
+    awayTeamNameForShot.value = data.awayTeam ?? ''
+  } catch {
+    gameShots.value = []
+  } finally {
+    shotChartLoading.value = false
   }
 }
 
@@ -1212,4 +1301,11 @@ onMounted(async () => {
   .replay-main { grid-template-columns: 1fr; }
   .replay-bottom { grid-template-columns: 1fr; }
 }
+
+/* 投篮图 */
+.shotchart-panel { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.shotchart-toolbar { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.shotchart-summary { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--text-secondary); }
+.summary-sep { color: var(--border-medium); }
+.shotchart-empty-msg { text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px; }
 </style>

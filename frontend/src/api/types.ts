@@ -193,7 +193,36 @@ export interface ShotData {
   x: number
   y: number
   made: boolean
+  teamId?: number
+  teamName?: string
+  playerId?: number
+  playerName?: string
   period?: number
+  gameClock?: string
+  shotType?: string
+  actionType?: string
+  points?: number
+  distance?: number
+}
+
+export interface GameShotChartResponse {
+  gameId: string
+  homeTeam: string
+  awayTeam: string
+  homeTeamId: number | null
+  awayTeamId: number | null
+  shots: ShotData[]
+  summary: {
+    totalShots: number
+    madeShots: number
+    fgPct: number
+    threeMade: number
+    threeAttempted: number
+    threePct: number
+  }
+  source: string
+  status: string
+  message?: string
 }
 
 export interface Trade {
