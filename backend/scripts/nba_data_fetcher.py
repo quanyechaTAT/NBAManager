@@ -1610,7 +1610,16 @@ def fetch_boxscore(game_id):
     print(f"正在获取比赛 {game_id} 的Box Score...", file=sys.stderr)
 
     try:
-        box = BoxScoreTraditionalV3(game_id=game_id, timeout=30)
+        saved_proxy = {}
+        proxy_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+        for k in proxy_keys:
+            saved_proxy[k] = os.environ.pop(k, None)
+        try:
+            box = BoxScoreTraditionalV3(game_id=game_id, timeout=30, proxy='')
+        finally:
+            for k, v in saved_proxy.items():
+                if v is not None:
+                    os.environ[k] = v
         data = box.get_dict()
         time.sleep(0.5)
     except Exception as e:
