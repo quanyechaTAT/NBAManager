@@ -1,12 +1,12 @@
 <template>
-  <div class="shot-panel" v-loading="loading">
+  <div class="game-shot-chart" v-loading="loading">
     <!-- 加载中 -->
     <div v-if="loading" class="panel-loading">正在获取官方投篮坐标...</div>
 
     <!-- REAL_SHOT_CHART -->
     <template v-else-if="mode === 'REAL_SHOT_CHART'">
       <!-- 标题栏 -->
-      <div class="panel-header">
+      <div class="shot-header">
         <div class="header-left">
           <span class="header-icon">🏀</span>
           <span class="header-title">投篮热图</span>
@@ -21,25 +21,21 @@
       <!-- 统计横幅 -->
       <ShotChartSummaryBar :summary="summary" />
 
-      <!-- 主体 -->
-      <div class="panel-body">
-        <div class="body-left">
-          <AdvancedShotCourt :shots="filtered" :size="560" />
+      <!-- 主体：左球场 + 右统计 -->
+      <div class="shot-content">
+        <div class="shot-main">
+          <AdvancedShotCourt :shots="filtered" />
+          <div class="shot-toolbar">
+            <span class="toolbar-label">节次</span>
+            <el-segmented v-model="periodFilter" :options="periodOpts" size="small" />
+          </div>
+          <div class="shot-source">数据来源：{{ sourceLabel }}</div>
         </div>
-        <div class="body-right">
+        <aside class="shot-sidebar">
           <ShotZoneStatsPanel :zones="zoneStats" />
           <ShotChartLegend :total="filtered.length" />
-        </div>
+        </aside>
       </div>
-
-      <!-- 节次筛选 -->
-      <div class="panel-period-filter">
-        <span class="period-label">节次</span>
-        <el-segmented v-model="periodFilter" :options="periodOpts" size="small" />
-      </div>
-
-      <!-- 数据源 -->
-      <div class="panel-source">数据来源：{{ sourceLabel }}</div>
     </template>
 
     <!-- UNAVAILABLE -->
@@ -89,8 +85,8 @@ const resultOpts = [
 const periodOpts = computed(() => {
   const periods = new Set(props.shots.map(s => s.period).filter((p): p is number => p != null && p > 0))
   const opts: Array<{ label: string; value: number | 'all' }> = [{ label: '全部', value: 'all' }]
-  for (let i = 1; i <= 4; i++) { if (periods.has(i)) opts.push({ label: `第${i}节`, value: i }) }
-  if (periods.has(5) || [...periods].some(p => p > 4)) opts.push({ label: '加时', value: 5 })
+  for (let i = 1; i <= 4; i++) { if (periods.has(i)) opts.push({ label: `Q${i}`, value: i }) }
+  if ([...periods].some(p => p > 4)) opts.push({ label: 'OT', value: 5 })
   return opts
 })
 
@@ -112,23 +108,42 @@ const sourceLabel = computed(() => {
 </script>
 
 <style scoped>
-.shot-panel { display: flex; flex-direction: column; gap: 20px; padding: 20px; background: rgba(255,255,255,0.015); border: 1px solid rgba(139,92,246,0.1); border-radius: 14px; }
+.game-shot-chart {
+  display: flex; flex-direction: column; gap: 18px;
+  padding: 20px; max-width: 1440px; margin: 0 auto;
+  background: rgba(255,255,255,0.012);
+  border: 1px solid rgba(139,92,246,0.08);
+  border-radius: 14px;
+}
 .panel-loading { text-align: center; padding: 80px 0; color: var(--text-secondary); font-size: 14px; }
-.panel-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+
+/* Header */
+.shot-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
 .header-left { display: flex; align-items: center; gap: 8px; }
-.header-icon { font-size: 20px; }
-.header-title { font-size: 16px; font-weight: 800; color: var(--text-primary); }
-.header-sub { font-size: 10px; font-weight: 700; color: var(--text-dim); letter-spacing: 2px; text-transform: uppercase; }
+.header-icon { font-size: 18px; }
+.header-title { font-size: 15px; font-weight: 800; color: var(--text-primary); }
+.header-sub { font-size: 9px; font-weight: 700; color: #475569; letter-spacing: 2px; text-transform: uppercase; }
 .header-filters { display: flex; gap: 8px; }
-.panel-body { display: grid; grid-template-columns: 1fr 280px; gap: 20px; }
-.body-left { min-width: 0; }
-.body-right { display: flex; flex-direction: column; gap: 12px; }
-.panel-period-filter { display: flex; align-items: center; gap: 12px; justify-content: center; }
-.period-label { font-size: 12px; color: var(--text-muted); }
-.panel-source { text-align: center; font-size: 11px; color: var(--text-dim); }
+
+/* Content: left court + right sidebar */
+.shot-content { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; }
+.shot-main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.shot-sidebar { display: flex; flex-direction: column; gap: 14px; width: 340px; }
+
+/* Toolbar */
+.shot-toolbar { display: flex; align-items: center; gap: 10px; justify-content: center; padding: 8px 12px; background: rgba(17,24,39,0.4); border-radius: 10px; }
+.toolbar-label { font-size: 11px; color: #64748b; font-weight: 600; }
+.shot-source { text-align: center; font-size: 11px; color: #334155; }
+
+/* Unavailable */
 .panel-unavailable { text-align: center; padding: 80px 24px; }
-.unavail-icon { font-size: 40px; margin-bottom: 16px; opacity: 0.4; }
-.unavail-title { font-size: 16px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; }
-.unavail-sub { font-size: 13px; color: var(--text-dim); }
-@media (max-width: 900px) { .panel-body { grid-template-columns: 1fr; } }
+.unavail-icon { font-size: 36px; margin-bottom: 14px; opacity: 0.35; }
+.unavail-title { font-size: 15px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+.unavail-sub { font-size: 12px; color: #475569; }
+
+@media (max-width: 900px) {
+  .shot-content { grid-template-columns: 1fr; }
+  .shot-sidebar { width: 100%; }
+  .header-filters { width: 100%; justify-content: center; }
+}
 </style>

@@ -34,22 +34,28 @@ function pctColor(pct: number, att: number) {
 </script>
 
 <style scoped>
-.zone-panel { display: flex; flex-direction: column; gap: 8px; padding: 16px; background: rgba(255,255,255,0.02); border: 1px solid rgba(139,92,246,0.12); border-radius: 12px; }
-.zone-title { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
-.zone-row { display: grid; grid-template-columns: 100px 1fr 48px 48px; align-items: center; gap: 8px; }
-.zone-name { font-size: 12px; color: var(--text-secondary); }
-.zone-bar-wrap { height: 6px; background: rgba(255,255,255,0.04); border-radius: 3px; overflow: hidden; }
+.zone-panel {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 20px; min-width: 300px;
+  background: rgba(17, 24, 39, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 14px;
+}
+.zone-title { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px; }
+.zone-row { display: grid; grid-template-columns: 100px 1fr 48px 52px; align-items: center; gap: 10px; }
+.zone-name { font-size: 12px; color: #94a3b8; }
+.zone-bar-wrap { height: 5px; background: rgba(255,255,255,0.04); border-radius: 3px; overflow: hidden; }
 .zone-bar { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
-.bar-green { background: #00e676; }
+.bar-green { background: #00E676; }
 .bar-teal { background: #26a69a; }
-.bar-yellow { background: #ffc107; }
-.bar-red { background: #ff5252; }
+.bar-yellow { background: #FFC107; }
+.bar-red { background: #FF5252; }
 .bar-empty { background: rgba(255,255,255,0.06); }
-.zone-stat { font-size: 11px; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+.zone-stat { font-size: 11px; color: #64748b; text-align: right; font-variant-numeric: tabular-nums; }
 .zone-pct { font-size: 12px; font-weight: 700; text-align: right; }
-.c-green { color: #00e676; }
+.c-green { color: #00E676; }
 .c-teal { color: #26a69a; }
-.c-yellow { color: #ffc107; }
-.c-red { color: #ff5252; }
-.c-dim { color: var(--text-dim); }
+.c-yellow { color: #FFC107; }
+.c-red { color: #FF5252; }
+.c-dim { color: #334155; }
 </style>
