@@ -179,33 +179,17 @@
         </el-tab-pane>
 
         <el-tab-pane label="投篮图" name="shotchart">
-          <div class="shotchart-panel" v-loading="shotChartLoading">
-            <!-- 加载提示 -->
-            <div v-if="shotChartLoading" class="shotchart-loading-msg">正在获取官方投篮坐标...</div>
-
-            <!-- REAL_SHOT_CHART 模式 -->
-            <template v-if="!shotChartLoading && shotChartMode === 'REAL_SHOT_CHART'">
-              <div class="shotchart-toolbar">
-                <el-segmented v-model="shotTeamFilter" :options="teamFilterOptions" />
-                <el-segmented v-model="shotResultFilter" :options="resultFilterOptions" />
-              </div>
-              <div class="shotchart-summary">
-                <span>投篮 {{ shotSummary.made }}/{{ shotSummary.total }}（{{ shotSummary.fgPct }}%）</span>
-                <span class="summary-sep">|</span>
-                <span>三分 {{ shotSummary.threeMade }}/{{ shotSummary.threeAttempted }}（{{ shotSummary.threePct }}%）</span>
-              </div>
-              <ShotChart :shots="filteredGameShots" :size="560" />
-              <div class="shotchart-source">
-                数据源：{{ shotChartSourceLabel }}
-              </div>
-            </template>
-
-            <!-- UNAVAILABLE 模式 -->
-            <div v-if="!shotChartLoading && shotChartMode === 'UNAVAILABLE'" class="shotchart-empty-msg">
-              <div class="empty-title">暂无官方投篮坐标</div>
-              <div class="empty-sub">{{ shotChartMessage || '系统不会生成模拟投篮点，以保证数据真实性。' }}</div>
-            </div>
-          </div>
+          <GameShotChartPanel
+            :shots="gameShots"
+            :mode="shotChartMode"
+            :source="shotChartSource"
+            :message="shotChartMessage"
+            :loading="shotChartLoading"
+            :home-team-id="homeTeamIdForShot"
+            :away-team-id="awayTeamIdForShot"
+            :home-team-name="homeTeamNameForShot"
+            :away-team-name="awayTeamNameForShot"
+          />
         </el-tab-pane>
 
         <el-tab-pane label="比赛回放" name="playbyplay">
@@ -327,6 +311,7 @@ import { fetchGameComments, createComment, deleteComment, toggleCommentLike } fr
 import EmojiPicker from '@/components/EmojiPicker.vue'
 import { useEmojiPicker } from '@/composables/useEmojiPicker'
 import ShotChart from '@/components/ShotChart.vue'
+import GameShotChartPanel from '@/components/shot-chart/GameShotChartPanel.vue'
 import LiveChat from '@/components/LiveChat.vue'
 import ReplayTimeline from '@/components/replay/ReplayTimeline.vue'
 import MomentumChart from '@/components/replay/MomentumChart.vue'
@@ -527,18 +512,6 @@ const gameShots = ref<ShotData[]>([])
 const shotChartMode = ref<string>('UNAVAILABLE')
 const shotChartSource = ref<string>('')
 const shotChartMessage = ref<string>('')
-const shotTeamFilter = ref<'all' | 'home' | 'away'>('all')
-const shotResultFilter = ref<'all' | 'made' | 'missed'>('all')
-const teamFilterOptions = [
-  { label: '全部', value: 'all' },
-  { label: '主队', value: 'home' },
-  { label: '客队', value: 'away' }
-]
-const resultFilterOptions = [
-  { label: '全部', value: 'all' },
-  { label: '命中', value: 'made' },
-  { label: '未中', value: 'missed' }
-]
 
 async function loadPlayByPlay() {
   if (!gameId.value || playByPlay.value.length) return
@@ -583,53 +556,6 @@ const homeTeamIdForShot = ref<number | null>(null)
 const awayTeamIdForShot = ref<number | null>(null)
 const homeTeamNameForShot = ref('')
 const awayTeamNameForShot = ref('')
-
-const filteredGameShots = computed(() => {
-  return gameShots.value.filter(s => {
-    if (shotTeamFilter.value === 'home') {
-      if (homeTeamIdForShot.value != null && s.teamId != null) {
-        if (s.teamId !== homeTeamIdForShot.value) return false
-      } else if (homeTeamNameForShot.value) {
-        if (s.teamName !== homeTeamNameForShot.value) return false
-      }
-    }
-    if (shotTeamFilter.value === 'away') {
-      if (awayTeamIdForShot.value != null && s.teamId != null) {
-        if (s.teamId !== awayTeamIdForShot.value) return false
-      } else if (awayTeamNameForShot.value) {
-        if (s.teamName !== awayTeamNameForShot.value) return false
-      }
-    }
-    if (shotResultFilter.value === 'made' && !s.made) return false
-    if (shotResultFilter.value === 'missed' && s.made) return false
-    return true
-  })
-})
-
-const shotSummary = computed(() => {
-  const shots = filteredGameShots.value
-  const total = shots.length
-  const made = shots.filter(s => s.made).length
-  const threeAttempted = shots.filter(s => s.shotType?.includes('3PT')).length
-  const threeMade = shots.filter(s => s.made && s.shotType?.includes('3PT')).length
-  return {
-    total,
-    made,
-    fgPct: total > 0 ? ((made / total) * 100).toFixed(1) : '0.0',
-    threeMade,
-    threeAttempted,
-    threePct: threeAttempted > 0 ? ((threeMade / threeAttempted) * 100).toFixed(1) : '0.0'
-  }
-})
-
-const shotChartSourceLabel = computed(() => {
-  const source = shotChartSource.value
-  if (source === 'NBA_SHOTCHARTDETAIL') return 'NBA ShotChartDetail · 全场'
-  if (source === 'NBA_SHOTCHARTDETAIL_TEAM') return 'NBA ShotChartDetail · 球队维度'
-  if (source === 'NBA_SHOTCHARTDETAIL_PLAYER') return 'NBA ShotChartDetail · 球员维度'
-  if (source === 'NBA_LIVE_PBP') return 'NBA Live Play-by-Play'
-  return source || '未知'
-})
 
 async function loadGameShotChart(gameIdStr: string) {
   shotChartLoading.value = true
