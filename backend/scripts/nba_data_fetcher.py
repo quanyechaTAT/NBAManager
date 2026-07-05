@@ -3160,13 +3160,25 @@ def fetch_game_shot_chart(game_id):
     try:
         from nba_api.stats.endpoints import ShotChartDetail
 
-        shots = ShotChartDetail(
-            team_id=0,
-            player_id=0,
-            game_id_nullable=game_id,
-            context_measure_simple='FGA',
-            timeout=60
-        )
+        # NBA API 通过代理可能被阻断，临时跳过代理
+        saved_proxy = {}
+        proxy_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+        for k in proxy_keys:
+            saved_proxy[k] = os.environ.pop(k, None)
+        try:
+            shots = ShotChartDetail(
+                team_id=0,
+                player_id=0,
+                game_id_nullable=game_id,
+                context_measure_simple='FGA',
+                timeout=60,
+                proxy=''
+            )
+        finally:
+            # 恢复代理环境变量
+            for k, v in saved_proxy.items():
+                if v is not None:
+                    os.environ[k] = v
         data = shots.get_dict()
         time.sleep(1.0)
 
@@ -3193,11 +3205,10 @@ def fetch_game_shot_chart(game_id):
                     points = 3 if '3PT' in shot_type else 2
 
                     team_id = d.get('TEAM_ID', 0)
-                    team_name = _team_map.get(str(team_id), d.get('TEAM_NAME', ''))
+                    team_name = TEAM_ID_TO_CN.get(team_id, d.get('TEAM_NAME', ''))
 
                     player_id = d.get('PLAYER_ID', 0)
-                    player_name_raw = d.get('PLAYER_NAME', '')
-                    player_name = _player_map.get(str(player_id), player_name_raw)
+                    player_name = d.get('PLAYER_NAME', '')
 
                     result.append({
                         'x': round(chart_x, 2),
