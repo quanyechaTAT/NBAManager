@@ -20,10 +20,8 @@
         <path :d="ftCircle" fill="none" stroke="rgba(124,92,255,0.18)" stroke-width="0.25" stroke-dasharray="1 0.7" />
         <!-- Restricted area -->
         <path :d="restricted" fill="none" stroke="rgba(124,92,255,0.5)" stroke-width="0.3" />
-        <!-- 3-point arc -->
-        <path :d="threeArc" fill="none" stroke="rgba(124,92,255,0.6)" stroke-width="0.35" />
-        <line x1="3.5" y1="0.3" x2="3.5" :y2="threeCornerY" stroke="rgba(124,92,255,0.6)" stroke-width="0.35" />
-        <line :x1="W-3.5" y1="0.3" :x2="W-3.5" :y2="threeCornerY" stroke="rgba(124,92,255,0.6)" stroke-width="0.35" />
+        <!-- 3-point line (single continuous path: left corner → arc → right corner) -->
+        <path :d="threePointPath" fill="none" stroke="rgba(124,92,255,0.6)" stroke-width="0.35" />
         <!-- Basket -->
         <circle :cx="W/2" :cy="5.25" r="0.9" fill="none" stroke="#ff6b35" stroke-width="0.22" />
         <line :x1="W/2-1.8" y1="4" :x2="W/2+1.8" y2="4" stroke="rgba(124,92,255,0.5)" stroke-width="0.4" />
@@ -61,11 +59,19 @@ const hovered = ref<number | null>(null)
 
 const ftCircle = computed(() => { const cx = W/2; const r = 6; return `M ${cx-r} 19 A ${r} ${r} 0 0 1 ${cx+r} 19` })
 const restricted = computed(() => { const cx = W/2; return `M ${cx-4} 5.25 A 4 4 0 0 1 ${cx+4} 5.25` })
-const threeArc = computed(() => {
-  const cx = W/2; const cy = 5.25; const r = 23.75
-  const dy = threeCornerY - cy
-  const dx = Math.sqrt(Math.max(0, r*r - dy*dy))
-  return `M ${cx-dx} ${threeCornerY} A ${r} ${r} 0 0 0 ${cx+dx} ${threeCornerY}`
+const threePointPath = computed(() => {
+  const cx = W / 2
+  const cy = 5.25  // basket Y
+  const r = 23.75
+  const cornerX = 3.5
+  const cornerY = threeCornerY  // 14
+  // arc intersection with cornerY
+  const dy = cornerY - cy
+  const dx = Math.sqrt(Math.max(0, r * r - dy * dy))
+  const arcLeftX = cx - dx
+  const arcRightX = cx + dx
+  // Single path: left baseline → left corner end → arc → right corner end → right baseline
+  return `M ${cornerX} 0.3 L ${cornerX} ${cornerY} A ${r} ${r} 0 0 0 ${arcRightX} ${cornerY} L ${W - cornerX} 0.3`
 })
 
 function tooltipStyle(s: ShotData) {

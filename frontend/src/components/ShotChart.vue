@@ -82,23 +82,11 @@
         fill="none"
       />
 
-      <!-- 3-point arc -->
+      <!-- 3-point line (single continuous path: left corner → arc → right corner) -->
       <path
         :d="threePointPath"
         class="court-line"
         fill="none"
-      />
-
-      <!-- 3-point straight sections (side lines from baseline) -->
-      <line
-        :x1="threePointCornerX" y1="0"
-        :x2="threePointCornerX" :y2="threePointCornerY"
-        class="court-line"
-      />
-      <line
-        :x1="courtW - threePointCornerX" y1="0"
-        :x2="courtW - threePointCornerX" :y2="threePointCornerY"
-        class="court-line"
       />
 
       <!-- Basket (hoop) -->
@@ -218,18 +206,16 @@ const threePointPath = computed(() => {
   const cx = courtW / 2
   const cy = basketY
   const r = threePointRadius
-
-  // Calculate where the arc meets the side lines (corner 3)
-  // Arc goes from one corner 3 point to the other
   const cornerTopY = threePointCornerY
-  // Find the x position on the arc at y = cornerTopY
-  // (x - cx)^2 + (y - cy)^2 = r^2
-  // x = cx + sqrt(r^2 - (y - cy)^2)
+  const cornerX = threePointCornerX
+
+  // Arc intersection with corner line
   const dx = Math.sqrt(Math.max(0, r * r - (cornerTopY - cy) * (cornerTopY - cy)))
   const arcLeftX = cx - dx
   const arcRightX = cx + dx
 
-  return `M ${arcLeftX} ${cornerTopY} A ${r} ${r} 0 0 0 ${arcRightX} ${cornerTopY}`
+  // Single path: left baseline → left corner end → arc → right corner end → right baseline
+  return `M ${cornerX} 0 L ${cornerX} ${cornerTopY} A ${r} ${r} 0 0 0 ${arcRightX} ${cornerTopY} L ${courtW - cornerX} 0`
 })
 </script>
 
