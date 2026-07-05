@@ -610,7 +610,7 @@ const shotSummary = computed(() => {
 async function loadGameShotChart(gameIdStr: string) {
   shotChartLoading.value = true
   try {
-    const data = await getGameShotChart(gameIdStr)
+    const { data } = await getGameShotChart(gameIdStr)
     gameShots.value = data.shots ?? []
     homeTeamIdForShot.value = data.homeTeamId ?? null
     awayTeamIdForShot.value = data.awayTeamId ?? null
