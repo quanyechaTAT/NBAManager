@@ -134,6 +134,7 @@ export interface MatchRecord {
 
 export interface BoxScorePlayer {
   playerId: number
+  nbaPlayerId?: number | null
   playerName: string
   teamName: string
   minutes: string
@@ -366,6 +367,8 @@ export interface TimelineEvent {
   eventType: string
   actionType: string
   description: string
+  descriptionEn?: string
+  descriptionCn?: string
   playerName: string
   playerId: number | null
   teamName: string

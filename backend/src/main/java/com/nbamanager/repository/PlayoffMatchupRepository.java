@@ -8,9 +8,17 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface PlayoffMatchupRepository extends JpaRepository<PlayoffMatchup, Long> {
 
-    List<PlayoffMatchup> findBySeasonOrderByRoundAsc(String season);
+    List<PlayoffMatchup> findBySeasonOrderByRoundAscSeriesIdAscIdAsc(String season);
 
-    List<PlayoffMatchup> findBySeasonAndConferenceOrderByRoundAsc(String season, String conference);
+    List<PlayoffMatchup> findBySeasonAndConferenceOrderByRoundAscSeriesIdAscIdAsc(String season, String conference);
+
+    default List<PlayoffMatchup> findBySeasonOrderByRoundAsc(String season) {
+        return findBySeasonOrderByRoundAscSeriesIdAscIdAsc(season);
+    }
+
+    default List<PlayoffMatchup> findBySeasonAndConferenceOrderByRoundAsc(String season, String conference) {
+        return findBySeasonAndConferenceOrderByRoundAscSeriesIdAscIdAsc(season, conference);
+    }
 
     List<PlayoffMatchup> findBySeasonAndRoundOrderByTeam1SeedAsc(String season, Integer round);
 }

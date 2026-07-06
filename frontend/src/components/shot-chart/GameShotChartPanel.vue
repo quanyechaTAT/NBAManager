@@ -231,6 +231,41 @@ const sourceLabel = computed(() => {
   box-shadow: 0 1px 3px rgba(232, 93, 38, 0.3) !important;
 }
 
+:global(html[data-theme="light"]) .game-shot-chart,
+:global(html[data-theme="light"]) .shot-toolbar {
+  background: #ffffff !important;
+}
+
+:global(html[data-theme="light"]) .game-shot-chart :deep(.el-segmented) {
+  --el-segmented-bg-color: #ffffff;
+  --el-segmented-active-bg-color: transparent;
+  background: #ffffff !important;
+  border-color: #dbe7ff !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+:global(html[data-theme="light"]) .game-shot-chart :deep(.el-segmented__group) {
+  background: #ffffff !important;
+}
+
+:global(html[data-theme="light"]) .game-shot-chart :deep(.el-segmented__item) {
+  color: #94a3b8 !important;
+  background: transparent !important;
+}
+
+:global(html[data-theme="light"]) .game-shot-chart :deep(.el-segmented__item:hover:not(.is-active)) {
+  color: #2563eb !important;
+  background: #f8fbff !important;
+}
+
+:global(html[data-theme="light"]) .game-shot-chart :deep(.el-segmented__item-selected),
+:global(html[data-theme="light"]) .game-shot-chart :deep(.el-segmented__item.is-active) {
+  color: #ffffff !important;
+  background: linear-gradient(135deg, #4aa3ff, #2563eb) !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.18) !important;
+}
+
 /* Unavailable */
 .panel-unavailable { text-align: center; padding: 80px 24px; }
 .unavail-icon { font-size: 36px; margin-bottom: 14px; opacity: 0.35; }

@@ -8,6 +8,7 @@ import com.nbamanager.repository.GameBoxScoreRepository;
 import com.nbamanager.repository.GameNewsRepository;
 import com.nbamanager.repository.MatchRecordRepository;
 import com.nbamanager.repository.PlayByPlayRepository;
+import com.nbamanager.repository.PlayerRepository;
 import com.nbamanager.web.dto.BoxScoreDto;
 import com.nbamanager.web.dto.BoxScorePlayerDto;
 import com.nbamanager.web.dto.PlayByPlayDto;
@@ -43,6 +44,7 @@ public class MatchDetailService {
     private final GameIdMappingService gameIdMappingService;
     private final MatchRecordRepository matchRecordRepository;
     private final GameNewsRepository gameNewsRepository;
+    private final PlayerRepository playerRepository;
 
     @Cacheable(value = "boxScore", key = "#gameId", unless = "#result.homeTeam.isEmpty()")
     @Transactional
@@ -75,6 +77,9 @@ public class MatchDetailService {
                 .filter(r -> !r.isHome())
                 .collect(Collectors.toList());
 
+        // 构建 nbaPlayerId 映射表（从 Player 表查找）
+        Map<Long, Long> nbaPlayerIdMap = buildNbaPlayerIdMap(records);
+
         String homeTeam = "";
         String awayTeam = "";
         List<BoxScorePlayerDto> homePlayers = List.of();
@@ -82,11 +87,15 @@ public class MatchDetailService {
 
         if (!homeRecords.isEmpty()) {
             homeTeam = homeRecords.get(0).getTeamName();
-            homePlayers = homeRecords.stream().map(this::toBoxScorePlayerDto).collect(Collectors.toList());
+            homePlayers = homeRecords.stream()
+                    .map(r -> toBoxScorePlayerDto(r, nbaPlayerIdMap))
+                    .collect(Collectors.toList());
         }
         if (!awayRecords.isEmpty()) {
             awayTeam = awayRecords.get(0).getTeamName();
-            awayPlayers = awayRecords.stream().map(this::toBoxScorePlayerDto).collect(Collectors.toList());
+            awayPlayers = awayRecords.stream()
+                    .map(r -> toBoxScorePlayerDto(r, nbaPlayerIdMap))
+                    .collect(Collectors.toList());
         }
 
         List<QuarterScoreDto> quarterScores = getQuarterScores(gameId);
@@ -602,9 +611,28 @@ public class MatchDetailService {
         return new File(baseDir, "backend/scripts/nba_data_fetcher.py").getAbsolutePath();
     }
 
-    private BoxScorePlayerDto toBoxScorePlayerDto(GameBoxScore bs) {
+    /**
+     * 从 Player 表批量查找 nbaPlayerId 映射
+     */
+    private Map<Long, Long> buildNbaPlayerIdMap(List<GameBoxScore> records) {
+        Map<Long, Long> map = new HashMap<>();
+        for (GameBoxScore bs : records) {
+            Long playerId = bs.getPlayerId();
+            if (playerId != null && !map.containsKey(playerId)) {
+                com.nbamanager.domain.Player player = playerRepository.findByNbaPlayerId(playerId);
+                if (player != null && player.getNbaPlayerId() != null) {
+                    map.put(playerId, player.getNbaPlayerId());
+                }
+            }
+        }
+        return map;
+    }
+
+    private BoxScorePlayerDto toBoxScorePlayerDto(GameBoxScore bs, Map<Long, Long> nbaPlayerIdMap) {
+        Long nbaPlayerId = nbaPlayerIdMap.get(bs.getPlayerId());
         return new BoxScorePlayerDto(
                 bs.getPlayerId(),
+                nbaPlayerId,
                 bs.getPlayerName(),
                 bs.getTeamName(),
                 bs.getMinutes(),

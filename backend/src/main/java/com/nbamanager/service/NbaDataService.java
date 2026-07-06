@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 public class NbaDataService {
 
     private final PlayoffService playoffService;
+    private final PlayoffReferenceData playoffReferenceData;
 
     /**
      * 获取季后赛数据并导入数据库
@@ -30,6 +31,15 @@ public class NbaDataService {
         Map<String, Object> result = new HashMap<>();
 
         try {
+            if (playoffReferenceData.supports(season)) {
+                List<Map<String, Object>> matchups = playoffReferenceData.getMatchups(season);
+                int imported = playoffService.clearAndImportPlayoffData(matchups, season);
+                result.put("matchups", matchups);
+                result.put("imported", imported);
+                result.put("source", "reference");
+                return result;
+            }
+
             String scriptPath = findScriptPath();
             if (scriptPath == null) {
                 log.warn("Python脚本未找到");
@@ -81,10 +91,13 @@ public class NbaDataService {
                             for (int i = 0; i < matchupsArray.length(); i++) {
                                 JSONObject m = matchupsArray.getJSONObject(i);
                                 Map<String, Object> matchup = new HashMap<>();
+                                matchup.put("seriesId", m.optString("seriesId", ""));
                                 matchup.put("team1Name", m.optString("team1Name", ""));
                                 matchup.put("team1NameEn", m.optString("team1NameEn", ""));
                                 matchup.put("team2Name", m.optString("team2Name", ""));
                                 matchup.put("team2NameEn", m.optString("team2NameEn", ""));
+                                matchup.put("team1Seed", m.optInt("team1Seed", 0));
+                                matchup.put("team2Seed", m.optInt("team2Seed", 0));
                                 matchup.put("round", m.optInt("round", 1));
                                 matchup.put("conference", m.optString("conference", "Unknown"));
                                 matchup.put("team1Wins", m.optInt("team1Wins", 0));

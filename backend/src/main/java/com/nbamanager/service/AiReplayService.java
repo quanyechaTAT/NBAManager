@@ -117,10 +117,9 @@ public class AiReplayService {
                     e.getModelProvider(), e.getModelName());
         }
 
-        // 2. Build facts
+        // 2. Build facts (only translate context events, not all 1600+)
         ensureData(gameId);
         List<PlayByPlay> allEvents = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId);
-        List<TimelineEventDto> timeline = toTimelineDtos(allEvents);
 
         int idx = -1;
         for (int i = 0; i < allEvents.size(); i++) {
@@ -130,10 +129,12 @@ public class AiReplayService {
             }
         }
 
+        // Only translate the target event + context (5 before, 5 after)
         String eventJson = toTimelineDto(event, translationService.translateText(event.getDescription())).toString();
         int from = Math.max(0, idx - 5);
         int to = Math.min(allEvents.size(), idx + 6);
-        List<TimelineEventDto> contextDtos = toTimelineDtos(allEvents.subList(from, to));
+        List<PlayByPlay> contextEvents = allEvents.subList(from, to);
+        List<TimelineEventDto> contextDtos = toTimelineDtos(contextEvents);
         String contextJson = contextDtos.stream()
                 .map(TimelineEventDto::toString)
                 .collect(Collectors.joining("\n"));
@@ -148,8 +149,8 @@ public class AiReplayService {
                     null, null, null, resp.model(), null);
         }
 
-        // 4. Validate grounding
-        AiGroundingValidator.ValidationResult validation = groundingValidator.validate(resp.content(), timeline);
+        // 4. Validate grounding (use context events only, not all 1600+)
+        AiGroundingValidator.ValidationResult validation = groundingValidator.validate(resp.content(), contextDtos);
         String explanation = sanitizeAiText(validation.safeResponse());
 
         // 5. Cache

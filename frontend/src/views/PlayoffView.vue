@@ -22,13 +22,13 @@
     <div v-else class="bracket-wrapper">
       <!-- 桌面端：轴对称布局 -->
       <div class="bracket-desktop">
-        <!-- 西部联盟（从上往下收敛） -->
-        <div class="conf-half west-half">
-          <h2 class="conf-title">西部联盟</h2>
+        <!-- 东部联盟（从上往下收敛） -->
+        <div class="conf-half east-half">
+          <h2 class="conf-title">东部联盟</h2>
           <div class="conf-bracket">
             <div class="bracket-round">
               <div class="round-series">
-                <div v-for="m in westRounds[1]" :key="m.id" class="series-card">
+                <div v-for="m in eastRounds[1]" :key="m.id" class="series-card">
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -49,7 +49,7 @@
             <div class="bracket-connector"><div class="conn-vert"></div></div>
             <div class="bracket-round">
               <div class="round-series">
-                <div v-for="m in westRounds[2]" :key="m.id" class="series-card">
+                <div v-for="m in eastRounds[2]" :key="m.id" class="series-card">
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -70,7 +70,7 @@
             <div class="bracket-connector"><div class="conn-vert"></div></div>
             <div class="bracket-round">
               <div class="round-series">
-                <div v-for="m in westRounds[3]" :key="m.id" class="series-card">
+                <div v-for="m in eastRounds[3]" :key="m.id" class="series-card">
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -114,13 +114,13 @@
           </div>
         </div>
 
-        <!-- 东部联盟（从下往上收敛） -->
-        <div class="conf-half east-half">
+        <!-- 西部联盟（从下往上收敛） -->
+        <div class="conf-half west-half">
           <div class="conf-bracket">
             <div class="bracket-round">
               <span class="round-tag">分区决赛</span>
               <div class="round-series">
-                <div v-for="m in eastRounds[3]" :key="m.id" class="series-card">
+                <div v-for="m in westRounds[3]" :key="m.id" class="series-card">
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -141,7 +141,7 @@
             <div class="bracket-round">
               <span class="round-tag">半决赛</span>
               <div class="round-series">
-                <div v-for="m in eastRounds[2]" :key="m.id" class="series-card">
+                <div v-for="m in westRounds[2]" :key="m.id" class="series-card">
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -162,7 +162,7 @@
             <div class="bracket-round">
               <span class="round-tag">首轮</span>
               <div class="round-series">
-                <div v-for="m in eastRounds[1]" :key="m.id" class="series-card">
+                <div v-for="m in westRounds[1]" :key="m.id" class="series-card">
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -180,19 +180,19 @@
               </div>
             </div>
           </div>
-          <h2 class="conf-title">东部联盟</h2>
+          <h2 class="conf-title">西部联盟</h2>
         </div>
       </div>
 
       <!-- 移动端 -->
       <div class="bracket-mobile">
         <div class="mob-conf">
-          <h2 class="conf-title">西部联盟</h2>
+          <h2 class="conf-title">东部联盟</h2>
           <div class="mob-rounds">
-            <div v-for="r in [1,2,3]" :key="'mw'+r" class="mob-round">
+            <div v-for="r in [1,2,3]" :key="'me'+r" class="mob-round">
               <span class="round-tag">{{ rLabel(r) }}</span>
               <div class="mob-series">
-                <div v-for="m in westRounds[r]" :key="m.id" class="series-card">
+                <div v-for="m in eastRounds[r]" :key="m.id" class="series-card">
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -233,12 +233,12 @@
           </div>
         </div>
         <div class="mob-conf">
-          <h2 class="conf-title">东部联盟</h2>
+          <h2 class="conf-title">西部联盟</h2>
           <div class="mob-rounds">
-            <div v-for="r in [3,2,1]" :key="'me'+r" class="mob-round">
+            <div v-for="r in [3,2,1]" :key="'mw'+r" class="mob-round">
               <span class="round-tag">{{ rLabel(r) }}</span>
               <div class="mob-series">
-                <div v-for="m in eastRounds[r]" :key="m.id" class="series-card">
+                <div v-for="m in westRounds[r]" :key="m.id" class="series-card">
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>

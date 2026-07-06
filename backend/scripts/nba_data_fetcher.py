@@ -820,10 +820,7 @@ def _format_minutes(minutes_str):
         total_minutes = hours * 60 + minutes
         total_seconds = int(seconds)
 
-        if total_seconds > 0:
-            return f"{total_minutes}:{total_seconds:02d}"
-        else:
-            return str(total_minutes)
+        return f"{total_minutes}:{total_seconds:02d}"
     except Exception:
         return minutes_str
 

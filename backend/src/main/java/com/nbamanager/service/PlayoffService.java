@@ -18,10 +18,15 @@ public class PlayoffService {
 
     private final PlayoffMatchupRepository matchupRepository;
     private final PlayoffGameRepository gameRepository;
+    private final PlayoffReferenceData playoffReferenceData;
 
     /** 获取季后赛对阵图 */
     @Transactional(readOnly = true)
     public Map<String, Object> getPlayoffBracket(String season) {
+        if (playoffReferenceData.supports(season)) {
+            return referenceMatchupsToBracket(season, playoffReferenceData.getMatchups(season));
+        }
+
         List<PlayoffMatchup> matchups = matchupRepository.findBySeasonOrderByRoundAsc(season);
 
         Map<String, Object> result = new HashMap<>();
@@ -110,10 +115,13 @@ public class PlayoffService {
                 matchup.setSeason(season);
                 matchup.setConference(conference);
                 matchup.setRound(round);
+                matchup.setSeriesId((String) m.getOrDefault("seriesId", ""));
                 matchup.setTeam1Name(team1);
                 matchup.setTeam1NameEn((String) m.getOrDefault("team1NameEn", ""));
+                matchup.setTeam1Seed(toNullableSeed(m.get("team1Seed")));
                 matchup.setTeam2Name(team2);
                 matchup.setTeam2NameEn((String) m.getOrDefault("team2NameEn", ""));
+                matchup.setTeam2Seed(toNullableSeed(m.get("team2Seed")));
                 matchup.setTeam1Wins((int) m.getOrDefault("team1Wins", 0));
                 matchup.setTeam2Wins((int) m.getOrDefault("team2Wins", 0));
                 matchup.setStatus((String) m.getOrDefault("status", "SCHEDULED"));
@@ -153,10 +161,13 @@ public class PlayoffService {
                     matchup.setSeason(season);
                     matchup.setConference(conference);
                     matchup.setRound(round);
+                    matchup.setSeriesId((String) m.getOrDefault("seriesId", ""));
                     matchup.setTeam1Name(team1);
                     matchup.setTeam1NameEn((String) m.getOrDefault("team1NameEn", ""));
+                    matchup.setTeam1Seed(toNullableSeed(m.get("team1Seed")));
                     matchup.setTeam2Name(team2);
                     matchup.setTeam2NameEn((String) m.getOrDefault("team2NameEn", ""));
+                    matchup.setTeam2Seed(toNullableSeed(m.get("team2Seed")));
                     matchup.setTeam1Wins((int) m.getOrDefault("team1Wins", 0));
                     matchup.setTeam2Wins((int) m.getOrDefault("team2Wins", 0));
                     matchup.setStatus((String) m.getOrDefault("status", "SCHEDULED"));
@@ -209,6 +220,69 @@ public class PlayoffService {
         map.put("status", m.getStatus());
         map.put("winnerName", m.getWinnerName());
         return map;
+    }
+
+    private Map<String, Object> referenceMatchupsToBracket(String season, List<Map<String, Object>> matchups) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("season", season);
+
+        List<Map<String, Object>> eastern = new ArrayList<>();
+        List<Map<String, Object>> western = new ArrayList<>();
+        Map<String, Object> finals = null;
+
+        for (Map<String, Object> m : matchups) {
+            Map<String, Object> matchupMap = referenceMatchupToMap(season, m);
+            String conference = (String) m.get("conference");
+
+            if ("Finals".equals(conference)) {
+                finals = matchupMap;
+            } else if ("East".equals(conference)) {
+                eastern.add(matchupMap);
+            } else if ("West".equals(conference)) {
+                western.add(matchupMap);
+            }
+        }
+
+        result.put("eastern", eastern);
+        result.put("western", western);
+        result.put("finals", finals);
+        return result;
+    }
+
+    private Map<String, Object> referenceMatchupToMap(String season, Map<String, Object> m) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("id", null);
+        map.put("season", season);
+        map.put("conference", m.get("conference"));
+        map.put("round", m.get("round"));
+        map.put("seriesId", m.get("seriesId"));
+        map.put("team1Name", m.get("team1Name"));
+        map.put("team1NameEn", m.getOrDefault("team1NameEn", ""));
+        map.put("team1Seed", m.get("team1Seed"));
+        map.put("team1Wins", m.get("team1Wins"));
+        map.put("team2Name", m.get("team2Name"));
+        map.put("team2NameEn", m.getOrDefault("team2NameEn", ""));
+        map.put("team2Seed", m.get("team2Seed"));
+        map.put("team2Wins", m.get("team2Wins"));
+        map.put("status", m.get("status"));
+        map.put("winnerName", m.getOrDefault("winnerName", m.get("winner")));
+        return map;
+    }
+
+    private Integer toNullableSeed(Object raw) {
+        if (raw instanceof Number n) {
+            int value = n.intValue();
+            return value > 0 ? value : null;
+        }
+        if (raw instanceof String s && !s.isBlank()) {
+            try {
+                int value = Integer.parseInt(s);
+                return value > 0 ? value : null;
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private Map<String, Object> gameToMap(PlayoffGame g) {

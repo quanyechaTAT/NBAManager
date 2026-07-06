@@ -2,6 +2,7 @@ package com.nbamanager.web.dto;
 
 public record BoxScorePlayerDto(
         Long playerId,
+        Long nbaPlayerId,
         String playerName,
         String teamName,
         String minutes,
