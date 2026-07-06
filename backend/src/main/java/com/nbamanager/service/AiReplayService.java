@@ -66,7 +66,7 @@ public class AiReplayService {
         var cached = summaryRepository.findByGameIdAndSummaryType(gameId, "FULL");
         if (cached.isPresent()) {
             AiGameSummary s = cached.get();
-            return new GameSummaryDto(gameId, "FULL", s.getContent(),
+            return new GameSummaryDto(gameId, "FULL", sanitizeAiText(s.getContent()),
                     s.getCitedEventIdsJson(), s.getCitedStatKeysJson(),
                     s.getModelProvider(), s.getModelName());
         }
@@ -113,7 +113,7 @@ public class AiReplayService {
         if (cached.isPresent()) {
             AiReplayExplanation e = cached.get();
             return new EventExplainDto(gameId, eventId, toTranslatedTimelineDto(event),
-                    e.getExplanation(), e.getCitedEventIdsJson(), e.getCitedStatKeysJson(),
+                    sanitizeAiText(e.getExplanation()), e.getCitedEventIdsJson(), e.getCitedStatKeysJson(),
                     e.getModelProvider(), e.getModelName());
         }
 
