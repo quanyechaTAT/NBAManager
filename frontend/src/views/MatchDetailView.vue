@@ -662,6 +662,10 @@ onMounted(async () => {
     loadQuarterScores(),
     loadComments()
   ])
+  // 如果默认 tab 是 playbyplay，也加载回放数据
+  if (activeTab.value === 'playbyplay' && gameId.value) {
+    loadReplayData(gameId.value)
+  }
 })
 </script>
 
