@@ -49,7 +49,7 @@ public class TurningPointDetectService {
                 if (homeRun || awayRun) {
                     GameTurningPoint point = new GameTurningPoint();
                     point.setGameId(gameId);
-                    point.setEventId(Long.parseLong(endEvent.sourceEventId()));
+                    point.setEventId(null); // sourceEventId is not a numeric ID
                     point.setPeriod(endEvent.period());
                     point.setGameClock(endEvent.gameClock());
                     point.setType("RUN");
@@ -91,7 +91,7 @@ public class TurningPointDetectService {
 
                 GameTurningPoint point = new GameTurningPoint();
                 point.setGameId(gameId);
-                point.setEventId(Long.parseLong(curr.sourceEventId()));
+                point.setEventId(null);
                 point.setPeriod(curr.period());
                 point.setGameClock(curr.gameClock());
                 point.setType("OVERTAKE");
@@ -141,7 +141,7 @@ public class TurningPointDetectService {
                 if (Math.abs(prev.scoreMargin()) <= 2) {
                     GameTurningPoint point = new GameTurningPoint();
                     point.setGameId(gameId);
-                    point.setEventId(Long.parseLong(event.sourceEventId()));
+                    point.setEventId(null);
                     point.setPeriod(event.period());
                     point.setGameClock(event.gameClock());
                     point.setType("CLUTCH_SEPARATION");

@@ -61,4 +61,19 @@ public class PlayByPlayValidationService {
 
         return new ValidationResult(errors.isEmpty(), errors);
     }
+
+    /**
+     * 过滤出有效的事件，丢弃格式不正确的事件（如 gameClock 缺少冒号）
+     */
+    public List<PlayByPlayEvent> filterValidEvents(List<PlayByPlayEvent> events) {
+        if (events == null || events.isEmpty()) return List.of();
+        List<PlayByPlayEvent> valid = new ArrayList<>();
+        for (PlayByPlayEvent e : events) {
+            if (e.period() < 1 || e.period() > 10) continue;
+            if (e.gameClock() == null || !GAME_CLOCK_PATTERN.matcher(e.gameClock()).matches()) continue;
+            if (e.homeScore() < 0 || e.awayScore() < 0) continue;
+            valid.add(e);
+        }
+        return valid;
+    }
 }

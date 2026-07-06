@@ -42,16 +42,8 @@ public class NbaPlayByPlayProvider implements PlayByPlayProvider {
             pb.redirectErrorStream(false);
             pb.directory(new File(scriptPath).getParentFile());
             pb.environment().put("PYTHONIOENCODING", "utf-8");
-
-            // Proxy configuration (optional)
-            String proxyHost = EnvFileReader.get("NBA_PROXY_HOST");
-            String proxyPort = EnvFileReader.get("NBA_PROXY_PORT");
-            if (proxyHost != null && !proxyHost.isEmpty()) {
-                pb.environment().put("NBA_PROXY_HOST", proxyHost);
-            }
-            if (proxyPort != null && !proxyPort.isEmpty()) {
-                pb.environment().put("NBA_PROXY_PORT", proxyPort);
-            }
+            // 不传递代理配置，避免代理阻断 NBA API 请求
+            // Python 脚本内部已对 NBA API 调用做了代理绕过
 
             // Translation API configuration
             String mimoApiKey = EnvFileReader.get("MIMO_API_KEY");
@@ -115,16 +107,18 @@ public class NbaPlayByPlayProvider implements PlayByPlayProvider {
                 eventsArray = new JSONArray(jsonStr);
             } catch (org.json.JSONException e1) {
                 try {
-                    // Try parsing as JSONObject with an "events" key
+                    // Try parsing as JSONObject with an "events" or "playByPlay" key
                     JSONObject root = new JSONObject(jsonStr);
                     if (root.has("events") && !root.isNull("events")) {
                         eventsArray = root.getJSONArray("events");
+                    } else if (root.has("playByPlay") && !root.isNull("playByPlay")) {
+                        eventsArray = root.getJSONArray("playByPlay");
                     } else if (root.has("play_by_play") && !root.isNull("play_by_play")) {
                         eventsArray = root.getJSONArray("play_by_play");
                     } else {
                         long elapsed = System.currentTimeMillis() - startTime;
                         return PlayByPlayFetchResult.failure(type(),
-                                "Unexpected JSON structure: no 'events' or 'play_by_play' key", elapsed);
+                                "Unexpected JSON structure: no 'events' or 'playByPlay' key", elapsed);
                     }
                 } catch (org.json.JSONException e2) {
                     long elapsed = System.currentTimeMillis() - startTime;

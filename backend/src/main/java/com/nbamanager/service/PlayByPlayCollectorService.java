@@ -60,37 +60,41 @@ public class PlayByPlayCollectorService {
             return new CollectResult(false, sourceName, 0, "No events returned");
         }
 
-        // 5. Validate
-        PlayByPlayValidationService.ValidationResult validation = validationService.validate(events);
-        if (!validation.valid()) {
-            String errors = String.join("; ", validation.errors());
-            syncLogService.logFailure(syncLog, "Validation failed: " + errors);
-            log.error("Play-by-play validation failed for gameId={}: {}", gameId, errors);
-            return new CollectResult(false, sourceName, events.size(), "Validation failed: " + errors);
+        // 5. Filter valid events (drop events with invalid format, don't reject whole batch)
+        List<PlayByPlayEvent> validEvents = validationService.filterValidEvents(events);
+        if (validEvents.isEmpty()) {
+            syncLogService.logFailure(syncLog, "No valid events after filtering");
+            return new CollectResult(false, sourceName, 0, "No valid events after filtering");
         }
+        log.info("Filtered {}/{} valid events for gameId={}", validEvents.size(), events.size(), gameId);
 
         // 6. Normalize
-        List<PlayByPlay> entities = normalizeService.normalizeAll(events, gameId, fetchResult.source());
+        List<PlayByPlay> entities = normalizeService.normalizeAll(validEvents, gameId, fetchResult.source());
+        log.info("Normalized {} entities for gameId={}", entities.size(), gameId);
 
         // 7. Save to repository
         playByPlayRepository.saveAll(entities);
+        log.info("Saved {} PlayByPlay records for gameId={}", entities.size(), gameId);
 
         // 8. Compute momentum
-        momentumComputeService.compute(gameId, events);
+        momentumComputeService.compute(gameId, validEvents);
+        log.info("Computed momentum for gameId={}", gameId);
 
         // 9. Detect highlights
-        highlightDetectService.detect(gameId, events);
+        highlightDetectService.detect(gameId, validEvents);
+        log.info("Detected highlights for gameId={}", gameId);
 
         // 10. Detect turning points
-        turningPointDetectService.detect(gameId, events);
+        turningPointDetectService.detect(gameId, validEvents);
+        log.info("Detected turning points for gameId={}", gameId);
 
         // 11. Log success
-        syncLogService.logSuccess(syncLog, events.size());
+        syncLogService.logSuccess(syncLog, validEvents.size());
 
         log.info("Play-by-play collection completed for gameId={}: source={}, events={}",
-                gameId, sourceName, events.size());
+                gameId, sourceName, validEvents.size());
 
         // 12. Return success
-        return new CollectResult(true, sourceName, events.size(), "Success");
+        return new CollectResult(true, sourceName, validEvents.size(), "Success");
     }
 }

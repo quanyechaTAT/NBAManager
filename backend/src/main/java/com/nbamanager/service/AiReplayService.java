@@ -217,8 +217,12 @@ public class AiReplayService {
     }
 
     private void ensureData(String gameId) {
-        if (playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId).isEmpty()) {
-            log.info("No PlayByPlay data for gameId={}, triggering collection", gameId);
+        boolean hasPbp = !playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId).isEmpty();
+        boolean hasMomentum = !momentumRepository.findByGameIdOrderByEventOrderAsc(gameId).isEmpty();
+
+        if (!hasPbp || !hasMomentum) {
+            log.info("Data incomplete for gameId={} (pbp={}, momentum={}), triggering collection",
+                    gameId, hasPbp, hasMomentum);
             collectorService.collect(gameId);
         }
     }
