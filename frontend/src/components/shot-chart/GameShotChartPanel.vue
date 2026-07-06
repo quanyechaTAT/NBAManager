@@ -135,6 +135,32 @@ const sourceLabel = computed(() => {
 .toolbar-label { font-size: 11px; color: #64748b; font-weight: 600; }
 .shot-source { text-align: center; font-size: 11px; color: #334155; }
 
+/* Segmented filter buttons - 暗色主题 */
+:deep(.el-segmented) {
+  --el-segmented-bg-color: rgba(15, 23, 42, 0.6);
+  --el-segmented-border-color: rgba(148, 163, 184, 0.12);
+  --el-segmented-text-color: #94a3b8;
+  --el-segmented-active-bg-color: var(--accent);
+  --el-segmented-active-text-color: #fff;
+  border-radius: 8px !important;
+  padding: 2px !important;
+}
+:deep(.el-segmented__item) {
+  border-radius: 6px !important;
+  padding: 4px 12px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  transition: all 0.2s ease !important;
+}
+:deep(.el-segmented__item:hover:not(.is-active)) {
+  color: #e2e8f0 !important;
+  background: rgba(148, 163, 184, 0.1) !important;
+}
+:deep(.el-segmented__item.is-active) {
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(232, 93, 38, 0.3) !important;
+}
+
 /* ===== 亮色主题 ===== */
 [data-theme="light"] .game-shot-chart {
   background: rgba(0, 0, 0, 0.015);
@@ -144,6 +170,26 @@ const sourceLabel = computed(() => {
   background: rgba(0, 0, 0, 0.04);
 }
 [data-theme="light"] .toolbar-label { color: #475569; }
+[data-theme="light"] :deep(.el-segmented) {
+  --el-segmented-bg-color: rgba(0, 0, 0, 0.05);
+  --el-segmented-border-color: rgba(0, 0, 0, 0.08);
+  --el-segmented-text-color: #64748b;
+  --el-segmented-active-bg-color: var(--accent);
+  --el-segmented-active-text-color: #fff;
+  background: rgba(0, 0, 0, 0.05) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+[data-theme="light"] :deep(.el-segmented__item) {
+  color: #475569 !important;
+}
+[data-theme="light"] :deep(.el-segmented__item:hover:not(.is-active)) {
+  color: #1e293b !important;
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+[data-theme="light"] :deep(.el-segmented__item.is-active) {
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(232, 93, 38, 0.25) !important;
+}
 
 /* Unavailable */
 .panel-unavailable { text-align: center; padding: 80px 24px; }
