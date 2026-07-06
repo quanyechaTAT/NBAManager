@@ -93,9 +93,7 @@ class PlayByPlayCollectorServiceTest {
         when(providerManager.fetch(eq(gameId), any(PlayByPlayFetchOptions.class))).thenReturn(fetchResult);
         when(syncLogService.startSync(gameId, "NBA_PLAY_BY_PLAY")).thenReturn(syncLog);
 
-        PlayByPlayValidationService.ValidationResult validationResult =
-                new PlayByPlayValidationService.ValidationResult(true, List.of());
-        when(validationService.validate(events)).thenReturn(validationResult);
+        when(validationService.filterValidEvents(events)).thenReturn(events);
 
         List<PlayByPlay> normalizedEntities = List.of(new PlayByPlay(), new PlayByPlay());
         when(normalizeService.normalizeAll(events, gameId, ProviderType.NBA_PLAY_BY_PLAY)).thenReturn(normalizedEntities);
@@ -111,7 +109,7 @@ class PlayByPlayCollectorServiceTest {
         verify(syncLogService).hasSuccessfulSync(gameId);
         verify(providerManager).fetch(eq(gameId), any(PlayByPlayFetchOptions.class));
         verify(syncLogService).startSync(gameId, "NBA_PLAY_BY_PLAY");
-        verify(validationService).validate(events);
+        verify(validationService).filterValidEvents(events);
         verify(normalizeService).normalizeAll(events, gameId, ProviderType.NBA_PLAY_BY_PLAY);
         verify(playByPlayRepository).saveAll(normalizedEntities);
         verify(momentumComputeService).compute(gameId, events);

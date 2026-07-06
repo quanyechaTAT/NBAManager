@@ -12,6 +12,7 @@ import com.nbamanager.repository.GameBoxScoreRepository;
 import com.nbamanager.repository.GameNewsRepository;
 import com.nbamanager.repository.MatchRecordRepository;
 import com.nbamanager.repository.PlayByPlayRepository;
+import com.nbamanager.repository.PlayerRepository;
 import com.nbamanager.web.dto.BoxScoreDto;
 import com.nbamanager.web.dto.QuarterScoreDto;
 import java.time.LocalDate;
@@ -41,6 +42,9 @@ class MatchDetailServiceTest {
     @Mock
     private GameNewsRepository gameNewsRepository;
 
+    @Mock
+    private PlayerRepository playerRepository;
+
     @Test
     void getBoxScore_populatesScoresFromMatchRecord() {
         String gameId = "0022500001";
@@ -63,7 +67,8 @@ class MatchDetailServiceTest {
                 playByPlayRepository,
                 gameIdMappingService,
                 matchRecordRepository,
-                gameNewsRepository);
+                gameNewsRepository,
+                playerRepository);
 
         BoxScoreDto result = service.getBoxScore(gameId);
 
@@ -100,7 +105,8 @@ class MatchDetailServiceTest {
                 playByPlayRepository,
                 gameIdMappingService,
                 matchRecordRepository,
-                gameNewsRepository);
+                gameNewsRepository,
+                playerRepository);
 
         // Play-by-Play全是0:0应该被判定为无效，会尝试fallback到ScoreboardV3
         // 由于Python脚本在测试中不可用，结果可能为空
@@ -149,7 +155,8 @@ class MatchDetailServiceTest {
                 playByPlayRepository,
                 gameIdMappingService,
                 matchRecordRepository,
-                gameNewsRepository);
+                gameNewsRepository,
+                playerRepository);
 
         List<QuarterScoreDto> result = service.getQuarterScores(gameId);
 
@@ -198,7 +205,8 @@ class MatchDetailServiceTest {
                 playByPlayRepository,
                 gameIdMappingService,
                 matchRecordRepository,
-                gameNewsRepository);
+                gameNewsRepository,
+                playerRepository);
 
         List<QuarterScoreDto> result = service.getQuarterScores(gameId);
 
