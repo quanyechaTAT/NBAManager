@@ -32,6 +32,7 @@ public class AiReplayService {
     private final GameBoxScoreRepository boxScoreRepository;
     private final MimoClient mimoClient;
     private final AiGroundingValidator groundingValidator;
+    private final PlayByPlayTranslationService translationService;
 
     public List<TimelineEventDto> getTimeline(String gameId, Integer period) {
         ensureData(gameId);
@@ -41,7 +42,7 @@ public class AiReplayService {
         } else {
             events = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId);
         }
-        return events.stream().map(this::toTimelineDto).collect(Collectors.toList());
+        return toTimelineDtos(events);
     }
 
     public List<MomentumDto> getMomentum(String gameId) {
@@ -52,14 +53,12 @@ public class AiReplayService {
 
     public List<HighlightDto> getHighlights(String gameId) {
         ensureData(gameId);
-        return highlightRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId)
-                .stream().map(this::toHighlightDto).collect(Collectors.toList());
+        return toHighlightDtos(highlightRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId));
     }
 
     public List<TurningPointDto> getTurningPoints(String gameId) {
         ensureData(gameId);
-        return turningPointRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId)
-                .stream().map(this::toTurningPointDto).collect(Collectors.toList());
+        return toTurningPointDtos(turningPointRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId));
     }
 
     public GameSummaryDto getSummary(String gameId) {
@@ -88,7 +87,7 @@ public class AiReplayService {
         // 4. Validate grounding
         List<TimelineEventDto> timeline = getTimeline(gameId, null);
         AiGroundingValidator.ValidationResult validation = groundingValidator.validate(resp.content(), timeline);
-        String content = validation.safeResponse();
+        String content = sanitizeAiText(validation.safeResponse());
 
         // 5. Cache
         AiGameSummary summary = new AiGameSummary();
@@ -113,7 +112,7 @@ public class AiReplayService {
         var cached = explanationRepository.findByGameIdAndEventId(gameId, eventId);
         if (cached.isPresent()) {
             AiReplayExplanation e = cached.get();
-            return new EventExplainDto(gameId, eventId, toTimelineDto(event),
+            return new EventExplainDto(gameId, eventId, toTranslatedTimelineDto(event),
                     e.getExplanation(), e.getCitedEventIdsJson(), e.getCitedStatKeysJson(),
                     e.getModelProvider(), e.getModelName());
         }
@@ -121,7 +120,7 @@ public class AiReplayService {
         // 2. Build facts
         ensureData(gameId);
         List<PlayByPlay> allEvents = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId);
-        List<TimelineEventDto> timeline = allEvents.stream().map(this::toTimelineDto).collect(Collectors.toList());
+        List<TimelineEventDto> timeline = toTimelineDtos(allEvents);
 
         int idx = -1;
         for (int i = 0; i < allEvents.size(); i++) {
@@ -131,11 +130,12 @@ public class AiReplayService {
             }
         }
 
-        String eventJson = toTimelineDto(event).toString();
+        String eventJson = toTimelineDto(event, translationService.translateText(event.getDescription())).toString();
         int from = Math.max(0, idx - 5);
         int to = Math.min(allEvents.size(), idx + 6);
-        String contextJson = allEvents.subList(from, to).stream()
-                .map(e -> toTimelineDto(e).toString())
+        List<TimelineEventDto> contextDtos = toTimelineDtos(allEvents.subList(from, to));
+        String contextJson = contextDtos.stream()
+                .map(TimelineEventDto::toString)
                 .collect(Collectors.joining("\n"));
 
         // 3. Call Mimo
@@ -144,13 +144,13 @@ public class AiReplayService {
 
         if (!resp.success()) {
             log.warn("Mimo explain failed for eventId={}: {}", eventId, resp.error());
-            return new EventExplainDto(gameId, eventId, toTimelineDto(event),
+            return new EventExplainDto(gameId, eventId, toTranslatedTimelineDto(event),
                     null, null, null, resp.model(), null);
         }
 
         // 4. Validate grounding
         AiGroundingValidator.ValidationResult validation = groundingValidator.validate(resp.content(), timeline);
-        String explanation = validation.safeResponse();
+        String explanation = sanitizeAiText(validation.safeResponse());
 
         // 5. Cache
         AiReplayExplanation explanationEntity = new AiReplayExplanation();
@@ -164,22 +164,26 @@ public class AiReplayService {
         explanationEntity.setCreatedAt(LocalDateTime.now());
         explanationRepository.save(explanationEntity);
 
-        return new EventExplainDto(gameId, eventId, toTimelineDto(event),
+        return new EventExplainDto(gameId, eventId, toTranslatedTimelineDto(event),
                 explanation, null, null, "mimo", resp.model());
     }
 
     private String buildGameFactsJson(String gameId) {
         // Timeline events
         List<PlayByPlay> events = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId);
+        List<String> translatedDescriptions = translationService.translateTexts(
+                events.stream().map(PlayByPlay::getDescription).collect(Collectors.toList())
+        );
         JSONArray eventsArr = new JSONArray();
-        for (PlayByPlay e : events) {
+        for (int i = 0; i < events.size(); i++) {
+            PlayByPlay e = events.get(i);
             JSONObject obj = new JSONObject();
             obj.put("period", e.getPeriod());
             obj.put("clock", e.getGameClock());
             obj.put("type", e.getEventType());
             obj.put("player", e.getPlayerName());
             obj.put("team", e.getTeamName());
-            obj.put("desc", e.getDescription());
+            obj.put("desc", translatedDescriptions.get(i));
             obj.put("homeScore", e.getHomeScore());
             obj.put("awayScore", e.getAwayScore());
             eventsArr.put(obj);
@@ -216,6 +220,21 @@ public class AiReplayService {
         }
     }
 
+    private String sanitizeAiText(String text) {
+        if (text == null) return null;
+        // Remove code fences
+        text = text.replaceAll("```\\w*\\n?", "").replaceAll("```", "");
+        // Remove bold/italic markers
+        text = text.replaceAll("\\*\\*(.+?)\\*\\*", "$1").replaceAll("\\*(.+?)\\*", "$1");
+        // Remove line-start list markers (* / - / bullet followed by space)
+        text = text.replaceAll("(?m)^\\s*[*\\-•]\\s+", "");
+        // Remove heading markers
+        text = text.replaceAll("(?m)^#{1,6}\\s*", "");
+        // Collapse multiple blank lines
+        text = text.replaceAll("\\n{3,}", "\n\n");
+        return text.trim();
+    }
+
     private void ensureData(String gameId) {
         boolean hasPbp = !playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId).isEmpty();
         boolean hasMomentum = !momentumRepository.findByGameIdOrderByEventOrderAsc(gameId).isEmpty();
@@ -227,10 +246,22 @@ public class AiReplayService {
         }
     }
 
-    private TimelineEventDto toTimelineDto(PlayByPlay p) {
+    private List<TimelineEventDto> toTimelineDtos(List<PlayByPlay> events) {
+        List<String> descriptions = translationService.translateTexts(
+                events.stream().map(PlayByPlay::getDescription).collect(Collectors.toList())
+        );
+        List<TimelineEventDto> result = new java.util.ArrayList<>(events.size());
+        for (int i = 0; i < events.size(); i++) {
+            result.add(toTimelineDto(events.get(i), descriptions.get(i)));
+        }
+        return result;
+    }
+
+    private TimelineEventDto toTimelineDto(PlayByPlay p, String description) {
+        String original = p.getDescription();
         return new TimelineEventDto(
                 p.getId(), p.getPeriod(), p.getGameClock(), p.getEventType(),
-                p.getActionType(), p.getDescription(), p.getPlayerName(),
+                p.getActionType(), description, original, description, p.getPlayerName(),
                 p.getPlayerId(), p.getTeamName(), p.getTeamId(),
                 p.getHomeScore(), p.getAwayScore(), p.getScoreMargin(),
                 p.getIsScoringPlay(), p.getIsHighlightCandidate(),
@@ -238,20 +269,46 @@ public class AiReplayService {
         );
     }
 
+    private TimelineEventDto toTranslatedTimelineDto(PlayByPlay p) {
+        return toTimelineDto(p, translationService.translateText(p.getDescription()));
+    }
+
     private MomentumDto toMomentumDto(GameMomentumSnapshot m) {
         return new MomentumDto(m.getId(), m.getEventOrder(), m.getPeriod(),
                 m.getGameClock(), m.getHomeScore(), m.getAwayScore(), m.getScoreMargin());
     }
 
-    private HighlightDto toHighlightDto(GameHighlight h) {
-        return new HighlightDto(h.getId(), h.getPeriod(), h.getGameClock(),
-                h.getHighlightType(), h.getTitle(), h.getDescription(),
-                h.getPlayerId(), h.getTeamId(), h.getScoreAfter());
+    private List<HighlightDto> toHighlightDtos(List<GameHighlight> highlights) {
+        List<String> titleTranslations = translationService.translateTexts(
+                highlights.stream().map(GameHighlight::getTitle).collect(Collectors.toList())
+        );
+        List<String> descriptionTranslations = translationService.translateTexts(
+                highlights.stream().map(GameHighlight::getDescription).collect(Collectors.toList())
+        );
+        List<HighlightDto> result = new java.util.ArrayList<>(highlights.size());
+        for (int i = 0; i < highlights.size(); i++) {
+            GameHighlight h = highlights.get(i);
+            result.add(new HighlightDto(h.getId(), h.getPeriod(), h.getGameClock(),
+                    h.getHighlightType(), titleTranslations.get(i), descriptionTranslations.get(i),
+                    h.getPlayerId(), h.getTeamId(), h.getScoreAfter()));
+        }
+        return result;
     }
 
-    private TurningPointDto toTurningPointDto(GameTurningPoint t) {
-        return new TurningPointDto(t.getId(), t.getPeriod(), t.getGameClock(),
-                t.getType(), t.getConfidence(), t.getFactualReason(),
-                t.getAiExplanation(), t.getCitedEventIdsJson());
+    private List<TurningPointDto> toTurningPointDtos(List<GameTurningPoint> points) {
+        List<String> reasonTranslations = translationService.translateTexts(
+                points.stream().map(GameTurningPoint::getFactualReason).collect(Collectors.toList())
+        );
+        List<String> explanationTranslations = translationService.translateTexts(
+                points.stream().map(GameTurningPoint::getAiExplanation).collect(Collectors.toList())
+        );
+        List<TurningPointDto> result = new java.util.ArrayList<>(points.size());
+        for (int i = 0; i < points.size(); i++) {
+            GameTurningPoint t = points.get(i);
+            result.add(new TurningPointDto(t.getId(), t.getPeriod(), t.getGameClock(),
+                    t.getType(), t.getConfidence(), reasonTranslations.get(i),
+                    explanationTranslations.get(i), t.getCitedEventIdsJson()));
+        }
+        return result;
     }
 }

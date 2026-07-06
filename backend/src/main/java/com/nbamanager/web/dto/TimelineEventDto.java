@@ -7,6 +7,8 @@ public record TimelineEventDto(
         String eventType,
         String actionType,
         String description,
+        String descriptionEn,
+        String descriptionCn,
         String playerName,
         Long playerId,
         String teamName,
