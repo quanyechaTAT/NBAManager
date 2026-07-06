@@ -58,4 +58,15 @@ function pctColor(pct: number, att: number) {
 .c-yellow { color: #FFC107; }
 .c-red { color: #FF5252; }
 .c-dim { color: #334155; }
+
+/* ===== 亮色主题 ===== */
+[data-theme="light"] .zone-panel {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .zone-name { color: #475569; }
+[data-theme="light"] .zone-bar-wrap { background: rgba(0, 0, 0, 0.06); }
+[data-theme="light"] .bar-empty { background: rgba(0, 0, 0, 0.06); }
+[data-theme="light"] .zone-stat { color: #475569; }
+[data-theme="light"] .c-dim { color: #64748b; }
 </style>

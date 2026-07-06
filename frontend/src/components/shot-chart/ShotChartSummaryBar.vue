@@ -72,4 +72,16 @@ function ringDash(pct: string) {
 .stat-total { font-size: 18px; font-weight: 600; color: #64748b; font-variant-numeric: tabular-nums; }
 .summary-vs { font-size: 13px; font-weight: 800; color: #334155; letter-spacing: 3px; }
 @media (max-width: 600px) { .summary-bar { gap: 20px; padding: 14px 16px; } .stat-made { font-size: 20px; } .stat-total { font-size: 14px; } .side-ring { width: 40px; height: 40px; } }
+
+/* ===== 亮色主题 ===== */
+[data-theme="light"] .summary-bar {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .side-label { color: #475569; }
+[data-theme="light"] .ring-text { color: #1e293b; }
+[data-theme="light"] .stat-made { color: #0f172a; }
+[data-theme="light"] .stat-sep { color: #94a3b8; }
+[data-theme="light"] .stat-total { color: #475569; }
+[data-theme="light"] .summary-vs { color: #64748b; }
 </style>

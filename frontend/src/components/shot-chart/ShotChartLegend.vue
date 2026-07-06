@@ -34,4 +34,13 @@ defineProps<{ total: number }>()
 .dot-missed { background: #FF5252; box-shadow: 0 0 6px rgba(255,82,82,0.4); }
 .legend-label { font-size: 12px; color: #94a3b8; }
 .legend-total { font-size: 11px; color: #475569; }
+
+/* ===== 亮色主题 ===== */
+[data-theme="light"] .legend-panel {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .legend-title { color: #475569; }
+[data-theme="light"] .legend-label { color: #475569; }
+[data-theme="light"] .legend-total { color: #64748b; }
 </style>

@@ -135,6 +135,16 @@ const sourceLabel = computed(() => {
 .toolbar-label { font-size: 11px; color: #64748b; font-weight: 600; }
 .shot-source { text-align: center; font-size: 11px; color: #334155; }
 
+/* ===== 亮色主题 ===== */
+[data-theme="light"] .game-shot-chart {
+  background: rgba(0, 0, 0, 0.015);
+  border-color: rgba(0, 0, 0, 0.06);
+}
+[data-theme="light"] .shot-toolbar {
+  background: rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .toolbar-label { color: #475569; }
+
 /* Unavailable */
 .panel-unavailable { text-align: center; padding: 80px 24px; }
 .unavail-icon { font-size: 36px; margin-bottom: 14px; opacity: 0.35; }
