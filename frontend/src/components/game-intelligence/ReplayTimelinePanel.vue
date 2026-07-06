@@ -35,8 +35,8 @@ const typeOptions = [
 ]
 
 function mapEventType(event: TimelineEvent): string {
-  const t = event.eventType.toLowerCase()
-  const a = event.actionType.toLowerCase()
+  const t = (event.eventType || '').toLowerCase()
+  const a = (event.actionType || '').toLowerCase()
   if (event.isScoringPlay || t.includes('score') || a.includes('score') || a.includes('made') || a.includes('dunk') || a.includes('layup') || a.includes('jump') || a.includes('free throw')) return 'scoring'
   if (t.includes('turnover') || a.includes('turnover') || a.includes('lost') || a.includes('bad pass')) return 'turnover'
   if (t.includes('timeout') || a.includes('timeout')) return 'timeout'
@@ -66,9 +66,9 @@ const filteredEvents = computed(() => {
   if (searchQuery.value.trim()) {
     const q = searchQuery.value.trim().toLowerCase()
     result = result.filter(e =>
-      e.playerName.toLowerCase().includes(q) ||
-      e.description.toLowerCase().includes(q) ||
-      e.teamName.toLowerCase().includes(q)
+      (e.playerName || '').toLowerCase().includes(q) ||
+      (e.description || '').toLowerCase().includes(q) ||
+      (e.teamName || '').toLowerCase().includes(q)
     )
   }
 

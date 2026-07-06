@@ -123,6 +123,23 @@
   --playoff-card-hover: #1E293B;
   --playoff-win-bg: rgba(234, 179, 8, 0.08);
   --playoff-score-bg: #1E293B;
+
+  /* ── Game Intelligence 主题色 ── */
+  --gi-bg: #0B1120;
+  --gi-surface: rgba(15, 23, 42, 0.86);
+  --gi-surface-strong: #111827;
+  --gi-border: rgba(255, 255, 255, 0.08);
+  --gi-text: #F8FAFC;
+  --gi-muted: #94A3B8;
+  --gi-home: #3B82F6;
+  --gi-away: #F97316;
+  --gi-success: #10B981;
+  --gi-danger: #EF4444;
+  --gi-warning: #F59E0B;
+  --gi-purple: #8B5CF6;
+  --gi-cyan: #06B6D4;
+  --gi-grid: rgba(255, 255, 255, 0.04);
+  --gi-glow: rgba(59, 130, 246, 0.15);
 }
 
 /* ===== 浅色主题：赛场白 ===== */
@@ -185,6 +202,23 @@
   --green-dim: rgba(22, 163, 74, 0.06);
   --warning-glow: rgba(217, 119, 6, 0.1);
   --danger-glow: rgba(220, 38, 38, 0.1);
+
+  /* ── Game Intelligence 主题色 ── */
+  --gi-bg: #F8FAFC;
+  --gi-surface: #FFFFFF;
+  --gi-surface-strong: #FFFFFF;
+  --gi-border: #E5E7EB;
+  --gi-text: #0F172A;
+  --gi-muted: #64748B;
+  --gi-home: #2563EB;
+  --gi-away: #EA580C;
+  --gi-success: #059669;
+  --gi-danger: #DC2626;
+  --gi-warning: #D97706;
+  --gi-purple: #7C3AED;
+  --gi-cyan: #0891B2;
+  --gi-grid: rgba(0, 0, 0, 0.06);
+  --gi-glow: rgba(37, 99, 235, 0.1);
 
   /* ── 文字 ── */
   --text-primary: #0F172A;
