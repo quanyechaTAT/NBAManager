@@ -193,35 +193,23 @@
         </el-tab-pane>
 
         <el-tab-pane label="比赛回放" name="playbyplay">
-          <div class="section-header">
-            <div class="section-header-left">
-              <h2>比赛回放</h2>
-            </div>
-          </div>
           <div v-if="replayLoading" class="loading-state">加载中...</div>
-          <div v-else class="replay-container">
-            <div class="replay-summary">
-              <MomentumChart :data="momentumData" @point-click="handleMomentumClick" />
-            </div>
-            <div class="replay-main">
-              <div class="replay-left">
-                <ReplayTimeline :events="timelineEvents" :selected-event="selectedTimelineEvent" @select="selectedTimelineEvent = $event" />
-              </div>
-              <div class="replay-right" v-if="selectedTimelineEvent">
-                <div class="event-detail-panel">
-                  <h4>事件详情</h4>
-                  <div class="detail-row"><span>时间：</span>Q{{ selectedTimelineEvent.period }} {{ selectedTimelineEvent.gameClock }}</div>
-                  <div class="detail-row"><span>比分：</span>{{ selectedTimelineEvent.homeScore }}-{{ selectedTimelineEvent.awayScore }}</div>
-                  <div class="detail-row"><span>描述：</span>{{ selectedTimelineEvent.description }}</div>
-                  <div v-if="selectedTimelineEvent.playerName" class="detail-row"><span>球员：</span>{{ selectedTimelineEvent.playerName }}</div>
-                </div>
-              </div>
-            </div>
-            <div class="replay-bottom">
-              <HighlightCards :highlights="highlightsData" />
-              <TurningPointList :points="turningPointsData" />
-            </div>
-          </div>
+          <GameIntelligenceCenter
+            v-else
+            :game-id="gameId"
+            :home-team="queryHomeTeam || boxScore?.homeTeam || ''"
+            :away-team="queryAwayTeam || boxScore?.awayTeam || ''"
+            :timeline-events="timelineEvents"
+            :momentum-data="momentumData"
+            :highlights="highlightsData"
+            :turning-points="turningPointsData"
+            :summary="gameSummary"
+            :comparison-items="comparisonItems"
+            :home-players="sortedHomePlayers"
+            :away-players="sortedAwayPlayers"
+            :selected-event="selectedTimelineEvent"
+            @select-event="selectedTimelineEvent = $event"
+          />
         </el-tab-pane>
 
         <el-tab-pane label="实时聊天" name="livechat">
@@ -305,7 +293,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fetchBoxScore, fetchQuarterScores, fetchPlayByPlay } from '@/api/matchDetail'
-import { fetchTimeline, fetchMomentum, fetchHighlights, fetchTurningPoints } from '@/api/aiReplay'
+import { fetchTimeline, fetchMomentum, fetchHighlights, fetchTurningPoints, fetchGameSummary } from '@/api/aiReplay'
 import { getGameShotChart } from '@/api/shotChart'
 import { fetchGameComments, createComment, deleteComment, toggleCommentLike } from '@/api/community'
 import EmojiPicker from '@/components/EmojiPicker.vue'
@@ -313,10 +301,7 @@ import { useEmojiPicker } from '@/composables/useEmojiPicker'
 import ShotChart from '@/components/ShotChart.vue'
 import GameShotChartPanel from '@/components/shot-chart/GameShotChartPanel.vue'
 import LiveChat from '@/components/LiveChat.vue'
-import ReplayTimeline from '@/components/replay/ReplayTimeline.vue'
-import MomentumChart from '@/components/replay/MomentumChart.vue'
-import HighlightCards from '@/components/replay/HighlightCards.vue'
-import TurningPointList from '@/components/replay/TurningPointList.vue'
+import GameIntelligenceCenter from '@/components/game-intelligence/GameIntelligenceCenter.vue'
 import type { BoxScore, BoxScorePlayer, QuarterScore, TimelineEvent, MomentumSnapshot, Highlight, TurningPoint, ShotData } from '@/api/types'
 import type { Comment } from '@/api/community'
 import { getTeamLogo } from '@/utils/teamLogos'
@@ -526,19 +511,23 @@ async function loadPlayByPlay() {
   }
 }
 
+const gameSummary = ref<any>(null)
+
 async function loadReplayData(gameIdStr: string) {
   replayLoading.value = true
   try {
-    const [timeline, momentum, highlights, turningPoints] = await Promise.all([
+    const [timeline, momentum, highlights, turningPoints, summary] = await Promise.all([
       fetchTimeline(gameIdStr).catch(() => []),
       fetchMomentum(gameIdStr).catch(() => []),
       fetchHighlights(gameIdStr).catch(() => []),
-      fetchTurningPoints(gameIdStr).catch(() => [])
+      fetchTurningPoints(gameIdStr).catch(() => []),
+      fetchGameSummary(gameIdStr).catch(() => null)
     ])
     timelineEvents.value = timeline
     momentumData.value = momentum
     highlightsData.value = highlights
     turningPointsData.value = turningPoints
+    gameSummary.value = summary
   } finally {
     replayLoading.value = false
   }
@@ -1244,18 +1233,13 @@ onMounted(async () => {
   font-size: 14px;
 }
 
-/* AI Replay layout */
-.replay-container { display: flex; flex-direction: column; gap: 24px; }
-.replay-main { display: grid; grid-template-columns: 1fr 350px; gap: 16px; }
-.replay-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.event-detail-panel { padding: 16px; border-radius: 10px; background: var(--el-bg-color-page); border: 1px solid var(--el-border-color-lighter); position: sticky; top: 16px; }
-.event-detail-panel h4 { margin-bottom: 12px; color: var(--el-text-color-primary); }
-.detail-row { margin-bottom: 8px; color: var(--el-text-color-regular); }
-.detail-row span { color: var(--el-text-color-secondary); }
-.loading-state { text-align: center; padding: 60px; color: var(--el-text-color-secondary); }
-@media (max-width: 768px) {
-  .replay-main { grid-template-columns: 1fr; }
-  .replay-bottom { grid-template-columns: 1fr; }
+.loading-state {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #94a3b8;
+  padding: 60px;
+  text-align: center;
 }
 
 /* 投篮图 */
