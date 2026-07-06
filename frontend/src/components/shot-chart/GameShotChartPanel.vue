@@ -163,32 +163,36 @@ const sourceLabel = computed(() => {
 
 /* ===== 亮色主题 ===== */
 [data-theme="light"] .game-shot-chart {
-  background: rgba(0, 0, 0, 0.015);
-  border-color: rgba(0, 0, 0, 0.06);
+  background: #fff;
+  border-color: #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
+[data-theme="light"] .header-title { color: #0f172a; }
+[data-theme="light"] .header-sub { color: #64748b; }
 [data-theme="light"] .shot-toolbar {
-  background: rgba(0, 0, 0, 0.04);
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
 }
-[data-theme="light"] .toolbar-label { color: #475569; }
+[data-theme="light"] .toolbar-label { color: #334155; font-weight: 700; }
+[data-theme="light"] .shot-source { color: #64748b; }
 [data-theme="light"] :deep(.el-segmented) {
-  --el-segmented-bg-color: rgba(0, 0, 0, 0.05);
-  --el-segmented-border-color: rgba(0, 0, 0, 0.08);
-  --el-segmented-text-color: #64748b;
-  --el-segmented-active-bg-color: var(--accent);
-  --el-segmented-active-text-color: #fff;
-  background: rgba(0, 0, 0, 0.05) !important;
-  border-color: rgba(0, 0, 0, 0.08) !important;
+  background: #fff !important;
+  border: 1px solid #d1d5db !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  padding: 3px !important;
 }
 [data-theme="light"] :deep(.el-segmented__item) {
-  color: #475569 !important;
+  color: #374151 !important;
+  font-weight: 600 !important;
 }
 [data-theme="light"] :deep(.el-segmented__item:hover:not(.is-active)) {
-  color: #1e293b !important;
-  background: rgba(0, 0, 0, 0.06) !important;
+  color: #111827 !important;
+  background: #f3f4f6 !important;
 }
 [data-theme="light"] :deep(.el-segmented__item.is-active) {
   color: #fff !important;
-  box-shadow: 0 2px 8px rgba(232, 93, 38, 0.25) !important;
+  background: var(--accent) !important;
+  box-shadow: 0 1px 3px rgba(232, 93, 38, 0.3) !important;
 }
 
 /* Unavailable */
