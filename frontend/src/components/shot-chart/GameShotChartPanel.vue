@@ -131,54 +131,89 @@ const sourceLabel = computed(() => {
 .shot-sidebar { display: flex; flex-direction: column; gap: 14px; width: 340px; }
 
 /* Toolbar */
-.shot-toolbar { display: flex; align-items: center; gap: 10px; justify-content: center; padding: 8px 12px; background: rgba(17,24,39,0.4); border-radius: 10px; }
+.shot-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+  padding: 8px 12px;
+  border: 1px solid rgba(96, 165, 250, 0.12);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.5), rgba(15, 23, 42, 0.2)),
+    rgba(59, 130, 246, 0.04);
+}
 .toolbar-label { font-size: 11px; color: #64748b; font-weight: 600; }
 .shot-source { text-align: center; font-size: 11px; color: #334155; }
 
 /* Segmented filter buttons - 暗色主题 */
 :deep(.el-segmented) {
-  --el-segmented-bg-color: rgba(15, 23, 42, 0.6);
-  --el-segmented-border-color: rgba(148, 163, 184, 0.12);
-  --el-segmented-text-color: #94a3b8;
-  --el-segmented-active-bg-color: var(--accent);
+  --el-segmented-bg-color: transparent;
+  --el-segmented-border-color: transparent;
+  --el-segmented-text-color: #9fb0c7;
+  --el-segmented-active-bg-color: transparent;
   --el-segmented-active-text-color: #fff;
-  border-radius: 8px !important;
-  padding: 2px !important;
+  padding: 3px !important;
+  border: 1px solid rgba(96, 165, 250, 0.18) !important;
+  border-radius: 12px !important;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.5), rgba(15, 23, 42, 0.22)),
+    rgba(59, 130, 246, 0.05) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  backdrop-filter: blur(10px);
 }
 :deep(.el-segmented__item) {
-  border-radius: 6px !important;
-  padding: 4px 12px !important;
+  min-height: 32px !important;
+  border-radius: 9px !important;
+  padding: 5px 13px !important;
+  color: #9fb0c7 !important;
   font-size: 12px !important;
-  font-weight: 600 !important;
-  transition: all 0.2s ease !important;
+  font-weight: 800 !important;
+  transition: color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease !important;
+}
+:deep(.el-segmented__item-label) {
+  position: relative;
+  z-index: 1;
+  line-height: 1 !important;
+}
+:deep(.el-segmented__item-selected) {
+  border-radius: 9px !important;
+  background:
+    linear-gradient(135deg, rgba(59, 162, 255, 0.96), rgba(37, 99, 235, 0.92)) !important;
+  box-shadow:
+    0 8px 18px rgba(37, 99, 235, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
 }
 :deep(.el-segmented__item:hover:not(.is-active)) {
-  color: #e2e8f0 !important;
-  background: rgba(148, 163, 184, 0.1) !important;
+  color: #dbeafe !important;
+  background: rgba(96, 165, 250, 0.1) !important;
 }
 :deep(.el-segmented__item.is-active) {
   color: #fff !important;
-  box-shadow: 0 2px 8px rgba(232, 93, 38, 0.3) !important;
+  transform: translateY(-1px);
 }
+
 
 /* ===== 亮色主题 ===== */
 [data-theme="light"] .game-shot-chart {
-  background: #fff;
-  border-color: #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
 }
 [data-theme="light"] .header-title { color: #0f172a; }
 [data-theme="light"] .header-sub { color: #64748b; }
 [data-theme="light"] .shot-toolbar {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: none !important;
 }
 [data-theme="light"] .toolbar-label { color: #334155; font-weight: 700; }
 [data-theme="light"] .shot-source { color: #64748b; }
 [data-theme="light"] :deep(.el-segmented) {
-  background: #fff !important;
+  background: #ffffff !important;
   border: 1px solid #d1d5db !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: none !important;
+  backdrop-filter: none !important;
   padding: 3px !important;
 }
 [data-theme="light"] :deep(.el-segmented__item) {
@@ -189,9 +224,10 @@ const sourceLabel = computed(() => {
   color: #111827 !important;
   background: #f3f4f6 !important;
 }
+[data-theme="light"] :deep(.el-segmented__item-selected),
 [data-theme="light"] :deep(.el-segmented__item.is-active) {
-  color: #fff !important;
   background: var(--accent) !important;
+  color: #fff !important;
   box-shadow: 0 1px 3px rgba(232, 93, 38, 0.3) !important;
 }
 
