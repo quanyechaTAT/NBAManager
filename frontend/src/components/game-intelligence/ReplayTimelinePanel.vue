@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import type { TimelineEvent } from '@/api/types'
+import { getTimelineDescription } from '@/utils/replayText'
 
 const props = defineProps<{
   events: TimelineEvent[]
@@ -68,6 +69,8 @@ const filteredEvents = computed(() => {
     result = result.filter(e =>
       (e.playerName || '').toLowerCase().includes(q) ||
       (e.description || '').toLowerCase().includes(q) ||
+      ((e as any).descriptionEn || '').toLowerCase().includes(q) ||
+      ((e as any).descriptionCn || '').toLowerCase().includes(q) ||
       (e.teamName || '').toLowerCase().includes(q)
     )
   }
@@ -195,7 +198,7 @@ function onSelect(event: TimelineEvent) {
             <span v-if="event.teamName" class="team-tag">{{ event.teamName }}</span>
           </div>
 
-          <div class="card-desc">{{ event.description }}</div>
+          <div class="card-desc">{{ getTimelineDescription(event) }}</div>
         </div>
       </div>
     </div>

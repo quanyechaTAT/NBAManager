@@ -29,7 +29,7 @@
         <!-- avatar -->
         <div class="avatar" :class="teamSide(player.teamName)">
           <template v-if="playerAvatarUrl(player)">
-            <img :src="playerAvatarUrl(player)" :alt="player.playerName" />
+            <img :src="playerAvatarUrl(player)!" :alt="player.playerName" loading="lazy" @error="onAvatarError(player)" />
           </template>
           <template v-else>
             <span class="avatar-initials">{{ initials(player.playerName) }}</span>
@@ -142,6 +142,7 @@ const props = defineProps<{
 
 const router = useRouter()
 const hoveredId = ref<number | null>(null)
+const brokenAvatarIds = ref<Set<number>>(new Set())
 
 /** Combined player list with performance score, sorted descending, top 10 */
 const topPlayers = computed(() => {
@@ -183,8 +184,15 @@ function rankTier(idx: number): string {
 }
 
 function playerAvatarUrl(player: BoxScorePlayer): string | null {
-  // Placeholder: return null for now (no avatar URL in BoxScorePlayer)
-  return null
+  if (!player.nbaPlayerId) return null
+  if (brokenAvatarIds.value.has(player.nbaPlayerId)) return null
+  return `https://cdn.nba.com/headshots/nba/latest/260x190/${player.nbaPlayerId}.png`
+}
+
+function onAvatarError(player: BoxScorePlayer) {
+  if (player.nbaPlayerId) {
+    brokenAvatarIds.value = new Set([...brokenAvatarIds.value, player.nbaPlayerId])
+  }
 }
 
 function goToPlayer(player: BoxScorePlayer) {
