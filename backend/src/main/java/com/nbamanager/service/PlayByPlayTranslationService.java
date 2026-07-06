@@ -32,6 +32,8 @@ public class PlayByPlayTranslationService {
     private final PlayerRepository playerRepository;
     private final Map<String, String> cache = new ConcurrentHashMap<>();
     private Map<String, String> playerNameMap = new ConcurrentHashMap<>();
+    private volatile int consecutiveMimoFailures = 0;
+    private static final int MAX_CONSECUTIVE_FAILURES = 1;
 
     @PostConstruct
     public void init() {
@@ -105,20 +107,29 @@ public class PlayByPlayTranslationService {
             int end = Math.min(start + MAX_BATCH_SIZE, pendingTexts.size());
             List<String> batch = pendingTexts.subList(start, end);
 
+            // 如果 Mimo 连续失败，直接用 fallback
+            if (consecutiveMimoFailures >= MAX_CONSECUTIVE_FAILURES) {
+                batch.forEach(text -> cache.putIfAbsent(text, fallbackTranslate(text)));
+                continue;
+            }
+
             MimoClient.ChatResponse response = mimoClient.chat(buildSystemPrompt(), buildUserPrompt(batch));
             if (!response.success()) {
-                log.warn("Mimo play-by-play translation failed: {}", response.error());
+                log.warn("Mimo translation failed: {}", response.error());
+                consecutiveMimoFailures++;
                 batch.forEach(text -> cache.putIfAbsent(text, fallbackTranslate(text)));
                 continue;
             }
 
             List<String> translated = parseJsonArray(response.content(), batch.size());
             if (translated == null) {
-                log.warn("Mimo play-by-play translation returned invalid JSON: {}", response.content());
+                log.warn("Mimo translation returned invalid JSON");
+                consecutiveMimoFailures++;
                 batch.forEach(text -> cache.putIfAbsent(text, fallbackTranslate(text)));
                 continue;
             }
 
+            consecutiveMimoFailures = 0;
             for (int i = 0; i < batch.size(); i++) {
                 String translatedText = translated.get(i);
                 if (translatedText == null || translatedText.isBlank()) {
@@ -231,17 +242,43 @@ public class PlayByPlayTranslationService {
         return translated;
     }
 
+    private volatile Pattern playerNamePattern;
+    private volatile Map<String, String> sortedPlayerNames;
+
     private String translatePlayerNames(String text) {
         if (playerNameMap.isEmpty()) return text;
-        // 按名字长度降序排序，避免短名误匹配
-        List<Map.Entry<String, String>> sorted = playerNameMap.entrySet().stream()
-                .sorted((a, b) -> Integer.compare(b.getKey().length(), a.getKey().length()))
-                .toList();
-        String result = text;
-        for (Map.Entry<String, String> entry : sorted) {
-            result = result.replace(entry.getKey(), entry.getValue());
+        // 懒编译正则：只在 playerNameMap 变化时重建
+        if (playerNamePattern == null || sortedPlayerNames == null) {
+            buildPlayerNamePattern();
         }
-        return result;
+        if (playerNamePattern == null) return text;
+
+        Matcher matcher = playerNamePattern.matcher(text);
+        StringBuilder sb = new StringBuilder();
+        while (matcher.find()) {
+            String match = matcher.group();
+            String cn = sortedPlayerNames.get(match);
+            if (cn != null) {
+                matcher.appendReplacement(sb, Matcher.quoteReplacement(cn));
+            }
+        }
+        matcher.appendTail(sb);
+        return sb.toString();
+    }
+
+    private synchronized void buildPlayerNamePattern() {
+        if (playerNamePattern != null) return;
+        // 按长度降序排列，避免短名误匹配
+        sortedPlayerNames = playerNameMap.entrySet().stream()
+                .sorted((a, b) -> Integer.compare(b.getKey().length(), a.getKey().length()))
+                .collect(java.util.stream.Collectors.toMap(
+                        Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a, java.util.LinkedHashMap::new));
+        String regex = sortedPlayerNames.keySet().stream()
+                .map(Pattern::quote)
+                .collect(java.util.stream.Collectors.joining("|"));
+        if (!regex.isEmpty()) {
+            playerNamePattern = Pattern.compile(regex);
+        }
     }
 
     private String translatePlayerName(String name) {
