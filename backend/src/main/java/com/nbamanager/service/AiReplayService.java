@@ -259,9 +259,10 @@ public class AiReplayService {
 
     private TimelineEventDto toTimelineDto(PlayByPlay p, String description) {
         String original = p.getDescription();
+        String translatedPlayerName = translationService.translateText(p.getPlayerName());
         return new TimelineEventDto(
                 p.getId(), p.getPeriod(), p.getGameClock(), p.getEventType(),
-                p.getActionType(), description, original, description, p.getPlayerName(),
+                p.getActionType(), description, original, description, translatedPlayerName,
                 p.getPlayerId(), p.getTeamName(), p.getTeamId(),
                 p.getHomeScore(), p.getAwayScore(), p.getScoreMargin(),
                 p.getIsScoringPlay(), p.getIsHighlightCandidate(),
