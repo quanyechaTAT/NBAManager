@@ -13,7 +13,7 @@
 
     <!-- Body: summary content -->
     <div class="ai-body">
-      <p v-if="summary?.content" class="summary-text">{{ summary.content }}</p>
+      <p v-if="displaySummary" class="summary-text">{{ displaySummary }}</p>
       <p v-else class="summary-empty">AI 总结暂不可用</p>
     </div>
 
@@ -77,6 +77,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { GameSummary, TurningPoint, Highlight } from '@/api/types'
+import { displayAiText } from '@/utils/replayText'
 
 interface ComparisonItem {
   label: string
@@ -93,6 +94,8 @@ const props = defineProps<{
   homeTeam: string
   awayTeam: string
 }>()
+
+const displaySummary = computed(() => displayAiText(props.summary?.content))
 
 /** First turning point or null */
 const firstTurningPoint = computed(() => {

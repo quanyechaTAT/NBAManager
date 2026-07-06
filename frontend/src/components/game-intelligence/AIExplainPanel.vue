@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue'
 import type { TimelineEvent, MomentumSnapshot, EventExplain } from '@/api/types'
 import { explainEvent } from '@/api/aiReplay'
+import { getTimelineDescription, displayAiText } from '@/utils/replayText'
 
 const props = defineProps<{
   gameId: string
@@ -101,7 +102,7 @@ function formatScore(home: number, away: number): string {
 
         <div class="facts-player">{{ selectedEvent.playerName }}</div>
         <div v-if="selectedEvent.teamName" class="facts-team">{{ selectedEvent.teamName }}</div>
-        <div class="facts-desc">{{ selectedEvent.description }}</div>
+        <div class="facts-desc">{{ getTimelineDescription(selectedEvent) }}</div>
       </div>
 
       <div class="explain-divider" />
@@ -116,7 +117,7 @@ function formatScore(home: number, away: number): string {
         </div>
 
         <p v-if="currentExplain?.explanation" class="ai-text">
-          {{ currentExplain.explanation }}
+          {{ displayAiText(currentExplain?.explanation) }}
         </p>
         <p v-else class="ai-unavailable">AI 解说暂不可用</p>
 
