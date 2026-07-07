@@ -111,6 +111,8 @@ public class SecurityConfig {
                                 .permitAll()
                                 .requestMatchers(HttpMethod.GET, "/api/ai-replay/**")
                                 .permitAll()
+                                .requestMatchers(HttpMethod.POST, "/api/ai-replay/**")
+                                .permitAll()
                                 .requestMatchers(HttpMethod.POST, "/api/nba/playoff/sync")
                                 .permitAll()
                                 .requestMatchers(HttpMethod.GET, "/api/rag/**")

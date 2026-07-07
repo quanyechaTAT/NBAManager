@@ -140,25 +140,29 @@ public class AiReplayService {
                 .collect(Collectors.joining("\n"));
 
         // 3. Call Mimo
+        String explanation;
+        String modelName = null;
         MimoClient.ChatResponse resp = mimoClient.chat(ReplayPrompts.SYSTEM_PROMPT,
                 ReplayPrompts.buildExplainPrompt(eventJson, contextJson));
 
-        if (!resp.success()) {
-            log.warn("Mimo explain failed for eventId={}: {}", eventId, resp.error());
-            return new EventExplainDto(gameId, eventId, toTranslatedTimelineDto(event),
-                    null, null, null, resp.model(), null);
+        if (resp.success()) {
+            // 4. Validate grounding (use context events only, not all 1600+)
+            AiGroundingValidator.ValidationResult validation = groundingValidator.validate(resp.content(), contextDtos);
+            explanation = sanitizeAiText(validation.safeResponse());
+            modelName = resp.model();
+        } else {
+            // Fallback: generate factual explanation from translated event data
+            log.warn("Mimo explain failed for eventId={}: {}, using fallback", eventId, resp.error());
+            explanation = buildFallbackExplanation(event, contextDtos);
+            modelName = "fallback";
         }
-
-        // 4. Validate grounding (use context events only, not all 1600+)
-        AiGroundingValidator.ValidationResult validation = groundingValidator.validate(resp.content(), contextDtos);
-        String explanation = sanitizeAiText(validation.safeResponse());
 
         // 5. Cache
         AiReplayExplanation explanationEntity = new AiReplayExplanation();
         explanationEntity.setGameId(gameId);
         explanationEntity.setEventId(eventId);
         explanationEntity.setModelProvider("mimo");
-        explanationEntity.setModelName(resp.model());
+        explanationEntity.setModelName(modelName);
         explanationEntity.setPromptVersion("v1");
         explanationEntity.setFactsHash(sha256(eventJson + contextJson));
         explanationEntity.setExplanation(explanation);
@@ -166,7 +170,7 @@ public class AiReplayService {
         explanationRepository.save(explanationEntity);
 
         return new EventExplainDto(gameId, eventId, toTranslatedTimelineDto(event),
-                explanation, null, null, "mimo", resp.model());
+                explanation, null, null, "mimo", modelName);
     }
 
     private String buildGameFactsJson(String gameId) {
@@ -234,6 +238,33 @@ public class AiReplayService {
         // Collapse multiple blank lines
         text = text.replaceAll("\\n{3,}", "\n\n");
         return text.trim();
+    }
+
+    private String buildFallbackExplanation(PlayByPlay event, List<TimelineEventDto> context) {
+        String translated = translationService.translateText(event.getDescription());
+        int period = event.getPeriod();
+        String clock = event.getGameClock();
+        int home = event.getHomeScore();
+        int away = event.getAwayScore();
+        String player = translationService.translateText(event.getPlayerName());
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("第").append(period).append("节 ").append(clock).append("，");
+        if (player != null && !player.isEmpty()) {
+            sb.append(player).append(" ");
+        }
+        sb.append(translated).append("。");
+        sb.append("当前比分 ").append(home).append("-").append(away).append("。");
+
+        // Add context from surrounding events
+        if (context != null && context.size() > 1) {
+            long scoringCount = context.stream().filter(TimelineEventDto::isScoringPlay).count();
+            if (scoringCount > 0) {
+                sb.append("该时段内有 ").append(scoringCount).append(" 次得分。");
+            }
+        }
+
+        return sb.toString();
     }
 
     private void ensureData(String gameId) {
