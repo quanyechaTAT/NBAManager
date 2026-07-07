@@ -413,6 +413,16 @@ export interface TurningPoint {
   factualReason: string
   aiExplanation: string | null
   citedEventIdsJson: string
+  startEventOrder?: number
+  endEventOrder?: number
+  startHomeScore?: number
+  startAwayScore?: number
+  endHomeScore?: number
+  endAwayScore?: number
+  scoreSwing?: number
+  impactScore?: number
+  impactLevel?: 'HIGH' | 'MEDIUM' | 'LOW'
+  teamName?: string
 }
 
 export interface GameSummary {

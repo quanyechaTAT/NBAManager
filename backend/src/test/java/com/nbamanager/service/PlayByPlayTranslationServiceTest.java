@@ -1,6 +1,7 @@
 package com.nbamanager.service;
 
 import com.nbamanager.service.mimo.MimoClient;
+import com.nbamanager.repository.PlayerRepository;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -16,6 +17,8 @@ class PlayByPlayTranslationServiceTest {
     @Test
     void translateTexts_usesMimoJsonArrayAndCachesResult() {
         MimoClient mimoClient = mock(MimoClient.class);
+        PlayerRepository playerRepository = mock(PlayerRepository.class);
+        when(playerRepository.findAll()).thenReturn(List.of());
         when(mimoClient.chat(anyString(), anyString()))
                 .thenReturn(new MimoClient.ChatResponse(
                         "[\"勒布朗詹姆斯命中 2 分跳投\", \"戴维斯抢到防守篮板\"]",
@@ -24,7 +27,7 @@ class PlayByPlayTranslationServiceTest {
                         null
                 ));
 
-        PlayByPlayTranslationService service = new PlayByPlayTranslationService(mimoClient);
+        PlayByPlayTranslationService service = new PlayByPlayTranslationService(mimoClient, playerRepository);
 
         List<String> translated = service.translateTexts(List.of(
                 "LeBron James makes 2-foot jump shot",
@@ -41,10 +44,12 @@ class PlayByPlayTranslationServiceTest {
     @Test
     void translateTexts_fallsBackToLocalBasketballTermsWhenMimoFails() {
         MimoClient mimoClient = mock(MimoClient.class);
+        PlayerRepository playerRepository = mock(PlayerRepository.class);
+        when(playerRepository.findAll()).thenReturn(List.of());
         when(mimoClient.chat(anyString(), anyString()))
                 .thenReturn(new MimoClient.ChatResponse(null, "mimo-v2.5-pro", false, "missing key"));
 
-        PlayByPlayTranslationService service = new PlayByPlayTranslationService(mimoClient);
+        PlayByPlayTranslationService service = new PlayByPlayTranslationService(mimoClient, playerRepository);
 
         List<String> translated = service.translateTexts(List.of(
                 "Mitchell makes 3PT Jump Shot",
@@ -60,7 +65,9 @@ class PlayByPlayTranslationServiceTest {
     @Test
     void translateTexts_keepsAlreadyChineseText() {
         MimoClient mimoClient = mock(MimoClient.class);
-        PlayByPlayTranslationService service = new PlayByPlayTranslationService(mimoClient);
+        PlayerRepository playerRepository = mock(PlayerRepository.class);
+        when(playerRepository.findAll()).thenReturn(List.of());
+        PlayByPlayTranslationService service = new PlayByPlayTranslationService(mimoClient, playerRepository);
 
         List<String> translated = service.translateTexts(List.of("米切尔命中三分"));
 

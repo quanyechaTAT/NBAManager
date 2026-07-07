@@ -10,6 +10,10 @@ public interface PlayByPlayRepository extends JpaRepository<PlayByPlay, Long> {
 
     List<PlayByPlay> findByGameIdAndPeriodOrderByEventOrderDesc(String gameId, Integer period);
 
+    List<PlayByPlay> findByGameIdOrderByEventOrderAsc(String gameId);
+
+    List<PlayByPlay> findByGameIdAndPeriodOrderByEventOrderAsc(String gameId, Integer period);
+
     // Keep old methods for backward compatibility
     List<PlayByPlay> findByGameIdOrderByPeriodAscGameClockDesc(String gameId);
     List<PlayByPlay> findByGameIdAndPeriodOrderByGameClockDesc(String gameId, Integer period);

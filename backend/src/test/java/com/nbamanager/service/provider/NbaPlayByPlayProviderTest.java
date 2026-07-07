@@ -81,7 +81,7 @@ class NbaPlayByPlayProviderTest {
     }
 
     @Test
-    void parseEvents_calculatesEventOrder() {
+    void parseEvents_usesSequentialEventOrderWhenSourceOrderMissing() {
         JSONArray arr = new JSONArray();
         JSONObject event = new JSONObject();
         event.put("period", 3);
@@ -93,8 +93,7 @@ class NbaPlayByPlayProviderTest {
         List<PlayByPlayEvent> events = provider.parseEvents(arr, "0022500226");
 
         assertThat(events).hasSize(1);
-        // period * 10000 + (minutes * 60 + seconds) = 3 * 10000 + (5 * 60 + 30) = 30330
-        assertThat(events.get(0).eventOrder()).isEqualTo(30330);
+        assertThat(events.get(0).eventOrder()).isEqualTo(1);
     }
 
     @Test
@@ -266,10 +265,8 @@ class NbaPlayByPlayProviderTest {
         List<PlayByPlayEvent> events = provider.parseEvents(arr, "0022500226");
 
         assertThat(events).hasSize(2);
-        // 1 * 10000 + (11 * 60 + 55) = 10715
-        assertThat(events.get(0).eventOrder()).isEqualTo(10715);
-        // 1 * 10000 + (11 * 60 + 50) = 10710
-        assertThat(events.get(1).eventOrder()).isEqualTo(10710);
+        assertThat(events.get(0).eventOrder()).isEqualTo(1);
+        assertThat(events.get(1).eventOrder()).isEqualTo(2);
     }
 
     @Test

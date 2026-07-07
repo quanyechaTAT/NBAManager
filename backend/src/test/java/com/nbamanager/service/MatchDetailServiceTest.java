@@ -96,7 +96,7 @@ class MatchDetailServiceTest {
         match.setMatchDate(LocalDate.of(2026, 1, 5));
 
         when(gameIdMappingService.getNbaGameId(gameId)).thenReturn(gameId);
-        when(playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId))
+        when(playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId))
                 .thenReturn(List.of(pbp));
         when(matchRecordRepository.findByNbaGameId(gameId)).thenReturn(Optional.of(match));
 
@@ -146,7 +146,7 @@ class MatchDetailServiceTest {
         match.setMatchDate(LocalDate.of(2026, 1, 10));
 
         when(gameIdMappingService.getNbaGameId(gameId)).thenReturn(gameId);
-        when(playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId))
+        when(playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId))
                 .thenReturn(List.of(pbp1, pbp2));
         when(matchRecordRepository.findByNbaGameId(gameId)).thenReturn(Optional.of(match));
 
@@ -196,7 +196,7 @@ class MatchDetailServiceTest {
         match.setMatchDate(LocalDate.of(2026, 1, 15));
 
         when(gameIdMappingService.getNbaGameId(gameId)).thenReturn(gameId);
-        when(playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId))
+        when(playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId))
                 .thenReturn(List.of(pbp1, pbp2));
         when(matchRecordRepository.findByNbaGameId(gameId)).thenReturn(Optional.of(match));
 

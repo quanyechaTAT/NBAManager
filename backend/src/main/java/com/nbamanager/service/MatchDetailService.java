@@ -250,17 +250,17 @@ public class MatchDetailService {
     public List<PlayByPlayDto> getPlayByPlay(String gameId, Integer period) {
         List<PlayByPlay> records;
         if (period != null) {
-            records = playByPlayRepository.findByGameIdAndPeriodOrderByGameClockDesc(gameId, period);
+            records = playByPlayRepository.findByGameIdAndPeriodOrderByEventOrderAsc(gameId, period);
         } else {
-            records = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId);
+            records = playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId);
         }
 
         if (records.isEmpty()) {
             fetchFromPython("playbyplay", gameId);
             if (period != null) {
-                records = playByPlayRepository.findByGameIdAndPeriodOrderByGameClockDesc(gameId, period);
+                records = playByPlayRepository.findByGameIdAndPeriodOrderByEventOrderAsc(gameId, period);
             } else {
-                records = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId);
+                records = playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId);
             }
         }
 
@@ -275,12 +275,12 @@ public class MatchDetailService {
         log.info("获取逐节比分: 原始gameId={}, 转换后gameId={}", gameId, nbaGameId);
 
         // 先从数据库获取Play-by-Play数据
-        List<PlayByPlay> allEvents = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(nbaGameId);
+        List<PlayByPlay> allEvents = playByPlayRepository.findByGameIdOrderByEventOrderAsc(nbaGameId);
 
         // 如果数据库没有数据，调用Python脚本获取
         if (allEvents.isEmpty()) {
             fetchFromPython("playbyplay", nbaGameId);
-            allEvents = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(nbaGameId);
+            allEvents = playByPlayRepository.findByGameIdOrderByEventOrderAsc(nbaGameId);
         }
 
         // 从Play-by-Play数据计算逐节比分（取每节最后一个有有效累计比分的事件）
