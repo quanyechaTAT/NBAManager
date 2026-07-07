@@ -1736,16 +1736,30 @@ def fetch_playbyplay(game_id, start_period=0, end_period=10):
 
     actions = data.get('game', {}).get('actions', [])
     if actions:
+        last_home = 0
+        last_away = 0
         for a in actions:
             desc = a.get('description', '')
             if not desc:
                 continue
+            # 携带上一个已知比分（NBA API 对非得分事件返回空或0）
+            raw_home = a.get('scoreHome')
+            raw_away = a.get('scoreAway')
+            home = _safe_int(raw_home)
+            away = _safe_int(raw_away)
+            # 如果原始值为空/None，或比分回退（不可能），使用上一个已知比分
+            if raw_home is None or raw_away is None or (home == 0 and away == 0 and (last_home > 0 or last_away > 0)):
+                home = last_home
+                away = last_away
+            else:
+                last_home = home
+                last_away = away
             events.append({
                 'period': _safe_int(a.get('period')),
                 'gameClock': _format_minutes(a.get('clock', '')),
                 'description': desc,
-                'homeScore': _safe_int(a.get('scoreHome')),
-                'awayScore': _safe_int(a.get('scoreAway')),
+                'homeScore': home,
+                'awayScore': away,
                 'eventType': a.get('actionType', ''),
                 'playerId': _safe_int(a.get('personId')),
                 'playerName': str(a.get('playerName', '')),
@@ -1755,17 +1769,29 @@ def fetch_playbyplay(game_id, start_period=0, end_period=10):
         result_sets = data.get('resultSet', {})
         headers = result_sets.get('headers', [])
         rows = result_sets.get('rowSet', [])
+        last_home = 0
+        last_away = 0
         for row in rows:
             d = dict(zip(headers, row))
             desc = d.get('homeDescription') or d.get('visitorDescription') or d.get('neutralDescription', '')
             if not desc:
                 continue
+            raw_home = d.get('scoreHome')
+            raw_away = d.get('scoreAway')
+            home = _safe_int(raw_home)
+            away = _safe_int(raw_away)
+            if raw_home is None or raw_away is None or (home == 0 and away == 0 and (last_home > 0 or last_away > 0)):
+                home = last_home
+                away = last_away
+            else:
+                last_home = home
+                last_away = away
             events.append({
                 'period': _safe_int(d.get('period')),
                 'gameClock': _format_minutes(d.get('gameClock', '')),
                 'description': desc,
-                'homeScore': _safe_int(d.get('scoreHome')),
-                'awayScore': _safe_int(d.get('scoreAway')),
+                'homeScore': home,
+                'awayScore': away,
                 'eventType': d.get('eventType', ''),
                 'playerId': _safe_int(d.get('personId')),
                 'playerName': str(d.get('playerName', '')),
