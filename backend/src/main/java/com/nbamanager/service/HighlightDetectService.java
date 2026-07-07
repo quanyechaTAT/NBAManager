@@ -32,7 +32,7 @@ public class HighlightDetectService {
 
             GameHighlight highlight = new GameHighlight();
             highlight.setGameId(gameId);
-            highlight.setEventId(Long.parseLong(event.sourceEventId()));
+            highlight.setEventId(null); // sourceEventId is not a numeric ID
             highlight.setPeriod(event.period());
             highlight.setGameClock(event.gameClock());
             highlight.setHighlightType(type);
