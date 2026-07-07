@@ -147,6 +147,9 @@ public class NbaPlayByPlayProvider implements PlayByPlayProvider {
      */
     List<PlayByPlayEvent> parseEvents(JSONArray eventsArray, String gameId) {
         List<PlayByPlayEvent> events = new ArrayList<>();
+        int prevHomeScore = 0;
+        int prevAwayScore = 0;
+
         for (int i = 0; i < eventsArray.length(); i++) {
             JSONObject obj = eventsArray.getJSONObject(i);
 
@@ -156,43 +159,40 @@ public class NbaPlayByPlayProvider implements PlayByPlayProvider {
             int homeScore = obj.optInt("homeScore", 0);
             int awayScore = obj.optInt("awayScore", 0);
             String eventType = obj.optString("eventType", "");
+            String actionType = obj.optString("actionType", "");
             String playerName = obj.optString("playerName", "");
             Long playerId = obj.has("playerId") && !obj.isNull("playerId")
                     ? obj.getLong("playerId") : null;
             Long teamId = obj.has("teamId") && !obj.isNull("teamId")
                     ? obj.getLong("teamId") : null;
 
-            int clockSeconds = gameClockToSeconds(gameClock);
-            int eventOrder = period * 10000 + clockSeconds;
+            int eventOrder = obj.has("eventOrder") && !obj.isNull("eventOrder")
+                    ? obj.optInt("eventOrder", i + 1)
+                    : i + 1;
             int scoreMargin = homeScore - awayScore;
-            boolean isScoringPlay = detectScoringPlay(eventType, description);
-            boolean isHighlightCandidate = detectHighlight(eventType, description);
-            String sourceEventId = gameId + "_" + period + "_" + gameClock + "_" + i;
 
-            String rawPayloadJson = null;
-            if (obj.length() > 0) {
-                rawPayloadJson = obj.toString();
-            }
+            // Use unified classifier with score change detection
+            boolean isScoringPlay = PlayByPlayEventClassifier.isScoringPlay(
+                    eventType, actionType, description,
+                    homeScore, awayScore, prevHomeScore, prevAwayScore);
+            boolean isHighlightCandidate = PlayByPlayEventClassifier.isHighlightCandidate(
+                    eventType, actionType, description, isScoringPlay,
+                    homeScore, awayScore, prevHomeScore, prevAwayScore,
+                    period, gameClock);
+
+            String sourceEventId = gameId + "_" + period + "_" + gameClock + "_" + i;
+            String rawPayloadJson = obj.length() > 0 ? obj.toString() : null;
 
             events.add(new PlayByPlayEvent(
-                    sourceEventId,
-                    period,
-                    gameClock,
-                    eventType,
-                    null, // actionType not provided by NBA script
-                    description,
-                    playerName,
-                    playerId,
-                    null, // teamName not provided by NBA script
-                    teamId,
-                    homeScore,
-                    awayScore,
-                    scoreMargin,
-                    isScoringPlay,
-                    isHighlightCandidate,
-                    eventOrder,
-                    rawPayloadJson
+                    sourceEventId, period, gameClock, eventType, actionType,
+                    description, playerName, playerId, null, teamId,
+                    homeScore, awayScore, scoreMargin,
+                    isScoringPlay, isHighlightCandidate,
+                    eventOrder, rawPayloadJson
             ));
+
+            prevHomeScore = homeScore;
+            prevAwayScore = awayScore;
         }
         return events;
     }

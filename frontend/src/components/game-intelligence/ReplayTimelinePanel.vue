@@ -35,24 +35,35 @@ const typeOptions = [
   { label: '失误', value: 'turnover' },
 ]
 
+function isScoringEvent(event: TimelineEvent): boolean {
+  if (event.isScoringPlay === true) return true
+  const text = `${event.eventType || ''} ${event.actionType || ''} ${event.description || ''}`.toLowerCase()
+  const missed = text.includes('miss') || text.includes('missed') || text.includes('不中')
+  const scoringKeyword =
+    text.includes('made') || text.includes('makes') || text.includes('命中') ||
+    text.includes('free throw') || text.includes('freethrow') || text.includes('罚球') ||
+    text.includes('2pt') || text.includes('3pt') || text.includes('三分') ||
+    text.includes('扣篮') || text.includes('上篮') || text.includes('dunk') ||
+    text.includes('layup') || text.includes('jump shot') || text.includes('tip')
+  return scoringKeyword && !missed
+}
+
 function mapEventType(event: TimelineEvent): string {
-  const t = (event.eventType || '').toLowerCase()
-  const a = (event.actionType || '').toLowerCase()
-  if (event.isScoringPlay || t.includes('score') || a.includes('score') || a.includes('made') || a.includes('dunk') || a.includes('layup') || a.includes('jump') || a.includes('free throw')) return 'scoring'
-  if (t.includes('turnover') || a.includes('turnover') || a.includes('lost') || a.includes('bad pass')) return 'turnover'
-  if (t.includes('timeout') || a.includes('timeout')) return 'timeout'
-  if (t.includes('foul') || a.includes('foul')) return 'foul'
-  if (t.includes('substitution') || a.includes('substitution')) return 'substitution'
-  if (t.includes('block') || a.includes('block')) return 'block'
-  if (t.includes('steal') || a.includes('steal')) return 'steal'
+  const text = `${event.eventType || ''} ${event.actionType || ''} ${event.description || ''}`.toLowerCase()
+  if (isScoringEvent(event)) return 'scoring'
+  if (text.includes('turnover') || text.includes('失误')) return 'turnover'
+  if (text.includes('timeout') || text.includes('暂停')) return 'timeout'
+  if (text.includes('foul') || text.includes('犯规')) return 'foul'
+  if (text.includes('block') || text.includes('盖帽')) return 'block'
+  if (text.includes('steal') || text.includes('抢断')) return 'steal'
+  if (text.includes('rebound') || text.includes('篮板')) return 'rebound'
   return 'other'
 }
 
 function matchTypeFilter(event: TimelineEvent): boolean {
   if (typeFilter.value === 'all') return true
-  const mapped = mapEventType(event)
-  if (typeFilter.value === 'highlight') return event.isHighlightCandidate || event.isScoringPlay
-  return mapped === typeFilter.value
+  if (typeFilter.value === 'highlight') return event.isHighlightCandidate === true
+  return mapEventType(event) === typeFilter.value
 }
 
 const filteredEvents = computed(() => {
@@ -109,6 +120,11 @@ function isSelected(event: TimelineEvent): boolean {
 
 function onSelect(event: TimelineEvent) {
   emit('select', event)
+}
+
+function hasScore(event: TimelineEvent): boolean {
+  return event.homeScore !== null && event.homeScore !== undefined
+    && event.awayScore !== null && event.awayScore !== undefined
 }
 </script>
 
@@ -186,7 +202,7 @@ function onSelect(event: TimelineEvent) {
               {{ periodLabel(event.period) }}
             </span>
             <span class="game-clock">{{ event.gameClock }}</span>
-            <span class="score-display">
+            <span v-if="hasScore(event)" class="score-display">
               <span class="home-score">{{ event.homeScore }}</span>
               <span class="score-sep">-</span>
               <span class="away-score">{{ event.awayScore }}</span>

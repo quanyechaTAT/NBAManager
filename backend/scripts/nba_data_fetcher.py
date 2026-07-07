@@ -797,6 +797,85 @@ def _safe_int(val, default=0):
         return default
 
 
+def _score_or_none(val):
+    """Convert official score fields while preserving missing values."""
+    if val is None or val == '':
+        return None
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return None
+
+
+def _clock_to_seconds(clock):
+    """Return seconds remaining in the period for MM:SS-like clocks."""
+    if clock is None:
+        return 720
+    clock = str(clock).strip()
+    if not clock:
+        return 720
+    if 'PT' in clock:
+        clock = _format_minutes(clock)
+    try:
+        parts = clock.split(':')
+        if len(parts) >= 2:
+            return int(parts[0]) * 60 + int(float(parts[1]))
+    except (ValueError, TypeError):
+        pass
+    return 720
+
+
+def _is_period_start_event(event):
+    desc = str(event.get('description', ''))
+    action_type = str(event.get('eventType', '')).lower()
+    return desc.startswith('Start of') or action_type == 'period'
+
+
+def _normalize_playbyplay_events(events):
+    """Sort events chronologically and forward-fill missing score fields."""
+    def sort_key(event):
+        period = _safe_int(event.get('period'))
+        seconds = _clock_to_seconds(event.get('gameClock', '12:00'))
+        start_rank = 0 if _is_period_start_event(event) else 1
+        return (period, -seconds, start_rank, _safe_int(event.get('_sourceIndex')))
+
+    events.sort(key=sort_key)
+
+    last_home = 0
+    last_away = 0
+    for idx, event in enumerate(events):
+        period = _safe_int(event.get('period'))
+        raw_home = event.get('rawHomeScore')
+        raw_away = event.get('rawAwayScore')
+
+        if _is_period_start_event(event):
+            if period <= 1:
+                event['homeScore'] = 0
+                event['awayScore'] = 0
+            else:
+                event['homeScore'] = last_home
+                event['awayScore'] = last_away
+        elif raw_home is not None and raw_away is not None:
+            if raw_home == 0 and raw_away == 0 and (last_home > 0 or last_away > 0):
+                event['homeScore'] = last_home
+                event['awayScore'] = last_away
+            else:
+                event['homeScore'] = raw_home
+                event['awayScore'] = raw_away
+                last_home = raw_home
+                last_away = raw_away
+        else:
+            event['homeScore'] = last_home
+            event['awayScore'] = last_away
+
+        event['eventOrder'] = idx + 1
+        event.pop('_sourceIndex', None)
+        event.pop('rawHomeScore', None)
+        event.pop('rawAwayScore', None)
+
+    return events
+
+
 def _format_minutes(minutes_str):
     """将ISO 8601时间格式（PT36M05.00S）转换为可读格式（36:05）"""
     if not minutes_str or not isinstance(minutes_str, str):
@@ -1736,35 +1815,22 @@ def fetch_playbyplay(game_id, start_period=0, end_period=10):
 
     actions = data.get('game', {}).get('actions', [])
     if actions:
-        last_home = 0
-        last_away = 0
-        for a in actions:
+        for i, a in enumerate(actions):
             desc = a.get('description', '')
             if not desc:
                 continue
-            # 携带上一个已知比分（NBA API 对非得分事件返回空或0）
             raw_home = a.get('scoreHome')
             raw_away = a.get('scoreAway')
-            home = _safe_int(raw_home)
-            away = _safe_int(raw_away)
-            action_type = a.get('actionType', '')
-            # 新节开始事件不重置比分，继续携带上一个已知比分
-            if action_type == 'period' or desc.startswith('Start of'):
-                home = last_home
-                away = last_away
-            elif raw_home is None or raw_away is None or (home == 0 and away == 0 and (last_home > 0 or last_away > 0)):
-                home = last_home
-                away = last_away
-            else:
-                last_home = home
-                last_away = away
             events.append({
+                '_sourceIndex': i,
                 'period': _safe_int(a.get('period')),
                 'gameClock': _format_minutes(a.get('clock', '')),
                 'description': desc,
-                'homeScore': home,
-                'awayScore': away,
+                'rawHomeScore': _score_or_none(raw_home),
+                'rawAwayScore': _score_or_none(raw_away),
                 'eventType': a.get('actionType', ''),
+                'actionType': a.get('actionType', ''),
+                'subType': a.get('subType', ''),
                 'playerId': _safe_int(a.get('personId')),
                 'playerName': str(a.get('playerName', '')),
             })
@@ -1773,82 +1839,27 @@ def fetch_playbyplay(game_id, start_period=0, end_period=10):
         result_sets = data.get('resultSet', {})
         headers = result_sets.get('headers', [])
         rows = result_sets.get('rowSet', [])
-        last_home = 0
-        last_away = 0
-        for row in rows:
+        for i, row in enumerate(rows):
             d = dict(zip(headers, row))
             desc = d.get('homeDescription') or d.get('visitorDescription') or d.get('neutralDescription', '')
             if not desc:
                 continue
             raw_home = d.get('scoreHome')
             raw_away = d.get('scoreAway')
-            home = _safe_int(raw_home)
-            away = _safe_int(raw_away)
-            if raw_home is None or raw_away is None or (home == 0 and away == 0 and (last_home > 0 or last_away > 0)):
-                home = last_home
-                away = last_away
-            else:
-                last_home = home
-                last_away = away
             events.append({
+                '_sourceIndex': i,
                 'period': _safe_int(d.get('period')),
                 'gameClock': _format_minutes(d.get('gameClock', '')),
                 'description': desc,
-                'homeScore': home,
-                'awayScore': away,
+                'rawHomeScore': _score_or_none(raw_home),
+                'rawAwayScore': _score_or_none(raw_away),
                 'eventType': d.get('eventType', ''),
+                'actionType': d.get('actionType', ''),
                 'playerId': _safe_int(d.get('personId')),
                 'playerName': str(d.get('playerName', '')),
             })
 
-    # 分离 period start 事件和普通事件（只移动 Start of，不移动 End of）
-    period_starts = []
-    normal_events = []
-    for e in events:
-        desc = e.get('description', '')
-        if desc.startswith('Start of'):
-            period_starts.append(e)
-        else:
-            normal_events.append(e)
-
-    # 普通事件按 period 升序 + gameClock 降序排序
-    def sort_key(e):
-        period = e.get('period', 0)
-        clock = e.get('gameClock', '12:00')
-        try:
-            parts = clock.split(':')
-            seconds = int(parts[0]) * 60 + int(parts[1])
-        except (ValueError, IndexError):
-            seconds = 720
-        return (period, -seconds)
-
-    normal_events.sort(key=sort_key)
-
-    # 将 period start 事件插入到对应节的开头（携带上一节结束比分）
-    events = []
-    period_starts_map = {}
-    for ps in period_starts:
-        period_starts_map.setdefault(ps.get('period', 0), []).append(ps)
-
-    current_period = 0
-    last_home = 0
-    last_away = 0
-    for e in normal_events:
-        p = e.get('period', 0)
-        if p != current_period:
-            # 新节开始，插入 period start 事件（携带上一节结束比分）
-            for ps in period_starts_map.get(p, []):
-                ps['homeScore'] = last_home
-                ps['awayScore'] = last_away
-                events.append(ps)
-            current_period = p
-        # 更新最后已知比分
-        h = e.get('homeScore', 0)
-        a = e.get('awayScore', 0)
-        if h > 0 or a > 0:
-            last_home = h
-            last_away = a
-        events.append(e)
+    events = _normalize_playbyplay_events(events)
 
     print(f"获取到 {len(events)} 条Play-by-Play事件", file=sys.stderr)
     return events
@@ -1870,23 +1881,22 @@ def fetch_espn_playbyplay(game_id):
     plays = data.get("plays", [])
     events = []
 
-    for play in plays:
+    for i, play in enumerate(plays):
         period_num = play.get("period", {}).get("number", 1) if isinstance(play.get("period"), dict) else play.get("period", 1)
         clock = play.get("clock", {}).get("displayValue", "12:00") if isinstance(play.get("clock"), dict) else str(play.get("clock", "12:00"))
         text = play.get("text", "")
-        home_score = _safe_int(play.get("homeScore", 0))
-        away_score = _safe_int(play.get("awayScore", 0))
         event_type = play.get("type", {}).get("text", "") if isinstance(play.get("type"), dict) else str(play.get("type", ""))
 
         if not text:
             continue
 
         events.append({
+            "_sourceIndex": i,
             "period": period_num,
             "gameClock": clock,
             "description": text,
-            "homeScore": home_score,
-            "awayScore": away_score,
+            "rawHomeScore": _score_or_none(play.get("homeScore")),
+            "rawAwayScore": _score_or_none(play.get("awayScore")),
             "eventType": event_type,
             "playerId": None,
             "playerName": "",
@@ -1894,6 +1904,8 @@ def fetch_espn_playbyplay(game_id):
             "teamName": "",
             "source": "ESPN_PLAY_BY_PLAY",
         })
+
+    events = _normalize_playbyplay_events(events)
 
     print(f"ESPN 获取到 {len(events)} 条事件", file=sys.stderr)
     return events
