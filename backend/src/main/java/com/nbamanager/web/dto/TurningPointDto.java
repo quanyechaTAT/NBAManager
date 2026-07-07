@@ -8,5 +8,15 @@ public record TurningPointDto(
         Double confidence,
         String factualReason,
         String aiExplanation,
-        String citedEventIdsJson
+        String citedEventIdsJson,
+        Integer startEventOrder,
+        Integer endEventOrder,
+        Integer startHomeScore,
+        Integer startAwayScore,
+        Integer endHomeScore,
+        Integer endAwayScore,
+        Integer scoreSwing,
+        Double impactScore,
+        String impactLevel,
+        String teamName
 ) {}

@@ -38,9 +38,9 @@ public class AiReplayService {
         ensureData(gameId);
         List<PlayByPlay> events;
         if (period != null) {
-            events = playByPlayRepository.findByGameIdAndPeriodOrderByEventOrderDesc(gameId, period);
+            events = playByPlayRepository.findByGameIdAndPeriodOrderByEventOrderAsc(gameId, period);
         } else {
-            events = playByPlayRepository.findByGameIdOrderByPeriodAscEventOrderDesc(gameId);
+            events = playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId);
         }
         return toTimelineDtos(events);
     }
@@ -119,7 +119,7 @@ public class AiReplayService {
 
         // 2. Build facts (only translate context events, not all 1600+)
         ensureData(gameId);
-        List<PlayByPlay> allEvents = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId);
+        List<PlayByPlay> allEvents = playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId);
 
         int idx = -1;
         for (int i = 0; i < allEvents.size(); i++) {
@@ -175,7 +175,7 @@ public class AiReplayService {
 
     private String buildGameFactsJson(String gameId) {
         // Timeline events
-        List<PlayByPlay> events = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId);
+        List<PlayByPlay> events = playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId);
         List<String> translatedDescriptions = translationService.translateTexts(
                 events.stream().map(PlayByPlay::getDescription).collect(Collectors.toList())
         );
@@ -268,7 +268,7 @@ public class AiReplayService {
     }
 
     private void ensureData(String gameId) {
-        boolean hasPbp = !playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId).isEmpty();
+        boolean hasPbp = !playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId).isEmpty();
         boolean hasMomentum = !momentumRepository.findByGameIdOrderByEventOrderAsc(gameId).isEmpty();
 
         if (!hasPbp || !hasMomentum) {
@@ -340,7 +340,12 @@ public class AiReplayService {
             GameTurningPoint t = points.get(i);
             result.add(new TurningPointDto(t.getId(), t.getPeriod(), t.getGameClock(),
                     t.getType(), t.getConfidence(), reasonTranslations.get(i),
-                    explanationTranslations.get(i), t.getCitedEventIdsJson()));
+                    explanationTranslations.get(i), t.getCitedEventIdsJson(),
+                    t.getStartEventOrder(), t.getEndEventOrder(),
+                    t.getStartHomeScore(), t.getStartAwayScore(),
+                    t.getEndHomeScore(), t.getEndAwayScore(),
+                    t.getScoreSwing(), t.getImpactScore(),
+                    t.getImpactLevel(), t.getTeamName()));
         }
         return result;
     }

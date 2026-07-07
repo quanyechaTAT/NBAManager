@@ -42,5 +42,20 @@ public class GameTurningPoint {
     @Column(length = 500)
     private String citedEventIdsJson;
 
+    private Integer startEventOrder;
+    private Integer endEventOrder;
+    private Integer startHomeScore;
+    private Integer startAwayScore;
+    private Integer endHomeScore;
+    private Integer endAwayScore;
+    private Integer scoreSwing;
+    private Double impactScore;
+
+    @Column(length = 20)
+    private String impactLevel; // HIGH / MEDIUM / LOW
+
+    @Column(length = 100)
+    private String teamName;
+
     private LocalDateTime createdAt;
 }

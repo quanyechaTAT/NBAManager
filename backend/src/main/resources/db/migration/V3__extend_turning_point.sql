@@ -1,0 +1,10 @@
+ALTER TABLE game_turning_point ADD COLUMN start_event_order INT NULL;
+ALTER TABLE game_turning_point ADD COLUMN end_event_order INT NULL;
+ALTER TABLE game_turning_point ADD COLUMN start_home_score INT NULL;
+ALTER TABLE game_turning_point ADD COLUMN start_away_score INT NULL;
+ALTER TABLE game_turning_point ADD COLUMN end_home_score INT NULL;
+ALTER TABLE game_turning_point ADD COLUMN end_away_score INT NULL;
+ALTER TABLE game_turning_point ADD COLUMN score_swing INT NULL;
+ALTER TABLE game_turning_point ADD COLUMN impact_score DOUBLE NULL;
+ALTER TABLE game_turning_point ADD COLUMN impact_level VARCHAR(20) NULL;
+ALTER TABLE game_turning_point ADD COLUMN team_name VARCHAR(100) NULL;
