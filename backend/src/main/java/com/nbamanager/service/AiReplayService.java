@@ -38,9 +38,9 @@ public class AiReplayService {
         ensureData(gameId);
         List<PlayByPlay> events;
         if (period != null) {
-            events = playByPlayRepository.findByGameIdAndPeriodOrderByGameClockDesc(gameId, period);
+            events = playByPlayRepository.findByGameIdAndPeriodOrderByEventOrderDesc(gameId, period);
         } else {
-            events = playByPlayRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId);
+            events = playByPlayRepository.findByGameIdOrderByPeriodAscEventOrderDesc(gameId);
         }
         return toTimelineDtos(events);
     }

@@ -1747,8 +1747,12 @@ def fetch_playbyplay(game_id, start_period=0, end_period=10):
             raw_away = a.get('scoreAway')
             home = _safe_int(raw_home)
             away = _safe_int(raw_away)
-            # 如果原始值为空/None，或比分回退（不可能），使用上一个已知比分
-            if raw_home is None or raw_away is None or (home == 0 and away == 0 and (last_home > 0 or last_away > 0)):
+            action_type = a.get('actionType', '')
+            # 新节开始事件不重置比分，继续携带上一个已知比分
+            if action_type == 'period' or desc.startswith('Start of'):
+                home = last_home
+                away = last_away
+            elif raw_home is None or raw_away is None or (home == 0 and away == 0 and (last_home > 0 or last_away > 0)):
                 home = last_home
                 away = last_away
             else:
@@ -1796,6 +1800,55 @@ def fetch_playbyplay(game_id, start_period=0, end_period=10):
                 'playerId': _safe_int(d.get('personId')),
                 'playerName': str(d.get('playerName', '')),
             })
+
+    # 分离 period start 事件和普通事件（只移动 Start of，不移动 End of）
+    period_starts = []
+    normal_events = []
+    for e in events:
+        desc = e.get('description', '')
+        if desc.startswith('Start of'):
+            period_starts.append(e)
+        else:
+            normal_events.append(e)
+
+    # 普通事件按 period 升序 + gameClock 降序排序
+    def sort_key(e):
+        period = e.get('period', 0)
+        clock = e.get('gameClock', '12:00')
+        try:
+            parts = clock.split(':')
+            seconds = int(parts[0]) * 60 + int(parts[1])
+        except (ValueError, IndexError):
+            seconds = 720
+        return (period, -seconds)
+
+    normal_events.sort(key=sort_key)
+
+    # 将 period start 事件插入到对应节的开头（携带上一节结束比分）
+    events = []
+    period_starts_map = {}
+    for ps in period_starts:
+        period_starts_map.setdefault(ps.get('period', 0), []).append(ps)
+
+    current_period = 0
+    last_home = 0
+    last_away = 0
+    for e in normal_events:
+        p = e.get('period', 0)
+        if p != current_period:
+            # 新节开始，插入 period start 事件（携带上一节结束比分）
+            for ps in period_starts_map.get(p, []):
+                ps['homeScore'] = last_home
+                ps['awayScore'] = last_away
+                events.append(ps)
+            current_period = p
+        # 更新最后已知比分
+        h = e.get('homeScore', 0)
+        a = e.get('awayScore', 0)
+        if h > 0 or a > 0:
+            last_home = h
+            last_away = a
+        events.append(e)
 
     print(f"获取到 {len(events)} 条Play-by-Play事件", file=sys.stderr)
     return events
