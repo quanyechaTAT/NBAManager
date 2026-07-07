@@ -3,13 +3,13 @@ package com.nbamanager.service;
 import com.nbamanager.domain.GameTurningPoint;
 import com.nbamanager.domain.provider.PlayByPlayEvent;
 import com.nbamanager.repository.GameTurningPointRepository;
-import jakarta.transaction.Transactional;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -18,159 +18,291 @@ public class TurningPointDetectService {
 
     private final GameTurningPointRepository repository;
 
+    private static final int MAX_RESULTS = 6;
+    private static final int RUN_MIN_POINTS = 8;
+    private static final int RUN_NET_MIN = 6;
+    private static final int RUN_MAX_EVENTS = 20;
+
     @Transactional
     public List<GameTurningPoint> detect(String gameId, List<PlayByPlayEvent> events) {
         repository.deleteByGameId(gameId);
 
-        List<GameTurningPoint> points = new ArrayList<>();
-        points.addAll(detectRuns(gameId, events));
-        points.addAll(detectOvertakes(gameId, events));
-        points.addAll(detectClutchSeparations(gameId, events));
+        if (events == null || events.size() < 4) {
+            return List.of();
+        }
 
-        return repository.saveAll(points);
+        List<GameTurningPoint> candidates = new ArrayList<>();
+        candidates.addAll(detectScoringRuns(gameId, events));
+        candidates.addAll(detectLeadChanges(gameId, events));
+        candidates.addAll(detectClutchMoments(gameId, events));
+        candidates.addAll(detectMaxMarginSwing(gameId, events));
+
+        // Deduplicate, rank, limit
+        List<GameTurningPoint> result = deduplicate(candidates);
+        result = result.stream()
+                .sorted(Comparator.comparingDouble(GameTurningPoint::getImpactScore).reversed())
+                .limit(MAX_RESULTS)
+                .collect(Collectors.toList());
+
+        // Re-sort by event order for display
+        result.sort(Comparator.comparingInt(GameTurningPoint::getStartEventOrder));
+
+        repository.saveAll(result);
+        log.info("Detected {} turning points for gameId={}", result.size(), gameId);
+        return result;
     }
 
-    private List<GameTurningPoint> detectRuns(String gameId, List<PlayByPlayEvent> events) {
-        List<GameTurningPoint> runs = new ArrayList<>();
+    // --- Run Detection (sliding window) ---
+    private List<GameTurningPoint> detectScoringRuns(String gameId, List<PlayByPlayEvent> events) {
+        List<GameTurningPoint> points = new ArrayList<>();
+        List<PlayByPlayEvent> scoringEvents = new ArrayList<>();
+        for (PlayByPlayEvent e : events) {
+            if (e.isScoringPlay()) scoringEvents.add(e);
+        }
 
-        for (int i = 0; i < events.size(); i++) {
-            PlayByPlayEvent startEvent = events.get(i);
-            int startHome = startEvent.homeScore();
-            int startAway = startEvent.awayScore();
+        for (int i = 0; i < scoringEvents.size(); i++) {
+            PlayByPlayEvent start = scoringEvents.get(i);
+            for (int j = i + 1; j < Math.min(i + RUN_MAX_EVENTS, scoringEvents.size()); j++) {
+                PlayByPlayEvent end = scoringEvents.get(j);
+                int homeRun = end.homeScore() - start.homeScore();
+                int awayRun = end.awayScore() - start.awayScore();
+                int homeNet = homeRun - awayRun;
+                int awayNet = awayRun - homeRun;
 
-            for (int j = i + 1; j < events.size(); j++) {
-                PlayByPlayEvent endEvent = events.get(j);
-                int homeDiff = endEvent.homeScore() - startHome;
-                int awayDiff = endEvent.awayScore() - startAway;
-
-                boolean homeRun = homeDiff >= 8 && awayDiff == 0;
-                boolean awayRun = awayDiff >= 8 && homeDiff == 0;
-
-                if (homeRun || awayRun) {
-                    GameTurningPoint point = new GameTurningPoint();
-                    point.setGameId(gameId);
-                    point.setEventId(null); // sourceEventId is not a numeric ID
-                    point.setPeriod(endEvent.period());
-                    point.setGameClock(endEvent.gameClock());
-                    point.setType("RUN");
-                    point.setConfidence(0.9);
-                    if (homeRun) {
-                        point.setFactualReason("主队打出 " + homeDiff + "-0 攻击波");
-                    } else {
-                        point.setFactualReason("客队打出 " + awayDiff + "-0 攻击波");
-                    }
-                    point.setCitedEventIdsJson("[\"" + startEvent.sourceEventId()
-                            + "\",\"" + endEvent.sourceEventId() + "\"]");
-                    point.setCreatedAt(LocalDateTime.now());
-                    runs.add(point);
-                    break; // Only one run per starting position
+                if (homeRun >= RUN_MIN_POINTS && homeNet >= RUN_NET_MIN) {
+                    points.add(createRunPoint(gameId, start, end, homeRun, awayRun, true));
+                    break;
+                }
+                if (awayRun >= RUN_MIN_POINTS && awayNet >= RUN_NET_MIN) {
+                    points.add(createRunPoint(gameId, start, end, awayRun, homeRun, false));
+                    break;
                 }
             }
         }
-
-        return runs;
+        return points;
     }
 
-    private List<GameTurningPoint> detectOvertakes(String gameId, List<PlayByPlayEvent> events) {
-        List<GameTurningPoint> overtakePoints = new ArrayList<>();
+    private GameTurningPoint createRunPoint(String gameId, PlayByPlayEvent start, PlayByPlayEvent end,
+                                            int runFor, int runAgainst, boolean isHome) {
+        GameTurningPoint tp = new GameTurningPoint();
+        tp.setGameId(gameId);
+        tp.setPeriod(end.period());
+        tp.setGameClock(end.gameClock());
+        tp.setType("RUN");
+        tp.setStartEventOrder(start.eventOrder());
+        tp.setEndEventOrder(end.eventOrder());
+        tp.setStartHomeScore(start.homeScore());
+        tp.setStartAwayScore(start.awayScore());
+        tp.setEndHomeScore(end.homeScore());
+        tp.setEndAwayScore(end.awayScore());
+        tp.setScoreSwing(Math.abs(runFor - runAgainst));
+        tp.setTeamName(isHome ? "主队" : "客队");
 
+        String reason = (isHome ? "主队" : "客队") + "打出 " + runFor + "-" + runAgainst + " 攻击波";
+        tp.setFactualReason(reason);
+
+        int impactScore = calculateRunImpact(start, end, runFor, runAgainst, isHome);
+        tp.setImpactScore((double) impactScore);
+        tp.setImpactLevel(impactScore >= 50 ? "HIGH" : impactScore >= 30 ? "MEDIUM" : "LOW");
+        tp.setConfidence(Math.min(0.98, 0.65 + impactScore / 100.0));
+        tp.setAiExplanation(buildRunExplanation(start, end, runFor, runAgainst, isHome));
+        tp.setCreatedAt(LocalDateTime.now());
+        return tp;
+    }
+
+    // --- Lead Change Detection ---
+    private List<GameTurningPoint> detectLeadChanges(String gameId, List<PlayByPlayEvent> events) {
+        List<GameTurningPoint> points = new ArrayList<>();
         for (int i = 1; i < events.size(); i++) {
             PlayByPlayEvent prev = events.get(i - 1);
             PlayByPlayEvent curr = events.get(i);
+            if (!curr.isScoringPlay()) continue;
 
-            if (curr.period() < 4) {
-                continue;
-            }
+            int prevMargin = prev.homeScore() - prev.awayScore();
+            int currMargin = curr.homeScore() - curr.awayScore();
 
-            int prevMargin = prev.scoreMargin();
-            int currMargin = curr.scoreMargin();
+            boolean isTie = prevMargin != 0 && currMargin == 0;
+            boolean isLeadChange = (prevMargin < 0 && currMargin > 0) || (prevMargin > 0 && currMargin < 0);
 
-            // Sign change means overtake (both non-zero)
-            if (prevMargin != 0 && currMargin != 0
-                    && Integer.signum(prevMargin) != Integer.signum(currMargin)) {
+            if (isTie || isLeadChange) {
+                GameTurningPoint tp = new GameTurningPoint();
+                tp.setGameId(gameId);
+                tp.setPeriod(curr.period());
+                tp.setGameClock(curr.gameClock());
+                tp.setType(isLeadChange ? "LEAD_CHANGE" : "TIE");
+                tp.setStartEventOrder(prev.eventOrder());
+                tp.setEndEventOrder(curr.eventOrder());
+                tp.setStartHomeScore(prev.homeScore());
+                tp.setStartAwayScore(prev.awayScore());
+                tp.setEndHomeScore(curr.homeScore());
+                tp.setEndAwayScore(curr.awayScore());
+                tp.setScoreSwing(Math.abs(currMargin - prevMargin));
 
-                GameTurningPoint point = new GameTurningPoint();
-                point.setGameId(gameId);
-                point.setEventId(null);
-                point.setPeriod(curr.period());
-                point.setGameClock(curr.gameClock());
-                point.setType("OVERTAKE");
-                point.setConfidence(0.95);
-
-                String leadingTeam;
-                if (currMargin > 0) {
-                    leadingTeam = "主队";
-                } else {
-                    leadingTeam = "客队";
-                }
-                point.setFactualReason(leadingTeam + "完成反超，比分变为 "
-                        + curr.homeScore() + "-" + curr.awayScore());
-                point.setCitedEventIdsJson("[\"" + prev.sourceEventId()
-                        + "\",\"" + curr.sourceEventId() + "\"]");
-                point.setCreatedAt(LocalDateTime.now());
-                overtakePoints.add(point);
+                int impactScore = calculateLeadChangeImpact(curr, isLeadChange);
+                tp.setImpactScore((double) impactScore);
+                tp.setImpactLevel(impactScore >= 40 ? "HIGH" : impactScore >= 20 ? "MEDIUM" : "LOW");
+                tp.setConfidence(Math.min(0.98, 0.65 + impactScore / 100.0));
+                tp.setFactualReason(isLeadChange ? "比分反超" : "比分追平");
+                tp.setAiExplanation(buildLeadChangeExplanation(prev, curr, isLeadChange));
+                tp.setCreatedAt(LocalDateTime.now());
+                points.add(tp);
             }
         }
-
-        return overtakePoints;
+        return points;
     }
 
-    private List<GameTurningPoint> detectClutchSeparations(String gameId,
-            List<PlayByPlayEvent> events) {
-        List<GameTurningPoint> separations = new ArrayList<>();
+    // --- Clutch Moment Detection ---
+    private List<GameTurningPoint> detectClutchMoments(String gameId, List<PlayByPlayEvent> events) {
+        List<GameTurningPoint> points = new ArrayList<>();
+        for (PlayByPlayEvent e : events) {
+            if (!e.isScoringPlay()) continue;
+            if (e.period() < 4) continue;
 
-        for (int i = 0; i < events.size(); i++) {
-            PlayByPlayEvent event = events.get(i);
+            int clockSec = clockToSeconds(e.gameClock());
+            if (clockSec > 300) continue;
 
-            if (event.period() < 4) {
-                continue;
-            }
-            if (!isWithinLast5Minutes(event.gameClock())) {
-                continue;
-            }
+            int margin = Math.abs(e.homeScore() - e.awayScore());
+            if (margin > 8) continue;
 
-            int margin = Math.abs(event.scoreMargin());
-            if (margin < 8) {
-                continue;
-            }
+            String desc = (e.description() != null ? e.description() : "").toLowerCase();
+            int bonus = 0;
+            if (desc.contains("3pt") || desc.contains("three")) bonus += 15;
+            if (desc.contains("dunk")) bonus += 10;
+            if (margin == 0) bonus += 30; // tie
+            if (clockSec <= 60) bonus += 20;
 
-            // Check if previous events had margin <= 2
-            int lookback = Math.min(10, i);
-            for (int j = i - lookback; j < i; j++) {
-                PlayByPlayEvent prev = events.get(j);
-                if (Math.abs(prev.scoreMargin()) <= 2) {
-                    GameTurningPoint point = new GameTurningPoint();
-                    point.setGameId(gameId);
-                    point.setEventId(null);
-                    point.setPeriod(event.period());
-                    point.setGameClock(event.gameClock());
-                    point.setType("CLUTCH_SEPARATION");
-                    point.setConfidence(0.85);
-                    point.setFactualReason("关键时刻分差拉开至 " + margin + " 分，比分 "
-                            + event.homeScore() + "-" + event.awayScore());
-                    point.setCitedEventIdsJson("[\"" + prev.sourceEventId()
-                            + "\",\"" + event.sourceEventId() + "\"]");
-                    point.setCreatedAt(LocalDateTime.now());
-                    separations.add(point);
-                    break; // Only one separation per event
-                }
-            }
+            int impactScore = 20 + bonus;
+            GameTurningPoint tp = new GameTurningPoint();
+            tp.setGameId(gameId);
+            tp.setPeriod(e.period());
+            tp.setGameClock(e.gameClock());
+            tp.setType("CLUTCH_SCORE");
+            tp.setStartEventOrder(e.eventOrder());
+            tp.setEndEventOrder(e.eventOrder());
+            tp.setStartHomeScore(e.homeScore());
+            tp.setStartAwayScore(e.awayScore());
+            tp.setEndHomeScore(e.homeScore());
+            tp.setEndAwayScore(e.awayScore());
+            tp.setScoreSwing(0);
+            tp.setImpactScore((double) impactScore);
+            tp.setImpactLevel(impactScore >= 40 ? "HIGH" : "MEDIUM");
+            tp.setConfidence(Math.min(0.98, 0.65 + impactScore / 100.0));
+            tp.setFactualReason("关键时刻得分");
+            tp.setAiExplanation("第四节最后5分钟，分差仅" + margin + "分时的关键得分。");
+            tp.setCreatedAt(LocalDateTime.now());
+            points.add(tp);
         }
-
-        return separations;
+        return points;
     }
 
-    private boolean isWithinLast5Minutes(String gameClock) {
-        if (gameClock == null || !gameClock.contains(":")) {
-            return false;
+    // --- Max Margin Swing ---
+    private List<GameTurningPoint> detectMaxMarginSwing(String gameId, List<PlayByPlayEvent> events) {
+        List<GameTurningPoint> points = new ArrayList<>();
+        int maxMargin = 0;
+        PlayByPlayEvent maxEvent = null;
+        for (PlayByPlayEvent e : events) {
+            int margin = Math.abs(e.homeScore() - e.awayScore());
+            if (margin > maxMargin) {
+                maxMargin = margin;
+                maxEvent = e;
+            }
         }
-        String[] parts = gameClock.split(":");
+        if (maxEvent != null && maxMargin >= 15) {
+            GameTurningPoint tp = new GameTurningPoint();
+            tp.setGameId(gameId);
+            tp.setPeriod(maxEvent.period());
+            tp.setGameClock(maxEvent.gameClock());
+            tp.setType("MARGIN_BREAK");
+            tp.setStartEventOrder(maxEvent.eventOrder());
+            tp.setEndEventOrder(maxEvent.eventOrder());
+            tp.setStartHomeScore(maxEvent.homeScore());
+            tp.setStartAwayScore(maxEvent.awayScore());
+            tp.setEndHomeScore(maxEvent.homeScore());
+            tp.setEndAwayScore(maxEvent.awayScore());
+            tp.setScoreSwing(maxMargin);
+            tp.setImpactScore((double) (maxMargin * 3));
+            tp.setImpactLevel(maxMargin >= 20 ? "HIGH" : "MEDIUM");
+            tp.setConfidence(Math.min(0.98, 0.65 + maxMargin * 3.0 / 100.0));
+            tp.setFactualReason("建立全场最大 " + maxMargin + " 分领先");
+            tp.setAiExplanation("分差扩大到" + maxMargin + "分，是比赛走势的阶段性高点。");
+            tp.setCreatedAt(LocalDateTime.now());
+            points.add(tp);
+        }
+        return points;
+    }
+
+    // --- Deduplication ---
+    private List<GameTurningPoint> deduplicate(List<GameTurningPoint> points) {
+        List<GameTurningPoint> sorted = points.stream()
+                .sorted(Comparator.comparingDouble(GameTurningPoint::getImpactScore).reversed())
+                .collect(Collectors.toList());
+
+        List<GameTurningPoint> result = new ArrayList<>();
+        for (GameTurningPoint p : sorted) {
+            boolean dup = result.stream().anyMatch(existing ->
+                    existing.getType().equals(p.getType())
+                    && existing.getPeriod() == p.getPeriod()
+                    && existing.getTeamName() != null && existing.getTeamName().equals(p.getTeamName())
+                    && Math.abs(existing.getEndEventOrder() - p.getEndEventOrder()) <= 5
+            );
+            if (!dup) result.add(p);
+        }
+        return result;
+    }
+
+    // --- Impact Scoring ---
+    private int calculateRunImpact(PlayByPlayEvent start, PlayByPlayEvent end, int runFor, int runAgainst, boolean isHome) {
+        int netSwing = runFor - runAgainst;
+        int score = netSwing * 8 + runFor * 2;
+        score += periodWeight(end.period());
+        score += clutchWeight(end.period(), end.gameClock());
+        return score;
+    }
+
+    private int calculateLeadChangeImpact(PlayByPlayEvent event, boolean isLeadChange) {
+        int score = isLeadChange ? 30 : 15;
+        score += periodWeight(event.period());
+        score += clutchWeight(event.period(), event.gameClock());
+        return score;
+    }
+
+    private int periodWeight(int period) {
+        return switch (period) {
+            case 1 -> 0; case 2 -> 5; case 3 -> 10; case 4 -> 20;
+            default -> 25; // OT
+        };
+    }
+
+    private int clutchWeight(int period, String gameClock) {
+        if (period < 4) return 0;
+        int sec = clockToSeconds(gameClock);
+        if (sec <= 120) return 35;
+        if (sec <= 300) return 20;
+        return 0;
+    }
+
+    // --- Rule-based Explanations ---
+    private String buildRunExplanation(PlayByPlayEvent start, PlayByPlayEvent end, int runFor, int runAgainst, boolean isHome) {
+        String team = isHome ? "主队" : "客队";
+        return String.format("这段 %d-%d 攻击波让%s净胜 %d 分，在第%d节 %s 时段改变了比赛走势。",
+                runFor, runAgainst, team, runFor - runAgainst, end.period(), end.gameClock());
+    }
+
+    private String buildLeadChangeExplanation(PlayByPlayEvent prev, PlayByPlayEvent curr, boolean isLeadChange) {
+        return String.format("第%d节 %s，比分从 %d-%d 变为 %d-%d，%s。",
+                curr.period(), curr.gameClock(),
+                prev.homeScore(), prev.awayScore(),
+                curr.homeScore(), curr.awayScore(),
+                isLeadChange ? "完成反超" : "比分追平");
+    }
+
+    private int clockToSeconds(String gameClock) {
+        if (gameClock == null || gameClock.isEmpty()) return 999;
         try {
-            int minutes = Integer.parseInt(parts[0].trim());
-            int seconds = Integer.parseInt(parts[1].trim());
-            return minutes < 5 || (minutes == 5 && seconds == 0);
-        } catch (NumberFormatException e) {
-            return false;
+            String[] parts = gameClock.split(":");
+            return Integer.parseInt(parts[0].trim()) * 60 + Integer.parseInt(parts[1].trim());
+        } catch (Exception e) {
+            return 999;
         }
     }
 }
