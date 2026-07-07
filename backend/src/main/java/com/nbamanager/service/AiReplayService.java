@@ -1,6 +1,7 @@
 package com.nbamanager.service;
 
 import com.nbamanager.domain.*;
+import com.nbamanager.domain.provider.PlayByPlayEvent;
 import com.nbamanager.repository.*;
 import com.nbamanager.service.mimo.*;
 import com.nbamanager.web.dto.*;
@@ -33,6 +34,8 @@ public class AiReplayService {
     private final MimoClient mimoClient;
     private final AiGroundingValidator groundingValidator;
     private final PlayByPlayTranslationService translationService;
+    private final MomentumComputeService momentumComputeService;
+    private final TurningPointDetectService turningPointDetectService;
 
     public List<TimelineEventDto> getTimeline(String gameId, Integer period) {
         ensureData(gameId);
@@ -270,11 +273,33 @@ public class AiReplayService {
     private void ensureData(String gameId) {
         boolean hasPbp = !playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId).isEmpty();
         boolean hasMomentum = !momentumRepository.findByGameIdOrderByEventOrderAsc(gameId).isEmpty();
+        boolean hasTurningPoints = !turningPointRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId).isEmpty();
 
-        if (!hasPbp || !hasMomentum) {
-            log.info("Data incomplete for gameId={} (pbp={}, momentum={}), triggering collection",
-                    gameId, hasPbp, hasMomentum);
+        if (!hasPbp) {
+            // No PlayByPlay data at all - full collection needed
+            log.info("No PlayByPlay for gameId={}, triggering full collection", gameId);
             collectorService.collect(gameId);
+        } else if (!hasMomentum || !hasTurningPoints) {
+            // PlayByPlay exists but derived data missing - recompute from existing data
+            log.info("Derived data missing for gameId={} (momentum={}, tp={}), recomputing",
+                    gameId, hasMomentum, hasTurningPoints);
+            List<PlayByPlay> events = playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId);
+            List<PlayByPlayEvent> pbpEvents = events.stream().map(e ->
+                new PlayByPlayEvent(
+                    null, e.getPeriod(), e.getGameClock(), e.getEventType(), e.getActionType(),
+                    e.getDescription(), e.getPlayerName(), e.getPlayerId(), e.getTeamName(), e.getTeamId(),
+                    e.getHomeScore(), e.getAwayScore(), e.getScoreMargin(),
+                    Boolean.TRUE.equals(e.getIsScoringPlay()), Boolean.TRUE.equals(e.getIsHighlightCandidate()),
+                    e.getEventOrder() != null ? e.getEventOrder() : 0, null
+                )
+            ).collect(Collectors.toList());
+
+            if (!hasMomentum) {
+                momentumComputeService.compute(gameId, pbpEvents);
+            }
+            if (!hasTurningPoints) {
+                turningPointDetectService.detect(gameId, pbpEvents);
+            }
         }
     }
 
