@@ -1,562 +1,498 @@
 <template>
   <section class="game-trend-card">
-    <div class="trend-header">
-      <div>
-        <h4 class="trend-title">比赛走势</h4>
-        <p class="trend-subtitle">按比分差展示双方领先变化</p>
+    <div class="trend-topbar">
+      <span>DARK THEME · 当前暗色模式</span>
+      <strong>INTEGRATED REPLAY CARD</strong>
+    </div>
+
+    <header class="game-trend-header">
+      <div class="title-row">
+        <strong>比赛走势</strong>
+        <span>领先分差、攻击波与关键节点</span>
       </div>
-      <div v-if="latestMargin !== null" class="margin-pill" :class="latestMargin >= 0 ? 'home' : 'away'">
-        {{ latestMargin >= 0 ? homeTeam : awayTeam }} {{ Math.abs(latestMargin) }} 分
+      <div v-if="model.points.length" class="trend-pills">
+        <span>最大领先 <b>{{ maxLead }}</b></span>
+        <span>反超 <b>{{ comebackCount }}</b></span>
+        <span>最后5分钟 <b :class="finalFiveClass">{{ finalFiveLabel }}</b></span>
+      </div>
+    </header>
+
+    <div v-if="model.points.length" class="trend-score-board">
+      <div class="score-team score-team-away">
+        <img v-if="awayLogo" :src="awayLogo" class="team-logo" alt="" />
+        <div v-else class="team-mark">{{ awayInitial }}</div>
+        <div class="team-meta">
+          <strong>{{ awayTeam || '客队' }}</strong>
+          <span>{{ awayInitial }}</span>
+        </div>
+        <b class="team-score away-score">{{ model.latestScore.away }}</b>
+      </div>
+
+      <div class="game-state">
+        <strong>{{ gameStatusText }}</strong>
+        <span>{{ model.latestClockLabel }}</span>
+        <small>{{ scoreLeader }}</small>
+      </div>
+
+      <div class="score-team score-team-home">
+        <b class="team-score home-score">{{ model.latestScore.home }}</b>
+        <div class="team-meta">
+          <strong>{{ homeTeam || '主队' }}</strong>
+          <span>{{ homeInitial }}</span>
+        </div>
+        <img v-if="homeLogo" :src="homeLogo" class="team-logo" alt="" />
+        <div v-else class="team-mark home">{{ homeInitial }}</div>
       </div>
     </div>
 
-    <div v-if="data.length" ref="chartWrapperRef" class="chart-wrapper">
-      <v-chart
-        ref="chartRef"
-        class="chart-instance"
-        :option="chartOption"
-        :autoresize="false"
-        @click="handleChartClick"
+    <div v-if="model.points.length" class="trend-layout">
+      <div class="trend-main-card">
+        <MomentumArea
+          :model="model"
+          :home-team="homeTeam"
+          :away-team="awayTeam"
+          :display-mode="displayMode"
+          :width="chartSize.width"
+          :height="chartSize.height"
+          :padding="chartPadding"
+          @select="selectByOrder"
+        />
+        <EventStrip
+          :markers="model.markers"
+          :runs="model.runs"
+          :chart-left="chartPadding.left"
+          :chart-width="chartSize.width - chartPadding.left - chartPadding.right"
+          @select="selectByOrder"
+        />
+      </div>
+
+      <TrendOverviewCard
+        :model="model"
+        :metrics="model.metrics"
+        :home-team="homeTeam"
+        :away-team="awayTeam"
       />
     </div>
-    <div v-else class="empty-state">暂无走势数据</div>
 
-    <div v-if="data.length" class="chart-legend">
-      <span><i class="dot home"></i>{{ homeTeam }}领先</span>
-      <span><i class="dot away"></i>{{ awayTeam }}领先</span>
-      <span class="hint">点击高亮节点查看回合</span>
-    </div>
+    <div v-else class="empty-state">暂无走势数据</div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import type { MomentumSnapshot } from '@/api/types'
-import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { LineChart, ScatterChart } from 'echarts/charts'
-import {
-  GridComponent,
-  TooltipComponent,
-  MarkLineComponent,
-  DataZoomComponent,
-} from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
-
-use([
-  LineChart,
-  ScatterChart,
-  GridComponent,
-  TooltipComponent,
-  MarkLineComponent,
-  DataZoomComponent,
-  CanvasRenderer,
-])
+import { computed, ref } from 'vue'
+import type { MomentumSnapshot, TimelineEvent } from '@/api/types'
+import { getTeamLogo } from '@/utils/teamLogos'
+import EventStrip from './game-trend/EventStrip.vue'
+import MomentumArea from './game-trend/MomentumArea.vue'
+import TrendOverviewCard from './game-trend/TrendOverviewCard.vue'
+import type { TrendDisplayMode } from './game-trend/types'
+import { buildTrendModel, findNearestPoint } from './game-trend/trendUtils'
 
 const props = defineProps<{
   data: MomentumSnapshot[]
+  timelineEvents: TimelineEvent[]
   homeTeam: string
   awayTeam: string
+  selectedEvent?: TimelineEvent | null
 }>()
 
 const emit = defineEmits<{
   pointClick: [snapshot: MomentumSnapshot]
 }>()
 
-const chartRef = ref<InstanceType<typeof VChart> | null>(null)
-const chartWrapperRef = ref<HTMLDivElement | null>(null)
+const displayMode = ref<TrendDisplayMode>('lead') // kept for API compatibility
 
-// ---------------------------------------------------------------------------
-// Theme resolution: read CSS variables or fall back to dark defaults
-// ---------------------------------------------------------------------------
-function resolveThemeVar(name: string, fallback: string): string {
-  if (typeof window === 'undefined') return fallback
-  const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-  return val || fallback
+const chartSize = {
+  width: 1180,
+  height: 380,
 }
 
-const themeColors = computed(() => ({
-  home: resolveThemeVar('--gi-home', '#3B82F6'),
-  away: resolveThemeVar('--gi-away', '#F97316'),
-  surface: resolveThemeVar('--gi-surface-strong', '#111827'),
-  border: resolveThemeVar('--gi-border', 'rgba(255,255,255,0.08)'),
-  text: resolveThemeVar('--gi-text', '#F8FAFC'),
-  muted: resolveThemeVar('--gi-muted', '#94A3B8'),
-}))
-
-// ---------------------------------------------------------------------------
-// Data processing – thin out unchanged segments, keep sign-change anchors
-// ---------------------------------------------------------------------------
-const processedData = computed(() => {
-  if (props.data.length <= 2) return props.data
-  const result: MomentumSnapshot[] = []
-  let lastMargin: number | null = null
-  props.data.forEach((item, index) => {
-    const changed = lastMargin === null || item.scoreMargin !== lastMargin
-    const crossesZero =
-      lastMargin !== null && Math.sign(item.scoreMargin) !== Math.sign(lastMargin)
-    const periodicAnchor = index % 12 === 0
-    if (index === 0 || index === props.data.length - 1 || changed || crossesZero || periodicAnchor) {
-      result.push(item)
-      lastMargin = item.scoreMargin
-    }
-  })
-  return result
-})
-
-// ---------------------------------------------------------------------------
-// Period boundaries: compute which eventOrder values fall at period transitions
-// (for X-axis category labels)
-// ---------------------------------------------------------------------------
-const periodLabels = computed(() => {
-  const items = processedData.value
-  if (!items.length) return [] as string[]
-  const labels: string[] = []
-  for (let i = 0; i < items.length; i++) {
-    const prev = items[i - 1]
-    if (!prev || prev.period !== items[i].period) {
-      labels.push(`Q${items[i].period}`)
-    } else {
-      labels.push('')
-    }
-  }
-  return labels
-})
-
-// ---------------------------------------------------------------------------
-// Important points – sign changes, local extremes, high swing
-// ---------------------------------------------------------------------------
-const importantIndices = computed(() => {
-  const items = processedData.value
-  if (!items.length) return new Set<number>()
-  const maxMargin = Math.max(10, ...items.map((d) => Math.abs(d.scoreMargin)))
-  const set = new Set<number>()
-
-  for (let i = 0; i < items.length; i++) {
-    const prev = items[i - 1]
-    const next = items[i + 1]
-    const d = items[i]
-
-    // endpoints
-    if (i === 0 || i === items.length - 1) {
-      set.add(i)
-      continue
-    }
-
-    // sign change
-    if (Math.sign(d.scoreMargin) !== Math.sign(prev.scoreMargin)) {
-      set.add(i)
-      continue
-    }
-
-    // large swing (>= 5 points between consecutive processed entries)
-    if (Math.abs(d.scoreMargin - prev.scoreMargin) >= 5) {
-      set.add(i)
-      continue
-    }
-
-    // local extreme (peak or valley)
-    if (
-      Math.abs(d.scoreMargin) >= Math.abs(prev.scoreMargin) &&
-      Math.abs(d.scoreMargin) >= Math.abs(next.scoreMargin) &&
-      Math.abs(d.scoreMargin) >= maxMargin * 0.5
-    ) {
-      set.add(i)
-    }
-  }
-  return set
-})
-
-// ---------------------------------------------------------------------------
-// Latest margin for the badge
-// ---------------------------------------------------------------------------
-const latestMargin = computed(() => {
-  const last = props.data.at(-1)
-  return last ? last.scoreMargin : null
-})
-
-// ---------------------------------------------------------------------------
-// ECharts option
-// ---------------------------------------------------------------------------
-const chartOption = computed(() => {
-  const colors = themeColors.value
-  const items = processedData.value
-  if (!items.length) return {}
-
-  const xLabels = periodLabels.value
-  const maxMargin = Math.max(10, ...items.map((d) => Math.abs(d.scoreMargin)))
-
-  // Scatter data for important points: [index, scoreMargin, snapshotIndex]
-  const scatterData: [number, number, number][] = []
-  importantIndices.value.forEach((idx) => {
-    scatterData.push([idx, items[idx].scoreMargin, idx])
-  })
-
-  // Home / Away area visual pieces (above / below zero line)
-  const isLight =
-    typeof document !== 'undefined' &&
-    document.documentElement.getAttribute('data-theme') === 'light'
-
-  return {
-    backgroundColor: 'transparent',
-    grid: {
-      top: 24,
-      right: 20,
-      bottom: 32,
-      left: 52,
-      containLabel: false,
-    },
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(17,24,39,0.95)',
-      borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
-      borderWidth: 1,
-      textStyle: {
-        color: isLight ? '#1E293B' : colors.text,
-        fontSize: 12,
-      },
-      formatter(params: any) {
-        const point = params[0]
-        if (!point) return ''
-        const d = items[point.dataIndex]
-        if (!d) return ''
-        return `<div style="line-height:1.6">` +
-          `<strong>Q${d.period} ${d.gameClock}</strong><br/>` +
-          `${homeTeam} ${d.homeScore} - ${d.awayScore} ${awayTeam}<br/>` +
-          `<span style="color:${d.scoreMargin >= 0 ? colors.home : colors.away}">` +
-          `${d.scoreMargin >= 0 ? homeTeam : awayTeam} 领先 ${Math.abs(d.scoreMargin)} 分</span>` +
-          `</div>`
-      },
-    },
-    xAxis: {
-      type: 'category',
-      data: xLabels,
-      boundaryGap: false,
-      axisLine: {
-        show: false,
-      },
-      axisTick: {
-        show: false,
-      },
-      axisLabel: {
-        color: colors.muted,
-        fontSize: 11,
-        fontWeight: 600,
-        interval: (index: number) => xLabels[index] !== '',
-        // Show non-empty labels, hide the rest but keep category positions
-        formatter: (val: string) => val || '',
-      },
-      splitLine: {
-        show: false,
-      },
-    },
-    yAxis: {
-      type: 'value',
-      min: -maxMargin,
-      max: maxMargin,
-      axisLine: {
-        show: false,
-      },
-      axisTick: {
-        show: false,
-      },
-      splitLine: {
-        lineStyle: {
-          color: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)',
-        },
-      },
-      axisLabel: {
-        color: colors.muted,
-        fontSize: 11,
-        formatter: (val: number) => (val === 0 ? '0' : `${val > 0 ? '+' : ''}${val}`),
-      },
-    },
-    series: [
-      // Main line
-      {
-        type: 'line',
-        data: items.map((d) => d.scoreMargin),
-        smooth: true,
-        symbol: 'none',
-        lineStyle: {
-          width: 2.5,
-          color: {
-            type: 'linear',
-            x: 0,
-            y: 0,
-            x2: 1,
-            y2: 0,
-            colorStops: [
-              { offset: 0, color: colors.home },
-              { offset: 0.5, color: colors.home },
-              { offset: 0.5, color: colors.away },
-              { offset: 1, color: colors.away },
-            ],
-          },
-        },
-        markLine: {
-          silent: true,
-          symbol: 'none',
-          lineStyle: {
-            color: isLight ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.18)',
-            type: 'dashed',
-            width: 1.5,
-          },
-          label: {
-            show: false,
-          },
-          data: [{ yAxis: 0 }],
-        },
-      },
-      // Home area (above zero)
-      {
-        type: 'line',
-        data: items.map((d) => Math.max(0, d.scoreMargin)),
-        smooth: true,
-        symbol: 'none',
-        lineStyle: { width: 0, opacity: 0 },
-        areaStyle: {
-          color: {
-            type: 'linear',
-            x: 0,
-            y: 0,
-            x2: 0,
-            y2: 1,
-            colorStops: [
-              { offset: 0, color: hexToRgba(colors.home, 0.32) },
-              { offset: 1, color: hexToRgba(colors.home, 0.02) },
-            ],
-          },
-        },
-        z: 1,
-      },
-      // Away area (below zero, flipped)
-      {
-        type: 'line',
-        data: items.map((d) => Math.min(0, d.scoreMargin)),
-        smooth: true,
-        symbol: 'none',
-        lineStyle: { width: 0, opacity: 0 },
-        areaStyle: {
-          color: {
-            type: 'linear',
-            x: 0,
-            y: 1,
-            x2: 0,
-            y2: 0,
-            colorStops: [
-              { offset: 0, color: hexToRgba(colors.away, 0.28) },
-              { offset: 1, color: hexToRgba(colors.away, 0.02) },
-            ],
-          },
-        },
-        z: 1,
-      },
-      // Important-point scatter
-      {
-        type: 'scatter',
-        data: scatterData,
-        symbolSize: (val: any) => {
-          const margin = Math.abs(val[1])
-          return margin >= maxMargin * 0.75 ? 12 : 8
-        },
-        itemStyle: {
-          color: (params: any) => {
-            const snap = items[params.dataIndex]
-            return snap && snap.scoreMargin >= 0 ? colors.home : colors.away
-          },
-          borderColor: isLight ? '#FFFFFF' : colors.surface,
-          borderWidth: 2,
-          shadowBlur: 6,
-          shadowColor: (params: any) => {
-            const snap = items[params.dataIndex]
-            return snap && snap.scoreMargin >= 0
-              ? hexToRgba(colors.home, 0.4)
-              : hexToRgba(colors.away, 0.4)
-          },
-        },
-        z: 10,
-        // Allow click events to propagate
-        cursor: 'pointer',
-      },
-    ],
-    // No data zoom for now, keep it clean
-    animation: true,
-    animationDuration: 600,
-    animationEasing: 'cubicOut',
-  }
-})
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function hexToRgba(hex: string, alpha: number): string {
-  const raw = hex.replace('#', '')
-  const bigint = parseInt(raw, 16)
-  const r = (bigint >> 16) & 255
-  const g = (bigint >> 8) & 255
-  const b = bigint & 255
-  return `rgba(${r},${g},${b},${alpha})`
+const chartPadding = {
+  top: 36,
+  right: 24,
+  bottom: 36,
+  left: 52,
 }
 
-// ---------------------------------------------------------------------------
-// Chart click handler – map ECharts scatter click back to MomentumSnapshot
-// ---------------------------------------------------------------------------
-function handleChartClick(params: any) {
-  if (params.seriesType === 'scatter' && params.dataIndex != null) {
-    const snap = processedData.value[params.dataIndex]
-    if (snap) emit('pointClick', snap)
+const model = computed(() =>
+  buildTrendModel({
+    data: props.data,
+    events: props.timelineEvents,
+    homeTeam: props.homeTeam,
+    awayTeam: props.awayTeam,
+    selectedEvent: props.selectedEvent,
+    width: chartSize.width,
+    height: chartSize.height,
+    padding: chartPadding,
+  })
+)
+
+const homeLogo = computed(() => getTeamLogo(props.homeTeam) || '')
+const awayLogo = computed(() => getTeamLogo(props.awayTeam) || '')
+const homeInitial = computed(() => teamInitial(props.homeTeam, '主'))
+const awayInitial = computed(() => teamInitial(props.awayTeam, '客'))
+
+const gameStatusText = computed(() => {
+  const latest = model.value.points.at(-1)
+  if (!latest) return '暂无数据'
+  return latest.period >= 4 && latest.gameClock === '0:00' ? '已结束' : '进行中'
+})
+
+const scoreLeader = computed(() => {
+  const margin = model.value.latestScore.home - model.value.latestScore.away
+  if (margin === 0) return '双方打平'
+  const team = margin > 0 ? props.homeTeam || '主队' : props.awayTeam || '客队'
+  return `${team}领先 ${Math.abs(margin)} 分`
+})
+
+const maxLead = computed(() => Math.max(model.value.metrics.maxHomeLead, model.value.metrics.maxAwayLead))
+const comebackCount = computed(() => model.value.points.filter((point) => point.keyLabel === '反超').length)
+const finalFiveClass = computed(() => (model.value.metrics.finalFiveTrend >= 0 ? 'home' : 'away'))
+const finalFiveLabel = computed(() => {
+  const trend = model.value.metrics.finalFiveTrend
+  if (trend === 0) return '持平'
+  const team = trend > 0 ? props.homeTeam || '主队' : props.awayTeam || '客队'
+  return `${trend > 0 ? '+' : ''}${trend} ${team}`
+})
+
+function selectByOrder(eventOrder: number) {
+  const exact = props.data.find((snapshot) => snapshot.eventOrder === eventOrder)
+  if (exact) {
+    emit('pointClick', exact)
+    return
   }
+
+  const nearest = findNearestPoint(model.value.points, eventOrder)
+  if (nearest) emit('pointClick', nearest)
 }
 
-// ---------------------------------------------------------------------------
-// ResizeObserver for responsive chart
-// ---------------------------------------------------------------------------
-let resizeObserver: ResizeObserver | null = null
-
-onMounted(() => {
-  nextTick(() => {
-    const wrapper = chartWrapperRef.value
-    if (!wrapper) return
-    resizeObserver = new ResizeObserver(() => {
-      chartRef.value?.resize()
-    })
-    resizeObserver.observe(wrapper)
-  })
-})
-
-onBeforeUnmount(() => {
-  resizeObserver?.disconnect()
-  resizeObserver = null
-  chartRef.value?.dispose()
-})
+function teamInitial(name: string, fallback: string): string {
+  const value = (name || '').trim()
+  if (!value) return fallback
+  if (/[\u4e00-\u9fa5]/.test(value)) return value.slice(0, 2)
+  const parts = value.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) return parts.map((part) => part[0]).join('').slice(0, 3).toUpperCase()
+  return value.slice(0, 3).toUpperCase()
+}
 </script>
 
 <style scoped>
 .game-trend-card {
-  background: var(--gi-surface-strong, #111827);
-  border: 1px solid var(--gi-border, rgba(255, 255, 255, 0.08));
-  border-radius: 14px;
-  padding: 20px;
+  --trend-home: var(--gi-home);
+  --trend-away: var(--accent-light);
+  --trend-home-soft: rgba(59, 130, 246, 0.18);
+  --trend-away-soft: rgba(249, 115, 22, 0.16);
+  --trend-surface: var(--bg-card);
+  --trend-panel: var(--bg-panel);
+  --trend-hover: var(--bg-hover);
+  --trend-text: var(--text-primary);
+  --trend-muted: var(--text-secondary);
+  --trend-dim: var(--text-muted);
+  --trend-border: var(--border-light);
+  --trend-border-strong: var(--border-medium);
+  --trend-grid: var(--border-subtle);
+  --quarter-fill-a: rgba(var(--bg-panel-rgb), 0.32);
+  --quarter-fill-b: rgba(var(--border-light-rgb), 0.28);
+
+  position: relative;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  overflow: hidden;
+  color: var(--trend-text);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.16), transparent 28%),
+    radial-gradient(circle at 100% 0%, rgba(249, 115, 22, 0.13), transparent 30%),
+    linear-gradient(135deg, rgba(8, 16, 30, 0.98), rgba(14, 24, 44, 0.96) 52%, rgba(22, 18, 26, 0.98));
+  border: 1px solid var(--trend-border);
+  border-radius: 18px;
+  box-shadow:
+    var(--shadow-lg),
+    inset 0 1px 0 var(--border-subtle);
 }
 
-.trend-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 8px;
+.game-trend-card::before {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(180deg, var(--bg-page), transparent 72%);
+  opacity: 0.34;
+  pointer-events: none;
+  content: '';
 }
 
-.trend-title {
-  margin: 0;
-  color: var(--gi-text, #F8FAFC);
-  font-size: 18px;
-  font-weight: 700;
+.game-trend-card > * {
+  position: relative;
+  z-index: 1;
 }
 
-.trend-subtitle {
-  margin: 4px 0 0;
-  color: var(--gi-muted, #94A3B8);
-  font-size: 12px;
-}
-
-.margin-pill {
-  flex-shrink: 0;
-  border-radius: 999px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 700;
-  border: 1px solid var(--gi-border, rgba(255, 255, 255, 0.08));
-}
-
-.margin-pill.home {
-  color: var(--gi-home, #3B82F6);
-  background: rgba(59, 130, 246, 0.12);
-}
-
-.margin-pill.away {
-  color: var(--gi-away, #F97316);
-  background: rgba(249, 115, 22, 0.12);
-}
-
-.chart-wrapper {
-  width: 100%;
-  height: 340px;
-}
-
-.chart-instance {
-  width: 100%;
-  height: 100%;
-}
-
-.chart-legend {
+.trend-topbar {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 18px;
-  margin-top: 6px;
-  color: var(--gi-muted, #94A3B8);
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 24px;
+  color: var(--trend-muted);
   font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
 }
 
-.dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 6px;
-  border-radius: 50%;
+.trend-topbar span {
+  color: var(--trend-home);
 }
 
-.dot.home {
-  background: var(--gi-home, #3B82F6);
+.trend-topbar strong {
+  color: var(--trend-muted);
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 0.16em;
 }
 
-.dot.away {
-  background: var(--gi-away, #F97316);
+.game-trend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
 }
 
-.hint {
-  color: #64748B;
+.title-row {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.title-row strong {
+  color: var(--trend-text);
+  font-size: 15px;
+  font-weight: 950;
+  letter-spacing: -0.01em;
+}
+
+.title-row span {
+  color: var(--trend-home);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.trend-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.trend-pills span {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  gap: 4px;
+  padding: 0 8px;
+  color: var(--trend-muted);
+  background: rgba(var(--bg-panel-rgb), 0.58);
+  border: 1px solid var(--trend-border);
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.trend-pills b {
+  color: var(--trend-text);
+  font-size: 11px;
+}
+
+.trend-pills b.home {
+  color: var(--trend-home);
+}
+
+.trend-pills b.away {
+  color: var(--trend-away);
+}
+
+.trend-score-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 0.45fr) minmax(0, 1fr);
+  align-items: center;
+  min-height: 60px;
+  padding: 10px 14px;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(59, 130, 246, 0.15), rgba(17, 24, 39, 0.7) 47%, rgba(249, 115, 22, 0.15)),
+    rgba(var(--bg-card-rgb), 0.85);
+  border: 1px solid var(--trend-border);
+  border-radius: 16px;
+  box-shadow:
+    var(--shadow-md),
+    inset 0 1px 0 var(--border-subtle);
+  backdrop-filter: blur(20px) saturate(150%);
+}
+
+.score-team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.score-team-home {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.team-logo,
+.team-mark {
+  display: grid;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  object-fit: contain;
+  border-radius: var(--radius-full);
+  filter: drop-shadow(0 10px 20px var(--bg-page));
+}
+
+.team-mark {
+  color: var(--trend-muted);
+  background: var(--bg-card);
+  border: 1px solid var(--trend-border);
+  font-size: 10px;
+  font-weight: 950;
+  box-shadow: inset 0 1px 0 var(--border-subtle);
+}
+
+.team-meta {
+  min-width: 0;
+}
+
+.team-meta strong {
+  display: block;
+  overflow: hidden;
+  color: var(--trend-text);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-meta span {
+  display: block;
+  margin-top: 5px;
+  color: var(--trend-muted);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+}
+
+.team-score {
+  flex: 0 0 auto;
+  font-size: clamp(28px, 3.5vw, 42px);
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.away-score {
+  color: var(--trend-away);
+  text-shadow: 0 0 28px var(--trend-away-soft);
+}
+
+.home-score {
+  color: var(--trend-home);
+  text-shadow: 0 0 28px var(--trend-home-soft);
+}
+
+.game-state {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-width: 100px;
+  padding: 0 12px;
+  color: var(--trend-muted);
+  text-align: center;
+  border-right: 1px solid var(--trend-border);
+  border-left: 1px solid var(--trend-border);
+}
+
+.game-state strong {
+  color: var(--trend-text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.game-state span,
+.game-state small {
+  color: var(--trend-muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.trend-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 260px);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.trend-main-card {
+  min-width: 0;
+  padding: 10px;
+  background:
+    radial-gradient(circle at 50% 0%, var(--trend-home-soft), transparent 38%),
+    rgba(var(--bg-card-rgb), 0.78);
+  border: 1px solid var(--trend-border);
+  border-radius: 18px;
+  box-shadow:
+    var(--shadow-md),
+    inset 0 1px 0 var(--border-subtle);
+  backdrop-filter: blur(18px) saturate(145%);
 }
 
 .empty-state {
-  border: 1px solid var(--gi-border, rgba(255, 255, 255, 0.08));
-  border-radius: 14px;
-  padding: 56px 24px;
-  text-align: center;
-  color: var(--gi-muted, #94A3B8);
-  background: rgba(17, 24, 39, 0.56);
+  display: grid;
+  min-height: 280px;
+  place-items: center;
+  color: var(--trend-muted);
+  background: var(--bg-panel);
+  border: 1px dashed var(--trend-border);
+  border-radius: var(--radius-xl);
+  font-weight: 800;
 }
 
-/* Light theme overrides */
-:global([data-theme='light']) .game-trend-card {
-  background: var(--gi-surface-strong, #FFFFFF);
-  border-color: rgba(0, 0, 0, 0.08);
+@media (max-width: 1180px) {
+  .trend-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
-:global([data-theme='light']) .trend-title {
-  color: #1E293B;
+@media (max-width: 860px) {
+  .trend-score-board {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 14px;
+  }
+
+  .score-team,
+  .score-team-home {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .game-state {
+    order: 3;
+    border: 0;
+  }
 }
 
-:global([data-theme='light']) .trend-subtitle {
-  color: #64748B;
-}
-
-:global([data-theme='light']) .chart-legend {
-  color: #64748B;
-}
-
-:global([data-theme='light']) .hint {
-  color: #94A3B8;
-}
-
-:global([data-theme='light']) .margin-pill {
-  border-color: rgba(0, 0, 0, 0.08);
-}
-
-:global([data-theme='light']) .empty-state {
-  background: rgba(248, 250, 252, 0.56);
-  color: #64748B;
+@media (max-width: 720px) {
+  .game-trend-card,
+  .trend-main-card {
+    padding: 14px;
+  }
 }
 </style>
