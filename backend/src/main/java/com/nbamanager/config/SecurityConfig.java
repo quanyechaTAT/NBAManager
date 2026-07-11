@@ -72,9 +72,14 @@ public class SecurityConfig {
                                 // 上传文件静态资源
                                 .requestMatchers("/uploads/**")
                                 .permitAll()
-                                // 前端静态资源
+                                // 前端静态资源和 SPA 路由（非 /api/、非 /ws/ 的路径放行，由前端路由处理）
                                 .requestMatchers("/", "/index.html", "/favicon.svg", "/sw.js",
                                         "/assets/**", "/images/**")
+                                .permitAll()
+                                .requestMatchers(request -> {
+                                    String path = request.getRequestURI();
+                                    return !path.startsWith("/api/") && !path.startsWith("/ws");
+                                })
                                 .permitAll()
                                 // 季后赛数据修正（临时）
                                 .requestMatchers(HttpMethod.POST, "/api/playoff/fix-data")
