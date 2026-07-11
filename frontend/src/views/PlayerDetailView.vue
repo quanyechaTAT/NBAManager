@@ -546,7 +546,7 @@ async function loadGameLog() {
 
 function goCompare() {
   if (!player.value) return
-  router.push({ path: '/players/compare', query: { id1: String(player.value.id) } })
+  router.push({ path: '/players/compare', query: { id1: String(player.value.id), returnTo: route.fullPath } })
 }
 
 function onHeadshotError(e: Event) {

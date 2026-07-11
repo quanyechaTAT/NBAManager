@@ -6,9 +6,9 @@
     <div class="page-inner stagger-in">
       <!-- 返回 -->
       <div class="back-row">
-        <el-button class="back-btn" link @click="router.push('/players')">
+        <el-button class="back-btn" link @click="goBack">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="m15 18-6-6 6-6"/></svg>
-          返回球员列表
+          返回
         </el-button>
       </div>
 
@@ -115,7 +115,7 @@
         </el-card>
       </div>
 
-      <el-empty v-if="!compare && !loading" description="选择两位球员开始对比" />
+      <AppEmpty v-if="!compare && !loading" description="选择两位球员开始对比" />
     </div>
   </div>
 </template>
@@ -134,12 +134,23 @@ import { fetchPlayerCompare } from '@/api/playerCompare'
 import type { Player } from '@/api/types'
 import type { PlayerCompare } from '@/api/playerCompare'
 import { useChartTheme } from '@/composables/useChartTheme'
+import AppEmpty from '@/components/common/AppEmpty.vue'
 
 use([RadarChart, TitleComponent, TooltipComponent, RadarComponent, CanvasRenderer])
 
 const { colors, tooltipStyle } = useChartTheme()
 const route = useRoute()
 const router = useRouter()
+
+function goBack() {
+  const returnTo = route.query.returnTo as string
+  if (returnTo) {
+    router.replace(returnTo)
+  } else {
+    router.replace('/players')
+  }
+}
+
 const loading = ref(false)
 const searching1 = ref(false)
 const searching2 = ref(false)
