@@ -140,9 +140,9 @@ const auth = useAuthStore()
 function goBack() {
   const returnTo = route.query.returnTo as string
   if (returnTo) {
-    router.push(returnTo)
+    router.replace(returnTo)
   } else {
-    router.back()
+    router.replace('/teams')
   }
 }
 

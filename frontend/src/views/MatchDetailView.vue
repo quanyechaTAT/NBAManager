@@ -327,11 +327,7 @@ const queryAwayScore = computed(() => {
 })
 
 function goBack() {
-  if (returnTo.value) {
-    router.replace(returnTo.value)
-  } else {
-    router.push('/news')
-  }
+  router.back()
 }
 
 const boxScore = ref<BoxScore | null>(null)
