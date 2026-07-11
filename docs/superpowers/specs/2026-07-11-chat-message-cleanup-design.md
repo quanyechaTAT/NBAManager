@@ -26,6 +26,7 @@ app:
     retention-days: ${CHAT_RETENTION_DAYS:180}
     cleanup-batch-size: ${CHAT_CLEANUP_BATCH_SIZE:1000}
     cleanup-cron: ${CHAT_CLEANUP_CRON:0 0 3 * * ?}
+    cleanup-max-batches: ${CHAT_CLEANUP_MAX_BATCHES:500}
 ```
 
 | 配置项 | 默认值 | 说明 |
@@ -34,6 +35,7 @@ app:
 | `retention-days` | 180 | 消息保留天数 |
 | `cleanup-batch-size` | 1000 | 每批删除条数 |
 | `cleanup-cron` | `0 0 3 * * ?` | 定时表达式，默认每天凌晨 3 点 |
+| `cleanup-max-batches` | 500 | 单次运行最多清理批次数，防死循环 |
 
 ### 启用调度
 
@@ -46,14 +48,31 @@ public class SchedulingConfig {
 }
 ```
 
-### ChatCleanupService
+### ChatCleanupService + ChatCleanupBatchService
 
-新建 `com.nbamanager.service.ChatCleanupService`：
+为避免 `@Transactional(REQUIRES_NEW)` 自调用失效，将单批删除拆到独立 Bean。
 
-- **调度方法** `cleanupExpiredMessages()`：无 `@Transactional`，负责循环调度和异常控制
-- **删除方法** `deleteOneBatch(cutoff, batchSize)`：`@Transactional(propagation = REQUIRES_NEW)`，每批独立事务
+**ChatCleanupBatchService**（新建）：
+
+```java
+@Service
+@RequiredArgsConstructor
+public class ChatCleanupBatchService {
+
+    private final ChatMessageRepository chatMessageRepository;
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int deleteOneBatch(Instant cutoff, int limit) {
+        return chatMessageRepository.deleteBatchBefore(cutoff, limit);
+    }
+}
+```
+
+**ChatCleanupService**（新建）：
+
+- **调度方法** `cleanupExpiredMessages()`：无 `@Transactional`，负责分布式锁、循环调度和异常控制
 - **分布式锁**：使用 Redis `SETNX` 设置 `nba:chat:cleanup:lock`，TTL 300 秒，获取失败则跳过本次执行
-- **防死循环**：设置 `maxBatches = retentionDays`（保守上限），某批删除失败时记录日志并 break
+- **防死循环**：使用 `cleanup-max-batches` 配置（默认 500），某批删除失败时记录日志并 break
 
 ```java
 @Service
@@ -70,7 +89,10 @@ public class ChatCleanupService {
     @Value("${app.chat.cleanup-batch-size:1000}")
     private int batchSize;
 
-    private final ChatMessageRepository chatMessageRepository;
+    @Value("${app.chat.cleanup-max-batches:500}")
+    private int maxBatches;
+
+    private final ChatCleanupBatchService batchService;
     private final StringRedisTemplate redisTemplate;
 
     private static final String LOCK_KEY = "nba:chat:cleanup:lock";
@@ -93,24 +115,23 @@ public class ChatCleanupService {
             log.info("开始清理{}天前的聊天消息, cutoff={}", retentionDays, cutoff);
 
             int totalDeleted = 0;
-            int maxBatches = retentionDays; // 保守上限，防止死循环
 
             for (int batch = 0; batch < maxBatches; batch++) {
-                int deleted = deleteOneBatch(cutoff, batchSize);
-                totalDeleted += deleted;
-                log.debug("第{}批删除{}条", batch + 1, deleted);
-                if (deleted == 0) break;
+                try {
+                    int deleted = batchService.deleteOneBatch(cutoff, batchSize);
+                    totalDeleted += deleted;
+                    log.debug("第{}批删除{}条", batch + 1, deleted);
+                    if (deleted == 0) break;
+                } catch (Exception e) {
+                    log.warn("Chat cleanup batch {} failed, stop current run", batch + 1, e);
+                    break;
+                }
             }
 
             log.info("聊天消息清理完成, 共删除{}条", totalDeleted);
         } finally {
             redisTemplate.delete(LOCK_KEY);
         }
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public int deleteOneBatch(Instant cutoff, int limit) {
-        return chatMessageRepository.deleteBatchBefore(cutoff, limit);
     }
 }
 ```
@@ -158,8 +179,8 @@ int deleteBatchBefore(@Param("cutoff") Instant cutoff, @Param("limit") int limit
 
 ### 异常处理
 
-- 每批删除在独立事务中执行（`REQUIRES_NEW`），某批失败不影响其他批次
-- 失败后记录日志并 break，不继续重试
+- 每批删除在独立事务中执行（`REQUIRES_NEW`，通过独立 Bean 避免自调用失效），某批失败不影响其他批次
+- 每批调用包裹在 try/catch 中，失败后记录日志并 break，不继续重试
 - 调度方法的异常不传播到调度器，不影响主业务
 
 ### 安全约束
@@ -187,6 +208,7 @@ int deleteBatchBefore(@Param("cutoff") Instant cutoff, @Param("limit") int limit
 |------|------|
 | `backend/src/main/java/com/nbamanager/config/SchedulingConfig.java` | 新增 |
 | `backend/src/main/java/com/nbamanager/service/ChatCleanupService.java` | 新增 |
+| `backend/src/main/java/com/nbamanager/service/ChatCleanupBatchService.java` | 新增 |
 | `backend/src/main/java/com/nbamanager/repository/ChatMessageRepository.java` | 修改（添加 `deleteBatchBefore`） |
 | `backend/src/main/java/com/nbamanager/domain/ChatMessage.java` | 修改（添加索引） |
 | `backend/src/main/resources/application.yml` | 修改（添加 `app.chat.*` 配置） |
