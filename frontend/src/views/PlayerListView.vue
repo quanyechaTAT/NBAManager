@@ -69,7 +69,7 @@
               </div>
             </div>
           </div>
-          <el-empty v-if="!loading && rows.length === 0" description="暂无球员数据" />
+          <AppEmpty v-if="!loading && rows.length === 0" description="暂无球员数据" />
         </div>
         <div class="pager" v-if="total > 0">
           <el-pagination background layout="total, prev, pager, next" :total="total" v-model:current-page="page" :page-size="21" @current-change="load" />
@@ -169,6 +169,7 @@ import { createPlayer, deletePlayer, fetchPlayers, updatePlayer } from '@/api/pl
 import { fetchTeams } from '@/api/team'
 import type { Player, Team } from '@/api/types'
 import { getTeamLogo } from '@/utils/teamLogos'
+import AppEmpty from '@/components/common/AppEmpty.vue'
 
 const auth = useAuthStore()
 const router = useRouter()

@@ -68,6 +68,7 @@ test_screenshots/
 
 # Root node_modules
 node_modules/
+.npm-cache/
 
 # Test files
 test-*.js

@@ -134,7 +134,7 @@
           </el-table>
         </div>
 
-        <el-empty v-if="!loading && rows.length === 0" description="暂无选秀数据" />
+        <AppEmpty v-if="!loading && rows.length === 0" description="暂无选秀数据" />
       </el-card>
 
       <!-- 新建/编辑弹窗 -->
@@ -181,6 +181,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { fetchDraftPicks, createDraftPick, updateDraftPick, deleteDraftPick } from '@/api/draft'
+import AppEmpty from '@/components/common/AppEmpty.vue'
 import type { DraftPick } from '@/api/types'
 import SyncButton from '@/components/common/SyncButton.vue'
 

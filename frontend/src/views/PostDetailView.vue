@@ -153,7 +153,7 @@
             </div>
           </div>
 
-          <el-empty v-if="comments.length === 0" description="暂无评论，来说两句吧" :image-size="60" />
+          <AppEmpty v-if="comments.length === 0" description="暂无评论，来说两句吧" />
         </div>
       </div>
     </div>
@@ -203,6 +203,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { fetchPost, fetchComments, createComment, deleteComment, deletePost, updatePost, togglePostLike, toggleCommentLike, toggleCommentPin } from '@/api/community'
 import EmojiPicker from '@/components/EmojiPicker.vue'
 import { useEmojiPicker } from '@/composables/useEmojiPicker'
+import AppEmpty from '@/components/common/AppEmpty.vue'
 import ShareButton from '@/components/ShareButton.vue'
 import { toggleFavorite, fetchFavoritedPostIds } from '@/api/favorite'
 import { recordBrowse } from '@/api/browseHistory'

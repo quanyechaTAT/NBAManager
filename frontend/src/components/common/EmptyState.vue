@@ -1,11 +1,7 @@
 <template>
   <div class="empty-state">
-    <div class="empty-state__icon">
-      <span v-if="icon">{{ icon }}</span>
-      <svg v-else xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
-        <path d="M16 7V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v3" />
-      </svg>
+    <div v-if="icon" class="empty-state__icon">
+      <span>{{ icon }}</span>
     </div>
     <h3 class="empty-state__title">{{ title }}</h3>
     <p v-if="description" class="empty-state__description">{{ description }}</p>

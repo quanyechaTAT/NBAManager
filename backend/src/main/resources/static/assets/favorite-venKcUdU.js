@@ -1,0 +1,1 @@
+import{r as t}from"./request-CnPtXZw-.js";function s(e,r){return t.post("/favorites",{targetType:e,targetId:r})}function a(){return t.get("/favorites/players")}function f(){return t.get("/favorites/teams")}function n(){return t.get("/favorites/posts")}function i(){return t.get("/favorites/news")}export{a,n as b,i as c,f,s as t};

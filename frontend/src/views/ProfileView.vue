@@ -85,7 +85,7 @@
                   <span class="fav-sub">{{ p.teamName }} · {{ p.position }}</span>
                 </div>
               </div>
-              <el-empty v-if="!favLoading && followedPlayers.length === 0" description="暂无关注球员" />
+              <AppEmpty v-if="!favLoading && followedPlayers.length === 0" description="暂无关注球员" />
             </div>
           </el-card>
         </el-tab-pane>
@@ -104,7 +104,7 @@
                   <span class="fav-sub">{{ t.city }} · {{ t.conference }}</span>
                 </div>
               </div>
-              <el-empty v-if="!favLoading && followedTeams.length === 0" description="暂无关注球队" />
+              <AppEmpty v-if="!favLoading && followedTeams.length === 0" description="暂无关注球队" />
             </div>
           </el-card>
         </el-tab-pane>
@@ -120,7 +120,7 @@
                   <span class="fav-sub">👍 {{ p.likeCount }} · 💬 {{ p.commentCount }} · 👁 {{ p.viewCount }}</span>
                 </div>
               </div>
-              <el-empty v-if="!favLoading && favoritedPosts.length === 0" description="暂无收藏帖子" />
+              <AppEmpty v-if="!favLoading && favoritedPosts.length === 0" description="暂无收藏帖子" />
             </div>
           </el-card>
         </el-tab-pane>
@@ -135,7 +135,7 @@
                   <span class="fav-sub">👁 {{ n.viewCount }} · ❤️ {{ n.favoriteCount }}</span>
                 </div>
               </div>
-              <el-empty v-if="!newsLoading && favoritedNews.length === 0" description="暂无收藏资讯" />
+              <AppEmpty v-if="!newsLoading && favoritedNews.length === 0" description="暂无收藏资讯" />
             </div>
           </el-card>
         </el-tab-pane>
@@ -156,7 +156,7 @@
                     </div>
                     <el-button type="danger" link size="small" @click.stop="removeHistory('NEWS', n.id)">删除</el-button>
                   </div>
-                  <el-empty v-if="!historyLoading && browsedNews.length === 0" description="暂无资讯浏览历史" />
+                  <AppEmpty v-if="!historyLoading && browsedNews.length === 0" description="暂无资讯浏览历史" />
                 </div>
               </el-tab-pane>
               <el-tab-pane label="帖子浏览历史" name="postHistory">
@@ -171,7 +171,7 @@
                     </div>
                     <el-button type="danger" link size="small" @click.stop="removeHistory('POST', p.id)">删除</el-button>
                   </div>
-                  <el-empty v-if="!historyLoading && browsedPosts.length === 0" description="暂无帖子浏览历史" />
+                  <AppEmpty v-if="!historyLoading && browsedPosts.length === 0" description="暂无帖子浏览历史" />
                 </div>
               </el-tab-pane>
             </el-tabs>
@@ -197,6 +197,7 @@ import { fetchNews } from '@/api/news'
 import { fetchPosts } from '@/api/community'
 import type { Player, Team, GameNews } from '@/api/types'
 import type { Post } from '@/api/community'
+import AppEmpty from '@/components/common/AppEmpty.vue'
 
 const router = useRouter()
 const auth = useAuthStore()

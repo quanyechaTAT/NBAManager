@@ -70,7 +70,7 @@
           </div>
           <div class="chart-container">
             <v-chart class="chart" :option="winsChartOption" autoresize v-if="teams.length > 0" />
-            <el-empty v-else description="暂无球队数据" />
+            <AppEmpty v-else description="暂无球队数据" />
           </div>
         </div>
 
@@ -139,6 +139,7 @@ import { getAvailableSeasons, getPlayersBySeason, getTeamsBySeason, syncHistoric
 import { useAuthStore } from '@/stores/auth'
 import type { Player, Team } from '@/api/types'
 import { useChartTheme } from '@/composables/useChartTheme'
+import AppEmpty from '@/components/common/AppEmpty.vue'
 
 use([CanvasRenderer, BarChart, GridComponent, TooltipComponent, LegendComponent])
 

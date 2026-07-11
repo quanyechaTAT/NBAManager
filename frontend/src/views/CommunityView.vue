@@ -57,7 +57,7 @@
                 <span class="post-time">{{ formatTime(post.lastReplyTime || post.createTime) }}</span>
               </div>
             </div>
-            <el-empty v-if="!loading && posts.length === 0" description="暂无帖子" />
+            <AppEmpty v-if="!loading && posts.length === 0" description="暂无帖子" />
           </div>
           <div class="pager" v-if="total > 0">
             <el-pagination
@@ -99,7 +99,7 @@
                   </div>
                 </div>
               </div>
-              <el-empty v-if="hotPosts.length === 0" description="暂无热帖" :image-size="60" />
+              <AppEmpty v-if="hotPosts.length === 0" description="暂无热帖" size="sm" />
             </div>
           </div>
         </div>
@@ -151,6 +151,7 @@ import { fetchPosts, fetchHotPosts, createPost } from '@/api/community'
 import type { Post, PostRequest } from '@/api/community'
 import EmojiPicker from '@/components/EmojiPicker.vue'
 import { useEmojiPicker } from '@/composables/useEmojiPicker'
+import AppEmpty from '@/components/common/AppEmpty.vue'
 
 const router = useRouter()
 const loading = ref(false)

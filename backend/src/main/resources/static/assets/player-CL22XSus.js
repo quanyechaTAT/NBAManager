@@ -1,0 +1,1 @@
+import{r}from"./request-CnPtXZw-.js";function n(e){return r.get("/players",{params:e})}function s(e){return r.post("/players",e)}function u(e,t){return r.put(`/players/${e}`,t)}function l(e){return r.delete(`/players/${e}`)}export{s as c,l as d,n as f,u};

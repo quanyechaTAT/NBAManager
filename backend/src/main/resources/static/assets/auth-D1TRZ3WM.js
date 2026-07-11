@@ -1,0 +1,1 @@
+import{r as t}from"./request-CnPtXZw-.js";function e(r){return t.post("/auth/login",r)}function a(r){return t.post("/auth/register",r)}function s(r){return t.put("/auth/password",r)}function u(r){return t.put("/auth/username",r)}export{u as a,s as c,e as l,a as r};

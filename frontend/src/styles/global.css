@@ -2928,7 +2928,25 @@ html, body {
   align-items: center;
 }
 
-/* 空状态 */
+/* 空状态 — 隐藏 Element Plus 默认插画 */
+.el-empty__image {
+  display: none !important;
+}
+
+.el-empty {
+  --el-empty-padding: 32px 0;
+}
+
+.el-empty__description {
+  margin-top: 0;
+}
+
+.el-empty__description p {
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 [data-theme="light"] .el-empty {
   padding: 60px 0;
 }

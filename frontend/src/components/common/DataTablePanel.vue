@@ -65,7 +65,6 @@
       <!-- 底部操作槽 -->
       <template #empty>
         <div class="data-table-panel__empty-inner">
-          <span class="data-table-panel__empty-inner-icon">📭</span>
           <span>{{ emptyText }}</span>
         </div>
       </template>
