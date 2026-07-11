@@ -235,7 +235,6 @@ class ChatCleanupServiceTest {
 
     @Test
     void renewalFailureStopsCleanup() throws Exception {
-        CountDownLatch renewalLatch = new CountDownLatch(1);
         ScheduledExecutorService testExecutor = Executors.newSingleThreadScheduledExecutor();
 
         ChatCleanupService spyService = new ChatCleanupService(batchService, redisTemplate) {
@@ -252,18 +251,19 @@ class ChatCleanupServiceTest {
 
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
+        // Renewal returns 0 (lock lost)
         when(redisTemplate.execute(eq(ChatCleanupService.RENEWAL_SCRIPT), any(), anyString(), anyString())).thenReturn(0L);
         when(redisTemplate.execute(eq(ChatCleanupService.UNLOCK_SCRIPT), any(), anyString())).thenReturn(1L);
-        AtomicBoolean capturedFlag = new AtomicBoolean(false);
+        // Batch returns non-zero; waits long enough for renewal to fire
         when(batchService.deleteOneBatch(any(Instant.class), anyInt())).thenAnswer(inv -> {
-            // Wait for renewal to fire and set the flag
             Thread.sleep(1500);
-            capturedFlag.set(true);
             return 100;
         });
 
         spyService.cleanupExpiredMessages();
 
+        // renewalFailed should stop after first batch — maxBatches=500 but only 1 batch executed
+        verify(batchService, times(1)).deleteOneBatch(any(Instant.class), eq(1000));
         testExecutor.shutdownNow();
     }
 
@@ -295,7 +295,39 @@ class ChatCleanupServiceTest {
 
         spyService.cleanupExpiredMessages();
 
+        // renewal exception should stop after first batch
+        verify(batchService, times(1)).deleteOneBatch(any(Instant.class), eq(1000));
         testExecutor.shutdownNow();
+    }
+
+    @Test
+    void watchdogCreationFailureStillReleasesLock() {
+        ChatCleanupService spyService = new ChatCleanupService(batchService, redisTemplate) {
+            @Override
+            ScheduledExecutorService createWatchdogExecutor() {
+                throw new RuntimeException("Thread pool creation failed");
+            }
+        };
+        ReflectionTestUtils.setField(spyService, "enabled", true);
+        ReflectionTestUtils.setField(spyService, "retentionDays", 180);
+        ReflectionTestUtils.setField(spyService, "batchSize", 1000);
+        ReflectionTestUtils.setField(spyService, "maxBatches", 500);
+        spyService.renewalIntervalSeconds = 60;
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
+        when(redisTemplate.execute(any(DefaultRedisScript.class), any(), anyString())).thenReturn(1L);
+
+        // Should not throw — exception is caught by finally
+        spyService.cleanupExpiredMessages();
+
+        // Lock must still be released via Lua
+        verify(redisTemplate).execute(
+                eq(ChatCleanupService.UNLOCK_SCRIPT),
+                eq(Collections.singletonList("nba:chat:cleanup:lock")),
+                anyString());
+        // Cleanup still proceeds without watchdog
+        verify(batchService, times(1)).deleteOneBatch(any(Instant.class), eq(1000));
     }
 
     @Test

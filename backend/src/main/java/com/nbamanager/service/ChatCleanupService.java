@@ -91,13 +91,18 @@ public class ChatCleanupService {
 
         // 每次执行创建局部状态，避免跨任务干扰
         AtomicBoolean renewalFailed = new AtomicBoolean(false);
-        ScheduledExecutorService watchdog = createWatchdogExecutor();
+        ScheduledExecutorService watchdog = null;
         ScheduledFuture<?> renewalTask = null;
 
         try {
-            renewalTask = watchdog.scheduleAtFixedRate(
-                    () -> renewLock(lockValue, renewalFailed),
-                    renewalIntervalSeconds, renewalIntervalSeconds, TimeUnit.SECONDS);
+            try {
+                watchdog = createWatchdogExecutor();
+                renewalTask = watchdog.scheduleAtFixedRate(
+                        () -> renewLock(lockValue, renewalFailed),
+                        renewalIntervalSeconds, renewalIntervalSeconds, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                log.warn("Watchdog创建失败，跳过锁续期，继续清理", e);
+            }
 
             Instant cutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS);
             log.info("开始清理{}天前的聊天消息, cutoff={}", retentionDays, cutoff);
@@ -126,7 +131,9 @@ public class ChatCleanupService {
             if (renewalTask != null) {
                 renewalTask.cancel(false);
             }
-            watchdog.shutdown();
+            if (watchdog != null) {
+                watchdog.shutdown();
+            }
             safeUnlock(lockValue);
         }
     }
