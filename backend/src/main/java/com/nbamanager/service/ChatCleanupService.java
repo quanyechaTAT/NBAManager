@@ -101,7 +101,8 @@ public class ChatCleanupService {
                         () -> renewLock(lockValue, renewalFailed),
                         renewalIntervalSeconds, renewalIntervalSeconds, TimeUnit.SECONDS);
             } catch (Exception e) {
-                log.warn("Watchdog创建失败，跳过锁续期，继续清理", e);
+                log.warn("Watchdog创建或调度失败，放弃本次清理", e);
+                return;
             }
 
             Instant cutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS);

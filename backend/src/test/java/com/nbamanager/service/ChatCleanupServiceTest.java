@@ -326,8 +326,8 @@ class ChatCleanupServiceTest {
                 eq(ChatCleanupService.UNLOCK_SCRIPT),
                 eq(Collections.singletonList("nba:chat:cleanup:lock")),
                 anyString());
-        // Cleanup still proceeds without watchdog
-        verify(batchService, times(1)).deleteOneBatch(any(Instant.class), eq(1000));
+        // Fail-closed: no cleanup executed
+        verifyNoInteractions(batchService);
     }
 
     @Test
