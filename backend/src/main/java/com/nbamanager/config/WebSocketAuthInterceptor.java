@@ -42,7 +42,8 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                         UsernamePasswordAuthenticationToken auth =
                                 new UsernamePasswordAuthenticationToken(userPrincipal, null, userPrincipal.getAuthorities());
                         accessor.setUser(auth);
-                        log.debug("WebSocket认证成功: {}", username);
+                        log.info("WebSocket CONNECT authenticated: username={}, sessionId={}",
+                                username, accessor.getSessionId());
                         return message;
                     }
                 } catch (Exception e) {
@@ -55,7 +56,8 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
 
         if (StompCommand.SEND.equals(command) || StompCommand.SUBSCRIBE.equals(command)) {
             if (accessor.getUser() == null) {
-                log.warn("拒绝未认证的{}操作: destination={}", command, accessor.getDestination());
+                log.warn("Rejected unauthenticated STOMP {}: sessionId={}, destination={}",
+                        command, accessor.getSessionId(), accessor.getDestination());
                 return null;
             }
         }

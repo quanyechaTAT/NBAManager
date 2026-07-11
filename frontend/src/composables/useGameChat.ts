@@ -130,13 +130,20 @@ export function useGameChat(gameId: () => string) {
       reconnectDelay: 5000,
       heartbeatIncoming: 4000,
       heartbeatOutgoing: 4000,
+      debug: (str) => {
+        if (import.meta.env.DEV) {
+          console.debug('[STOMP]', str)
+        }
+      },
       onConnect: () => {
         connected.value = true
         reconnecting.value = false
+        console.info('[chat] connected, subscribing gameId=', gid)
 
         stompClient?.subscribe(`/topic/chat/${gid}`, (msg: IMessage) => {
           try {
             const data = JSON.parse(msg.body)
+            console.info('[chat] message received', { gameId: gid, messageId: data.id, type: data.type })
             // Handle MESSAGE_DELETED events
             if (data.type === 'MESSAGE_DELETED' && data.messageId) {
               const idx = messages.value.findIndex(m => m.id === data.messageId)
@@ -159,7 +166,7 @@ export function useGameChat(gameId: () => string) {
         stompClient?.subscribe('/user/queue/chat-errors', (msg: IMessage) => {
           try {
             const err = JSON.parse(msg.body)
-            console.warn('聊天错误:', err.message)
+            console.warn('[chat] error:', err)
             // Try to match by clientMessageId from error response
             const cid = err.clientMessageId
             if (cid && pendingMessages.has(cid)) {
@@ -180,11 +187,22 @@ export function useGameChat(gameId: () => string) {
         })
       },
       onDisconnect: () => {
+        console.warn('[chat] disconnected')
         connected.value = false
       },
-      onStompError: () => {
+      onStompError: (frame) => {
+        console.error('[chat] STOMP error:', frame.headers['message'], frame.body)
         connected.value = false
         reconnecting.value = true
+      },
+      onWebSocketError: (event) => {
+        console.error('[chat] WebSocket error', event)
+        connected.value = false
+        reconnecting.value = true
+      },
+      onWebSocketClose: (event) => {
+        console.warn('[chat] WebSocket closed', event.code, event.reason)
+        connected.value = false
       },
     })
 
@@ -237,6 +255,7 @@ export function useGameChat(gameId: () => string) {
       }
       if (imageUrl) payload.imageUrl = imageUrl
 
+      console.info('[chat] sending message', { gameId: gid, clientMessageId, connected: connected.value })
       stompClient.publish({
         destination: `/app/chat/${gid}`,
         body: JSON.stringify(payload),

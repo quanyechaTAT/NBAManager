@@ -35,13 +35,17 @@ public class ChatEventListener {
     public void handleSessionSubscribe(SessionSubscribeEvent event) {
         SimpMessageHeaderAccessor accessor = SimpMessageHeaderAccessor.wrap(event.getMessage());
         String destination = accessor.getDestination();
-        if (destination == null || !destination.startsWith("/topic/chat/")) return;
+        if (destination == null) return;
 
-        String gameId = extractGameIdFromDestination(destination);
+        // 只处理精确的聊天消息主题，不处理 /presence 子主题
+        String gameId = extractChatRoomGameId(destination);
         if (gameId == null) return;
 
         UserPrincipal user = extractUser(event.getUser());
-        if (user == null) return;
+        if (user == null) {
+            log.warn("STOMP SUBSCRIBE 未认证: destination={}", destination);
+            return;
+        }
 
         String sessionId = accessor.getSessionId();
         if (sessionId == null) return;
@@ -50,7 +54,7 @@ public class ChatEventListener {
                 user.getUsername(), null, user.getRole());
 
         broadcastPresence(gameId);
-        log.debug("用户加入聊天室: gameId={}, user={}", gameId, user.getUsername());
+        log.info("STOMP SUBSCRIBE: sessionId={}, user={}, gameId={}", sessionId, user.getUsername(), gameId);
     }
 
     @EventListener
@@ -96,10 +100,11 @@ public class ChatEventListener {
         return null;
     }
 
-    private String extractGameIdFromDestination(String destination) {
+    /** 只匹配精确的 /topic/chat/{gameId}，不匹配 /topic/chat/{gameId}/presence 等子主题 */
+    private String extractChatRoomGameId(String destination) {
         if (!destination.startsWith("/topic/chat/")) return null;
         String rest = destination.substring("/topic/chat/".length());
-        int slash = rest.indexOf('/');
-        return slash > 0 ? rest.substring(0, slash) : rest;
+        if (rest.isBlank() || rest.contains("/")) return null;
+        return rest;
     }
 }

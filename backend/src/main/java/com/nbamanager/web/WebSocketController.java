@@ -40,9 +40,12 @@ public class WebSocketController {
 
         UserPrincipal user = extractUser(principal);
         if (user == null) {
-            log.warn("未认证用户尝试发送消息");
+            log.warn("未认证用户尝试发送消息: principal={}", principal != null ? principal.getName() : null);
             return;
         }
+
+        log.info("Chat SEND received: gameId={}, userId={}, clientMessageId={}",
+                gameId, user.getId(), payload.clientMessageId());
 
         // Rate limit check
         if (chatMessageService.isRateLimited(user.getId())) {
@@ -66,7 +69,9 @@ public class WebSocketController {
                     saved.isDeleted() ? null : saved.getImageUrl(), saved.getCreatedAt(), saved.isDeleted());
 
             messagingTemplate.convertAndSend("/topic/chat/" + gameId, response);
-            log.debug("消息已广播: gameId={}, userId={}", gameId, user.getId());
+            chatRedisPubSub.publishMessage(gameId, response);
+            log.info("Chat MESSAGE broadcasted: gameId={}, messageId={}, userId={}, clientMessageId={}",
+                    gameId, saved.getId(), user.getId(), saved.getClientMessageId());
         } catch (IllegalArgumentException e) {
             messagingTemplate.convertAndSendToUser(
                     user.getUsername(), "/queue/chat-errors",
