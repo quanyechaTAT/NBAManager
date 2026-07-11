@@ -40,20 +40,30 @@ public class ChatCleanupService {
 
     private static final String LOCK_KEY = "nba:chat:cleanup:lock";
     private static final long LOCK_TTL_SECONDS = 300;
-    private static final long RENEWAL_INTERVAL_SECONDS = 60;
 
-    // Lua: delete key only if value matches
-    private static final DefaultRedisScript<Long> UNLOCK_SCRIPT = new DefaultRedisScript<>(
+    /** 续期间隔（秒），测试中可设为极小值 */
+    long renewalIntervalSeconds = 60;
+
+    static final DefaultRedisScript<Long> UNLOCK_SCRIPT = new DefaultRedisScript<>(
             "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
             Long.class);
 
-    // Lua: extend TTL only if value matches
-    private static final DefaultRedisScript<Long> RENEWAL_SCRIPT = new DefaultRedisScript<>(
+    static final DefaultRedisScript<Long> RENEWAL_SCRIPT = new DefaultRedisScript<>(
             "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end",
             Long.class);
 
-    // Signal to stop cleanup when lock renewal fails
-    private final AtomicBoolean renewalFailed = new AtomicBoolean(false);
+    AtomicBoolean renewalFailed = new AtomicBoolean(false);
+
+    /**
+     * 创建 watchdog 调度器。子类或测试可覆盖以注入可控调度器。
+     */
+    ScheduledExecutorService createWatchdogExecutor() {
+        return Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "chat-cleanup-watchdog");
+            t.setDaemon(true);
+            return t;
+        });
+    }
 
     @Scheduled(cron = "${app.chat.cleanup-cron:0 0 3 * * ?}")
     public void cleanupExpiredMessages() {
@@ -81,15 +91,10 @@ public class ChatCleanupService {
             return;
         }
 
-        // Start watchdog for lock renewal
         renewalFailed.set(false);
-        ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "chat-cleanup-watchdog");
-            t.setDaemon(true);
-            return t;
-        });
+        ScheduledExecutorService watchdog = createWatchdogExecutor();
         ScheduledFuture<?> renewalTask = watchdog.scheduleAtFixedRate(
-                () -> renewLock(lockValue), RENEWAL_INTERVAL_SECONDS, RENEWAL_INTERVAL_SECONDS, TimeUnit.SECONDS);
+                () -> renewLock(lockValue), renewalIntervalSeconds, renewalIntervalSeconds, TimeUnit.SECONDS);
 
         try {
             Instant cutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS);
@@ -99,7 +104,7 @@ public class ChatCleanupService {
 
             for (int batch = 0; batch < maxBatches; batch++) {
                 if (renewalFailed.get()) {
-                    log.warn("锁续期失败，停止清理");
+                    log.warn("锁续期失败，当前批次完成后停止清理");
                     break;
                 }
 
@@ -122,16 +127,16 @@ public class ChatCleanupService {
         }
     }
 
-    private void renewLock(String lockValue) {
+    void renewLock(String lockValue) {
         try {
             Long result = redisTemplate.execute(RENEWAL_SCRIPT,
                     Collections.singletonList(LOCK_KEY), lockValue, String.valueOf(LOCK_TTL_SECONDS));
             if (!Long.valueOf(1L).equals(result)) {
-                log.warn("锁续期失败（锁已不属于当前实例），停止清理任务");
+                log.warn("锁续期失败（锁已不属于当前实例），当前批次完成后停止");
                 renewalFailed.set(true);
             }
         } catch (Exception e) {
-            log.warn("锁续期异常，停止清理任务", e);
+            log.warn("锁续期异常，当前批次完成后停止", e);
             renewalFailed.set(true);
         }
     }

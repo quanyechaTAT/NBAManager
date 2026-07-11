@@ -14,6 +14,10 @@ import static org.mockito.Mockito.when;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,16 +52,18 @@ class ChatCleanupServiceTest {
         ReflectionTestUtils.setField(cleanupService, "retentionDays", 180);
         ReflectionTestUtils.setField(cleanupService, "batchSize", 1000);
         ReflectionTestUtils.setField(cleanupService, "maxBatches", 500);
-        ReflectionTestUtils.setField(cleanupService, "renewalFailed", new AtomicBoolean(false));
+        cleanupService.renewalFailed = new AtomicBoolean(false);
+        cleanupService.renewalIntervalSeconds = 60; // default
     }
 
     private void stubRedisLock() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
-        // Renewal and unlock are async/conditional — use lenient
         lenient().when(redisTemplate.execute(any(DefaultRedisScript.class), any(), anyString(), anyString())).thenReturn(1L);
         lenient().when(redisTemplate.execute(any(DefaultRedisScript.class), any(), anyString())).thenReturn(1L);
     }
+
+    // ===== 开关和锁 =====
 
     @Test
     void skipsExecutionWhenDisabled() {
@@ -75,57 +81,15 @@ class ChatCleanupServiceTest {
     }
 
     @Test
-    void deletesInBatchesUntilEmpty() {
-        stubRedisLock();
-        when(batchService.deleteOneBatch(any(Instant.class), anyInt()))
-                .thenReturn(500).thenReturn(200).thenReturn(0);
-
-        cleanupService.cleanupExpiredMessages();
-
-        verify(batchService, times(3)).deleteOneBatch(any(Instant.class), eq(1000));
-    }
-
-    @Test
-    void stopsOnBatchFailure() {
-        stubRedisLock();
-        when(batchService.deleteOneBatch(any(Instant.class), anyInt()))
-                .thenReturn(500).thenThrow(new RuntimeException("DB error"));
-
-        cleanupService.cleanupExpiredMessages();
-
-        verify(batchService, times(2)).deleteOneBatch(any(Instant.class), eq(1000));
-    }
-
-    @Test
-    void releasesLockEvenOnException() {
-        stubRedisLock();
-        when(batchService.deleteOneBatch(any(Instant.class), anyInt()))
-                .thenThrow(new RuntimeException("unexpected"));
-
-        cleanupService.cleanupExpiredMessages();
-
-        // unlock Lua script must be called
-        ArgumentCaptor<DefaultRedisScript> scriptCaptor = ArgumentCaptor.forClass(DefaultRedisScript.class);
-        verify(redisTemplate).execute(scriptCaptor.capture(), eq(Collections.singletonList("nba:chat:cleanup:lock")), anyString());
-    }
-
-    @Test
-    void unlockUsesSameUuidAsLock() {
-        ArgumentCaptor<String> lockValueCaptor = ArgumentCaptor.forClass(String.class);
+    void skipsWhenRedisAcquireThrows() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(valueOps.setIfAbsent(anyString(), lockValueCaptor.capture(), any(Duration.class))).thenReturn(true);
-        when(batchService.deleteOneBatch(any(Instant.class), anyInt())).thenReturn(0);
-        lenient().when(redisTemplate.execute(any(DefaultRedisScript.class), any(), anyString(), anyString())).thenReturn(1L);
-        when(redisTemplate.execute(any(DefaultRedisScript.class), any(), anyString())).thenReturn(1L);
-
+        when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class)))
+                .thenThrow(new RuntimeException("Redis down"));
         cleanupService.cleanupExpiredMessages();
-
-        String capturedLockValue = lockValueCaptor.getValue();
-        verify(redisTemplate).execute(
-                any(DefaultRedisScript.class),
-                eq(Collections.singletonList("nba:chat:cleanup:lock")),
-                eq(capturedLockValue));
+        verifyNoInteractions(batchService);
     }
+
+    // ===== 参数校验 =====
 
     @Test
     void skipsWhenRetentionDaysInvalid() {
@@ -148,13 +112,61 @@ class ChatCleanupServiceTest {
         verifyNoInteractions(batchService);
     }
 
+    // ===== 批量删除 =====
+
     @Test
-    void skipsWhenRedisAcquireThrows() {
-        when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class)))
-                .thenThrow(new RuntimeException("Redis down"));
+    void deletesInBatchesUntilEmpty() {
+        stubRedisLock();
+        when(batchService.deleteOneBatch(any(Instant.class), anyInt()))
+                .thenReturn(500).thenReturn(200).thenReturn(0);
         cleanupService.cleanupExpiredMessages();
-        verifyNoInteractions(batchService);
+        verify(batchService, times(3)).deleteOneBatch(any(Instant.class), eq(1000));
+    }
+
+    @Test
+    void stopsOnBatchFailure() {
+        stubRedisLock();
+        when(batchService.deleteOneBatch(any(Instant.class), anyInt()))
+                .thenReturn(500).thenThrow(new RuntimeException("DB error"));
+        cleanupService.cleanupExpiredMessages();
+        verify(batchService, times(2)).deleteOneBatch(any(Instant.class), eq(1000));
+    }
+
+    @Test
+    void stopsAtMaxBatches() {
+        ReflectionTestUtils.setField(cleanupService, "maxBatches", 3);
+        stubRedisLock();
+        when(batchService.deleteOneBatch(any(Instant.class), anyInt())).thenReturn(100);
+        cleanupService.cleanupExpiredMessages();
+        verify(batchService, times(3)).deleteOneBatch(any(Instant.class), eq(1000));
+    }
+
+    // ===== 锁释放 =====
+
+    @Test
+    void releasesLockEvenOnException() {
+        stubRedisLock();
+        when(batchService.deleteOneBatch(any(Instant.class), anyInt()))
+                .thenThrow(new RuntimeException("unexpected"));
+        cleanupService.cleanupExpiredMessages();
+        verify(redisTemplate).execute(any(DefaultRedisScript.class), eq(Collections.singletonList("nba:chat:cleanup:lock")), anyString());
+    }
+
+    @Test
+    void unlockUsesSameUuidAsLock() {
+        ArgumentCaptor<String> lockValueCaptor = ArgumentCaptor.forClass(String.class);
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        when(valueOps.setIfAbsent(anyString(), lockValueCaptor.capture(), any(Duration.class))).thenReturn(true);
+        when(batchService.deleteOneBatch(any(Instant.class), anyInt())).thenReturn(0);
+        lenient().when(redisTemplate.execute(any(DefaultRedisScript.class), any(), anyString(), anyString())).thenReturn(1L);
+        when(redisTemplate.execute(any(DefaultRedisScript.class), any(), anyString())).thenReturn(1L);
+
+        cleanupService.cleanupExpiredMessages();
+
+        verify(redisTemplate).execute(
+                any(DefaultRedisScript.class),
+                eq(Collections.singletonList("nba:chat:cleanup:lock")),
+                eq(lockValueCaptor.getValue()));
     }
 
     @Test
@@ -162,26 +174,11 @@ class ChatCleanupServiceTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
         when(batchService.deleteOneBatch(any(Instant.class), anyInt())).thenReturn(0);
-        // Both renewal and unlock throw
         lenient().when(redisTemplate.execute(any(DefaultRedisScript.class), any(), anyString(), anyString()))
                 .thenThrow(new RuntimeException("Redis down"));
         when(redisTemplate.execute(any(DefaultRedisScript.class), any(), anyString()))
                 .thenThrow(new RuntimeException("Redis down"));
-
-        // Should not throw
         cleanupService.cleanupExpiredMessages();
-    }
-
-    @Test
-    void stopsAtMaxBatches() {
-        ReflectionTestUtils.setField(cleanupService, "maxBatches", 3);
-        stubRedisLock();
-        // Always return non-zero to force hitting maxBatches
-        when(batchService.deleteOneBatch(any(Instant.class), anyInt())).thenReturn(100);
-
-        cleanupService.cleanupExpiredMessages();
-
-        verify(batchService, times(3)).deleteOneBatch(any(Instant.class), eq(1000));
     }
 
     @Test
@@ -190,11 +187,147 @@ class ChatCleanupServiceTest {
         when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
         when(batchService.deleteOneBatch(any(Instant.class), anyInt())).thenReturn(0);
         lenient().when(redisTemplate.execute(any(DefaultRedisScript.class), any(), anyString(), anyString())).thenReturn(1L);
-        // Unlock returns 0 (lock already expired)
         when(redisTemplate.execute(any(DefaultRedisScript.class), any(), anyString())).thenReturn(0L);
-
         cleanupService.cleanupExpiredMessages();
-
         verify(batchService, times(1)).deleteOneBatch(any(Instant.class), eq(1000));
+    }
+
+    // ===== Watchdog 续期 =====
+
+    @Test
+    void renewalUsesSameUuidAsLock() throws Exception {
+        ArgumentCaptor<String> lockValueCaptor = ArgumentCaptor.forClass(String.class);
+        CountDownLatch renewalLatch = new CountDownLatch(1);
+        ScheduledExecutorService testExecutor = Executors.newSingleThreadScheduledExecutor();
+
+        ChatCleanupService spyService = new ChatCleanupService(batchService, redisTemplate) {
+            @Override
+            ScheduledExecutorService createWatchdogExecutor() {
+                return testExecutor;
+            }
+        };
+        ReflectionTestUtils.setField(spyService, "enabled", true);
+        ReflectionTestUtils.setField(spyService, "retentionDays", 180);
+        ReflectionTestUtils.setField(spyService, "batchSize", 1000);
+        ReflectionTestUtils.setField(spyService, "maxBatches", 500);
+        spyService.renewalFailed = new AtomicBoolean(false);
+        spyService.renewalIntervalSeconds = 1;
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        when(valueOps.setIfAbsent(anyString(), lockValueCaptor.capture(), any(Duration.class))).thenReturn(true);
+        when(redisTemplate.execute(eq(ChatCleanupService.RENEWAL_SCRIPT), any(), anyString(), anyString())).thenAnswer(inv -> {
+            renewalLatch.countDown();
+            return 1L;
+        });
+        when(redisTemplate.execute(eq(ChatCleanupService.UNLOCK_SCRIPT), any(), anyString())).thenReturn(1L);
+        when(batchService.deleteOneBatch(any(Instant.class), anyInt())).thenAnswer(inv -> {
+            renewalLatch.await(3, TimeUnit.SECONDS);
+            return 0;
+        });
+
+        spyService.cleanupExpiredMessages();
+
+        verify(redisTemplate).execute(
+                eq(ChatCleanupService.RENEWAL_SCRIPT),
+                eq(Collections.singletonList("nba:chat:cleanup:lock")),
+                eq(lockValueCaptor.getValue()),
+                anyString());
+        testExecutor.shutdownNow();
+    }
+
+    @Test
+    void renewalFailureStopsCleanup() throws Exception {
+        CountDownLatch renewalLatch = new CountDownLatch(1);
+        ScheduledExecutorService testExecutor = Executors.newSingleThreadScheduledExecutor();
+
+        ChatCleanupService spyService = new ChatCleanupService(batchService, redisTemplate) {
+            @Override
+            ScheduledExecutorService createWatchdogExecutor() {
+                return testExecutor;
+            }
+        };
+        ReflectionTestUtils.setField(spyService, "enabled", true);
+        ReflectionTestUtils.setField(spyService, "retentionDays", 180);
+        ReflectionTestUtils.setField(spyService, "batchSize", 1000);
+        ReflectionTestUtils.setField(spyService, "maxBatches", 500);
+        spyService.renewalFailed = new AtomicBoolean(false);
+        spyService.renewalIntervalSeconds = 1; // fire quickly
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
+        // Renewal returns 0 (lock lost)
+        when(redisTemplate.execute(eq(ChatCleanupService.RENEWAL_SCRIPT), any(), anyString(), anyString())).thenReturn(0L);
+        when(redisTemplate.execute(eq(ChatCleanupService.UNLOCK_SCRIPT), any(), anyString())).thenReturn(1L);
+        // Batch returns non-zero but we wait for renewal to set the flag
+        when(batchService.deleteOneBatch(any(Instant.class), anyInt())).thenAnswer(inv -> {
+            renewalLatch.await(2, TimeUnit.SECONDS);
+            return 100;
+        });
+
+        spyService.cleanupExpiredMessages();
+
+        assertThat(spyService.renewalFailed.get()).isTrue();
+        testExecutor.shutdownNow();
+    }
+
+    @Test
+    void renewalExceptionStopsCleanup() throws Exception {
+        CountDownLatch renewalLatch = new CountDownLatch(1);
+        ScheduledExecutorService testExecutor = Executors.newSingleThreadScheduledExecutor();
+
+        ChatCleanupService spyService = new ChatCleanupService(batchService, redisTemplate) {
+            @Override
+            ScheduledExecutorService createWatchdogExecutor() {
+                return testExecutor;
+            }
+        };
+        ReflectionTestUtils.setField(spyService, "enabled", true);
+        ReflectionTestUtils.setField(spyService, "retentionDays", 180);
+        ReflectionTestUtils.setField(spyService, "batchSize", 1000);
+        ReflectionTestUtils.setField(spyService, "maxBatches", 500);
+        spyService.renewalFailed = new AtomicBoolean(false);
+        spyService.renewalIntervalSeconds = 1;
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
+        when(redisTemplate.execute(eq(ChatCleanupService.RENEWAL_SCRIPT), any(), anyString(), anyString()))
+                .thenThrow(new RuntimeException("Redis down"));
+        when(redisTemplate.execute(eq(ChatCleanupService.UNLOCK_SCRIPT), any(), anyString())).thenReturn(1L);
+        when(batchService.deleteOneBatch(any(Instant.class), anyInt())).thenAnswer(inv -> {
+            renewalLatch.await(2, TimeUnit.SECONDS);
+            return 100;
+        });
+
+        spyService.cleanupExpiredMessages();
+
+        assertThat(spyService.renewalFailed.get()).isTrue();
+        testExecutor.shutdownNow();
+    }
+
+    @Test
+    void watchdogIsShutdownAfterCompletion() {
+        ScheduledExecutorService testExecutor = Executors.newSingleThreadScheduledExecutor();
+        ChatCleanupService spyService = new ChatCleanupService(batchService, redisTemplate) {
+            @Override
+            ScheduledExecutorService createWatchdogExecutor() {
+                return testExecutor;
+            }
+        };
+        ReflectionTestUtils.setField(spyService, "enabled", true);
+        ReflectionTestUtils.setField(spyService, "retentionDays", 180);
+        ReflectionTestUtils.setField(spyService, "batchSize", 1000);
+        ReflectionTestUtils.setField(spyService, "maxBatches", 500);
+        spyService.renewalFailed = new AtomicBoolean(false);
+        spyService.renewalIntervalSeconds = 60;
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
+        lenient().when(redisTemplate.execute(any(DefaultRedisScript.class), any(), anyString(), anyString())).thenReturn(1L);
+        when(redisTemplate.execute(any(DefaultRedisScript.class), any(), anyString())).thenReturn(1L);
+        when(batchService.deleteOneBatch(any(Instant.class), anyInt())).thenReturn(0);
+
+        spyService.cleanupExpiredMessages();
+
+        assertThat(testExecutor.isShutdown()).isTrue();
     }
 }
