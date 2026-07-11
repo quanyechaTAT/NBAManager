@@ -3,6 +3,8 @@ package com.nbamanager.config;
 import com.nbamanager.security.JwtService;
 import com.nbamanager.security.UserDetailsServiceImpl;
 import com.nbamanager.security.UserPrincipal;
+import java.security.Principal;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.Message;
@@ -18,6 +20,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @Slf4j
 public class WebSocketAuthInterceptor implements ChannelInterceptor {
+
+    private static final String SESSION_AUTH_KEY = "AUTHENTICATED_USER";
 
     private final JwtService jwtService;
     private final UserDetailsServiceImpl userDetailsService;
@@ -38,10 +42,17 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                     String username = jwtService.extractUsername(token);
                     if (username != null && jwtService.isTokenValid(token, username)) {
                         UserPrincipal userPrincipal = (UserPrincipal) userDetailsService.loadUserByUsername(username);
-                        // Store UserPrincipal as the principal so controller can cast directly
                         UsernamePasswordAuthenticationToken auth =
                                 new UsernamePasswordAuthenticationToken(userPrincipal, null, userPrincipal.getAuthorities());
+
                         accessor.setUser(auth);
+
+                        // 持久化到 session attributes，确保后续 SUBSCRIBE/SEND 帧能恢复身份
+                        Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
+                        if (sessionAttributes != null) {
+                            sessionAttributes.put(SESSION_AUTH_KEY, auth);
+                        }
+
                         log.info("WebSocket CONNECT authenticated: username={}, sessionId={}",
                                 username, accessor.getSessionId());
                         return message;
@@ -50,16 +61,32 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                     log.warn("WebSocket JWT校验失败: {}", e.getMessage());
                 }
             }
-            log.warn("WebSocket连接拒绝: 无效的认证信息");
+
+            log.warn("WebSocket CONNECT rejected: invalid auth, sessionId={}", accessor.getSessionId());
             return null;
         }
 
         if (StompCommand.SEND.equals(command) || StompCommand.SUBSCRIBE.equals(command)) {
-            if (accessor.getUser() == null) {
+            Principal user = accessor.getUser();
+
+            // 如果 accessor.getUser() 为空，从 session attributes 恢复
+            if (user == null) {
+                Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
+                Object storedAuth = sessionAttributes != null ? sessionAttributes.get(SESSION_AUTH_KEY) : null;
+                if (storedAuth instanceof Principal principal) {
+                    accessor.setUser(principal);
+                    user = principal;
+                }
+            }
+
+            if (user == null) {
                 log.warn("Rejected unauthenticated STOMP {}: sessionId={}, destination={}",
                         command, accessor.getSessionId(), accessor.getDestination());
                 return null;
             }
+
+            log.info("STOMP {} accepted: sessionId={}, user={}, destination={}",
+                    command, accessor.getSessionId(), user.getName(), accessor.getDestination());
         }
 
         return message;
