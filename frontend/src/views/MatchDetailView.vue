@@ -279,7 +279,7 @@
               </div>
             </div>
 
-            <el-empty v-if="comments.length === 0" description="暂无评论，来说两句吧" :image-size="60" />
+            <AppEmpty v-if="comments.length === 0" description="暂无评论，来说两句吧" />
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -297,6 +297,7 @@ import { fetchTimeline, fetchMomentum, fetchHighlights, fetchTurningPoints, fetc
 import { getGameShotChart } from '@/api/shotChart'
 import { fetchGameComments, createComment, deleteComment, toggleCommentLike } from '@/api/community'
 import EmojiPicker from '@/components/EmojiPicker.vue'
+import AppEmpty from '@/components/common/AppEmpty.vue'
 import { useEmojiPicker } from '@/composables/useEmojiPicker'
 import ShotChart from '@/components/ShotChart.vue'
 import GameShotChartPanel from '@/components/shot-chart/GameShotChartPanel.vue'
@@ -327,7 +328,7 @@ const queryAwayScore = computed(() => {
 
 function goBack() {
   if (returnTo.value) {
-    router.push(returnTo.value)
+    router.replace(returnTo.value)
   } else {
     router.push('/news')
   }
