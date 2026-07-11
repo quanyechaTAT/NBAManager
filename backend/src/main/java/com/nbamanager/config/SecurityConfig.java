@@ -72,6 +72,10 @@ public class SecurityConfig {
                                 // 上传文件静态资源
                                 .requestMatchers("/uploads/**")
                                 .permitAll()
+                                // 前端静态资源
+                                .requestMatchers("/", "/index.html", "/favicon.svg", "/sw.js",
+                                        "/assets/**", "/images/**")
+                                .permitAll()
                                 // 季后赛数据修正（临时）
                                 .requestMatchers(HttpMethod.POST, "/api/playoff/fix-data")
                                 .permitAll()
