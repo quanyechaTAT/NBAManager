@@ -25,34 +25,37 @@
       </div>
       <div class="today-scroll">
         <article
-          v-for="item in playableTodayGames"
+          v-for="item in visibleTodayGames"
           :key="item.id"
           class="today-game-card"
+          :class="{ 'is-history': isHistoricalGame(item), 'is-summer': isSummerGame(item), 'is-disabled': !hasMatchDetail(item) }"
           @click="goToMatchDetail(item)"
         >
           <div class="game-card-top">
-            <span class="status-pill" :class="item.status?.toLowerCase()">{{ statusLabel(item.status) }}</span>
+            <span class="league-pill" :class="{ summer: isSummerGame(item) }">{{ gameLeagueLabel(item) }}</span>
+            <span class="game-type">{{ gameTypeLabel(item) }}</span>
             <span class="game-time">{{ formatGameTime(item.gameStartTime) }}</span>
           </div>
+          <div class="game-title">{{ item.title }}</div>
           <div class="game-matchup">
-            <div class="game-team">
-              <img v-if="teamLogo(item.homeTeam)" :src="teamLogo(item.homeTeam)" class="team-logo" />
-              <span class="team-fallback" v-else>{{ fallbackTeamInitial(item.homeTeam) }}</span>
-              <strong>{{ item.homeTeam }}</strong>
-            </div>
-            <div class="game-score">
-              <span :class="{ winner: isWinner(item, 'home') }">{{ displayScore(item.homeScore) }}</span>
-              <em>-</em>
-              <span :class="{ winner: isWinner(item, 'away') }">{{ displayScore(item.awayScore) }}</span>
-            </div>
             <div class="game-team">
               <img v-if="teamLogo(item.awayTeam)" :src="teamLogo(item.awayTeam)" class="team-logo" />
               <span class="team-fallback" v-else>{{ fallbackTeamInitial(item.awayTeam) }}</span>
               <strong>{{ item.awayTeam }}</strong>
             </div>
+            <div class="game-score">
+              <span :class="{ winner: isWinner(item, 'away') }">{{ displayScore(item.awayScore) }}</span>
+              <em>-</em>
+              <span :class="{ winner: isWinner(item, 'home') }">{{ displayScore(item.homeScore) }}</span>
+            </div>
+            <div class="game-team">
+              <img v-if="teamLogo(item.homeTeam)" :src="teamLogo(item.homeTeam)" class="team-logo" />
+              <span class="team-fallback" v-else>{{ fallbackTeamInitial(item.homeTeam) }}</span>
+              <strong>{{ item.homeTeam }}</strong>
+            </div>
           </div>
         </article>
-        <div v-if="!todayLoading && playableTodayGames.length === 0" class="today-empty">
+        <div v-if="!todayLoading && visibleTodayGames.length === 0" class="today-empty">
           今日暂无可查看详情的赛事
         </div>
       </div>
@@ -314,11 +317,11 @@ function statusLabel(s: string) {
   return map[s] || s
 }
 function categoryType(c: string) {
-  const map: Record<string, string> = { game: 'primary', trade: 'success', injury: 'danger', draft: 'warning' }
+  const map: Record<string, string> = { game: 'primary', summer_game: 'primary', trade: 'success', injury: 'danger', draft: 'warning' }
   return map[c] || 'info'
 }
 function categoryLabel(c: string) {
-  const map: Record<string, string> = { game: '赛事', trade: '交易', injury: '伤病', draft: '选秀', general: '综合' }
+  const map: Record<string, string> = { game: '赛事', summer_game: '夏季联赛', trade: '交易', injury: '伤病', draft: '选秀', general: '综合' }
   return map[c] || c
 }
 function openSource(url: string) {
@@ -339,6 +342,30 @@ function hasMatchDetail(item: GameNews): boolean {
 const playableTodayGames = computed(() => {
   return todayNews.value.filter(item => hasMatchDetail(item))
 })
+
+const visibleTodayGames = computed(() => {
+  return todayNews.value.filter(item => isValidTeamName(item.homeTeam) && isValidTeamName(item.awayTeam))
+})
+
+function isHistoricalGame(item: GameNews): boolean {
+  return item.category === 'historical_game' || item.sourceUrl === 'match_records'
+}
+
+function isSummerGame(item: GameNews): boolean {
+  return item.category === 'summer_game' || item.sourceUrl === 'ESPN_NBA_SUMMER'
+}
+
+function gameLeagueLabel(item: GameNews): string {
+  if (isSummerGame(item)) return '夏联'
+  if (isHistoricalGame(item)) return '历史'
+  return 'NBA'
+}
+
+function gameTypeLabel(item: GameNews): string {
+  if (isSummerGame(item)) return 'NBA夏季联赛'
+  if (isHistoricalGame(item)) return '真实比赛补位'
+  return '今日赛事'
+}
 
 function displayScore(score: number | null | undefined): string {
   return (score != null && typeof score === 'number') ? String(score) : '-'
@@ -372,7 +399,7 @@ function fallbackTeamInitial(name: string | null | undefined): string {
   return name ? name.charAt(0) : '?'
 }
 function formatTeamName(name: string | null | undefined): string {
-  if (!name || name === '待定' || name === 'TBD') return '待定'
+  if (!name || name === '待定' || name === 'TBD') return ''
   return name
 }
 function sourceName(item: GameNews): string {
@@ -416,7 +443,7 @@ function onThumbError(item: GameNews) {
 }
 function fallbackBadge(item: GameNews) {
   const home = formatTeamName(item.homeTeam)
-  if (home && home !== '待定') return home.slice(0, 2)
+  if (home) return home.slice(0, 2)
   return categoryLabel(item.category || 'general').slice(0, 2)
 }
 function formatTimeSingle(t: string) {
@@ -928,6 +955,78 @@ onMounted(async () => {
 }
 .game-score .winner {
   color: var(--accent);
+}
+.today-game-card {
+  flex-basis: 216px;
+  min-height: 136px;
+  padding: 12px 10px 10px;
+  transition: border-color .12s, background .12s, box-shadow .12s, transform .12s;
+}
+.today-game-card:hover {
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+.today-game-card.is-history {
+  border-style: dashed;
+}
+.today-game-card.is-disabled {
+  cursor: not-allowed;
+  opacity: .72;
+}
+.today-game-card .game-card-top {
+  justify-content: flex-start;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.league-pill {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #f8d99b;
+  color: #7c4a03;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.league-pill.summer {
+  background: rgba(14, 165, 233, 0.14);
+  color: #0369a1;
+}
+.game-type {
+  min-width: 0;
+  flex: 1;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.today-game-card .game-time {
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+.game-title {
+  height: 34px;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.today-game-card .game-matchup {
+  gap: 8px;
+}
+.today-game-card .team-logo,
+.today-game-card .team-fallback {
+  width: 34px;
+  height: 34px;
+}
+.today-game-card .game-score {
+  gap: 5px;
 }
 .today-empty {
   padding: 24px;

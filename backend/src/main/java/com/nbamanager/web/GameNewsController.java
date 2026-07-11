@@ -64,10 +64,10 @@ public class GameNewsController {
         return null;
     }
 
-    /** 今日赛事（实时从API获取） */
+    /** 今日赛事（从数据库快速读取） */
     @GetMapping("/today")
     public List<GameNewsDto> today() {
-        return smartDataService.getTodayGamesRealtime();
+        return gameNewsService.getTodayGames();
     }
 
     /** 强制刷新新闻（从API获取） */

@@ -13,12 +13,16 @@ import time
 import urllib.request
 import re
 from html import unescape
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # 确保stdout使用UTF-8编码（Windows兼容）
 if sys.platform == 'win32':
     import io
     try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
         if hasattr(sys.stdout, 'buffer') and not isinstance(sys.stdout, io.TextIOWrapper):
             sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
         if hasattr(sys.stderr, 'buffer') and not isinstance(sys.stderr, io.TextIOWrapper):
@@ -1256,8 +1260,363 @@ def fetch_today_games():
     except Exception as e:
         print(f"ScoreboardV3整体失败: {e}", file=sys.stderr)
 
+    if not result:
+        summer_games = fetch_espn_summer_today_games()
+        if summer_games:
+            print(f"ESPN Summer League获取到 {len(summer_games)} 场今日比赛", file=sys.stderr)
+            return summer_games
+
     print(f"获取到 {len(result)} 场今日比赛", file=sys.stderr)
     return result
+
+
+def _espn_team_name_to_cn(team):
+    """将 ESPN 球队对象转换为项目内显示名称，未命中映射时保留 ESPN 真实名称。"""
+    display_name = team.get('displayName') or team.get('name') or ''
+    abbreviation = team.get('abbreviation') or ''
+    return (
+        TEAM_ABBR_MAP.get(abbreviation)
+        or TEAM_NAME_MAP.get(display_name)
+        or display_name
+        or abbreviation
+    )
+
+
+def _espn_status_to_game_status(status_type):
+    state = (status_type or {}).get('state', '')
+    status_id = str((status_type or {}).get('id', ''))
+    completed = bool((status_type or {}).get('completed', False))
+    if completed or state == 'post' or status_id == '3':
+        return 'FINISHED'
+    if state == 'in' or status_id == '2':
+        return 'LIVE'
+    return 'SCHEDULED'
+
+
+def _parse_espn_event_time(iso_value):
+    if not iso_value:
+        return None
+    try:
+        return datetime.fromisoformat(iso_value.replace('Z', '+00:00'))
+    except Exception:
+        return None
+
+
+def fetch_espn_summer_today_games():
+    """从 ESPN NBA Summer League scoreboard 获取今日的真实夏联比赛。
+
+    由于中美时差，美国晚间比赛在北京时间为次日凌晨，
+    因此查询范围包含今天和明天（北京时间）。
+    """
+    local_tz = timezone(timedelta(hours=8))
+    local_now = datetime.now(local_tz)
+    local_today = local_now.date()
+    local_tomorrow = local_today + timedelta(days=1)
+    start_date = local_today - timedelta(days=1)
+    end_date = local_tomorrow + timedelta(days=1)
+    date_range = f"{start_date.strftime('%Y%m%d')}-{end_date.strftime('%Y%m%d')}"
+    url = (
+        "https://site.api.espn.com/apis/site/v2/sports/basketball/"
+        f"nba-summer/scoreboard?dates={date_range}&limit=300"
+    )
+
+    data = None
+    for attempt in range(3):
+        try:
+            request = urllib.request.Request(url, headers={
+                'User-Agent': 'Mozilla/5.0',
+                'Accept': 'application/json',
+            })
+            with urllib.request.urlopen(request, timeout=30) as response:
+                data = json.loads(response.read().decode('utf-8'))
+            break
+        except Exception as e:
+            print(f"ESPN Summer League scoreboard第{attempt+1}次尝试失败: {e}", file=sys.stderr)
+            if attempt < 2:
+                time.sleep(2)
+    if data is None:
+        print("ESPN Summer League scoreboard所有尝试均失败", file=sys.stderr)
+        return []
+
+    games = []
+    seen = set()
+    for event in data.get('events', []):
+        game_id = str(event.get('id', '')).strip()
+        if not game_id or game_id in seen:
+            continue
+
+        start_dt = _parse_espn_event_time(event.get('date', ''))
+        if not start_dt:
+            continue
+        game_local_date = start_dt.astimezone(local_tz).date()
+        if game_local_date != local_today and game_local_date != local_tomorrow:
+            continue
+
+        competition = (event.get('competitions') or [{}])[0]
+        competitors = competition.get('competitors') or []
+        home = next((c for c in competitors if c.get('homeAway') == 'home'), None)
+        away = next((c for c in competitors if c.get('homeAway') == 'away'), None)
+        if not home or not away:
+            continue
+
+        status_type = (event.get('status') or {}).get('type') or {}
+        status = _espn_status_to_game_status(status_type)
+        seen.add(game_id)
+        games.append({
+            'gameId': game_id,
+            'homeTeam': _espn_team_name_to_cn(home.get('team') or {}),
+            'awayTeam': _espn_team_name_to_cn(away.get('team') or {}),
+            'homeScore': _safe_int(home.get('score')),
+            'awayScore': _safe_int(away.get('score')),
+            'status': status,
+            'startTime': event.get('date', ''),
+            'period': 0,
+            'gameClock': status_type.get('shortDetail') or status_type.get('detail') or '',
+            'source': 'ESPN_NBA_SUMMER',
+            'category': 'summer_game',
+            'league': 'NBA Summer League',
+        })
+
+    games.sort(key=lambda game: game.get('startTime') or '')
+    return games
+
+
+def _is_espn_summer_game_id(game_id):
+    """ESPN summer league event ids use the 401... ESPN event id namespace."""
+    return bool(game_id) and str(game_id).startswith('401')
+
+
+def _espn_json(url, timeout=25):
+    req = urllib.request.Request(url, headers={
+        'User-Agent': 'Mozilla/5.0',
+        'Accept': 'application/json',
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        return json.loads(response.read().decode('utf-8'))
+
+
+def _fetch_espn_summer_event(game_id, match_date=None):
+    """Find one ESPN NBA Summer League event from official scoreboard data."""
+    game_id = str(game_id)
+    dates = []
+    if match_date:
+        dates.append(str(match_date).replace('-', ''))
+
+    # Summer League calendar is short; scan a bounded official calendar when the
+    # caller only has an ESPN event id and no date.
+    current_year = datetime.now(timezone.utc).year
+    for year in [current_year, current_year - 1, current_year + 1]:
+        for date_str in [
+            f'{year}0703-{year}0720',
+            f'{year}0601-{year}0731',
+        ]:
+            if date_str not in dates:
+                dates.append(date_str)
+
+    for date_str in dates:
+        url = (
+            'https://site.api.espn.com/apis/site/v2/sports/basketball/'
+            f'nba-summer/scoreboard?dates={date_str}&limit=300'
+        )
+        try:
+            data = _espn_json(url)
+        except Exception as e:
+            print(f'ESPN Summer League scoreboard lookup failed ({date_str}): {e}', file=sys.stderr)
+            continue
+        for event in data.get('events', []):
+            if str(event.get('id', '')).strip() == game_id:
+                return event
+    return None
+
+
+def _espn_stat_map(competitor):
+    result = {}
+    for stat in competitor.get('statistics') or []:
+        name = stat.get('name')
+        if name:
+            result[name] = stat.get('displayValue', stat.get('value', 0))
+    return result
+
+
+def _espn_percent(value):
+    pct = _safe_float(str(value).replace('%', ''))
+    return pct / 100 if pct > 1 else pct
+
+
+def _espn_team_id(competitor):
+    return _safe_int((competitor.get('team') or {}).get('id'))
+
+
+def _espn_team_name(competitor):
+    return _espn_team_name_to_cn(competitor.get('team') or {})
+
+
+def _team_summary_player_from_espn(competitor):
+    """Create a verifiable team-summary row from official ESPN team totals.
+
+    ESPN's public summer scoreboard exposes team totals and leaders, but not a
+    complete player box score for these events. This row is intentionally labeled
+    as a team total so the UI can show real stats without pretending it is a
+    full player table.
+    """
+    stats = _espn_stat_map(competitor)
+    team_id = _espn_team_id(competitor)
+    team_name = _espn_team_name(competitor)
+    return {
+        'playerId': team_id * 1000000 + 999,
+        'playerName': f'{team_name} 全队',
+        'teamId': team_id,
+        'teamName': team_name,
+        'isHome': competitor.get('homeAway') == 'home',
+        'minutes': '',
+        'points': _safe_int(stats.get('points')),
+        'rebounds': _safe_int(stats.get('rebounds')),
+        'assists': _safe_int(stats.get('assists')),
+        'steals': 0,
+        'blocks': 0,
+        'turnovers': 0,
+        'fgMade': _safe_int(stats.get('fieldGoalsMade')),
+        'fgAttempted': _safe_int(stats.get('fieldGoalsAttempted')),
+        'fgPct': _espn_percent(stats.get('fieldGoalPct')),
+        'threeMade': _safe_int(stats.get('threePointFieldGoalsMade')),
+        'threeAttempted': _safe_int(stats.get('threePointFieldGoalsAttempted')),
+        'threePct': _espn_percent(stats.get('threePointFieldGoalPct')),
+        'ftMade': _safe_int(stats.get('freeThrowsMade')),
+        'ftAttempted': _safe_int(stats.get('freeThrowsAttempted')),
+        'ftPct': _espn_percent(stats.get('freeThrowPct')),
+        'plusMinus': 0,
+        'starter': False,
+        'source': 'ESPN_NBA_SUMMER_TEAM_TOTALS',
+    }
+
+
+def _leader_rows_from_espn(competitor):
+    rows = {}
+    team_id = _espn_team_id(competitor)
+    team_name = _espn_team_name(competitor)
+    for category in competitor.get('leaders') or []:
+        stat_name = category.get('name', '')
+        for item in category.get('leaders') or []:
+            athlete = item.get('athlete') or {}
+            player_id = _safe_int(athlete.get('id'))
+            if not player_id:
+                continue
+            row = rows.setdefault(player_id, {
+                'playerId': player_id,
+                'playerName': athlete.get('displayName') or athlete.get('fullName') or '',
+                'teamId': team_id,
+                'teamName': team_name,
+                'isHome': competitor.get('homeAway') == 'home',
+                'minutes': '',
+                'points': 0,
+                'rebounds': 0,
+                'assists': 0,
+                'steals': 0,
+                'blocks': 0,
+                'turnovers': 0,
+                'fgMade': 0,
+                'fgAttempted': 0,
+                'fgPct': 0.0,
+                'threeMade': 0,
+                'threeAttempted': 0,
+                'threePct': 0.0,
+                'ftMade': 0,
+                'ftAttempted': 0,
+                'ftPct': 0.0,
+                'plusMinus': 0,
+                'starter': False,
+                'source': 'ESPN_NBA_SUMMER_LEADERS',
+            })
+            value = _safe_int(item.get('value'))
+            if stat_name == 'points':
+                row['points'] = value
+            elif stat_name == 'rebounds':
+                row['rebounds'] = value
+            elif stat_name == 'assists':
+                row['assists'] = value
+    return list(rows.values())
+
+
+def fetch_espn_summer_boxscore(game_id, match_date=None):
+    """Fetch real summer league details available from ESPN scoreboard."""
+    event = _fetch_espn_summer_event(game_id, match_date)
+    if not event:
+        return {
+            'gameId': str(game_id),
+            'homeTeam': '',
+            'awayTeam': '',
+            'homeScore': None,
+            'awayScore': None,
+            'players': [],
+            'quarterScores': [],
+            'source': 'ESPN_NBA_SUMMER',
+            'message': '未在 ESPN 夏季联赛官方 scoreboard 中找到该比赛',
+        }
+
+    competition = (event.get('competitions') or [{}])[0]
+    competitors = competition.get('competitors') or []
+    home = next((c for c in competitors if c.get('homeAway') == 'home'), None)
+    away = next((c for c in competitors if c.get('homeAway') == 'away'), None)
+    players = []
+    quarter_scores = []
+
+    if home and away:
+        home_lines = home.get('linescores') or []
+        away_lines = away.get('linescores') or []
+        for hp, ap in zip(home_lines, away_lines):
+            quarter_scores.append({
+                'period': _safe_int(hp.get('period')),
+                'homeScore': _safe_int(hp.get('value', hp.get('displayValue'))),
+                'awayScore': _safe_int(ap.get('value', ap.get('displayValue'))),
+            })
+
+        for competitor in [home, away]:
+            players.append(_team_summary_player_from_espn(competitor))
+
+    return {
+        'gameId': str(game_id),
+        'homeTeam': _espn_team_name(home) if home else '',
+        'awayTeam': _espn_team_name(away) if away else '',
+        'homeScore': _safe_int(home.get('score')) if home else None,
+        'awayScore': _safe_int(away.get('score')) if away else None,
+        'players': players,
+        'quarterScores': quarter_scores,
+        'source': 'ESPN_NBA_SUMMER',
+        'mode': 'SCOREBOARD_DETAILS',
+        'message': 'ESPN 夏季联赛官方 scoreboard 提供球队统计和逐节比分；未提供完整球员 box score，系统不生成模拟球员明细。',
+    }
+
+
+def fetch_espn_summer_quarter_scores(game_id, match_date=None):
+    return fetch_espn_summer_boxscore(game_id, match_date).get('quarterScores', [])
+
+
+def fetch_espn_summer_playbyplay(game_id, match_date=None):
+    """Build official scoreboard timeline events when ESPN plays are unavailable."""
+    box = fetch_espn_summer_boxscore(game_id, match_date)
+    events = []
+    running_home = 0
+    running_away = 0
+    for q in box.get('quarterScores') or []:
+        period = _safe_int(q.get('period'))
+        running_home += _safe_int(q.get('homeScore'))
+        running_away += _safe_int(q.get('awayScore'))
+        events.append({
+            '_sourceIndex': period,
+            'period': period,
+            'gameClock': '0:00',
+            'description': f"第{period}节结束，{box.get('homeTeam', '主队')} {running_home}-{running_away} {box.get('awayTeam', '客队')}",
+            'rawHomeScore': running_home,
+            'rawAwayScore': running_away,
+            'eventType': 'period_score',
+            'actionType': 'period_score',
+            'playerId': None,
+            'playerName': '',
+            'teamId': None,
+            'teamName': '',
+            'source': 'ESPN_NBA_SUMMER_SCOREBOARD',
+        })
+    return _normalize_playbyplay_events(events)
 
 
 def fetch_recent_games():
@@ -3032,18 +3391,41 @@ def main():
         result['news'] = fetch_nba_news(limit)
 
     if action == 'boxscore' and len(sys.argv) > 2:
-        result['boxscore'] = fetch_boxscore(sys.argv[2])
+        game_id = sys.argv[2]
+        if _is_espn_summer_game_id(game_id):
+            result['boxscore'] = fetch_espn_summer_boxscore(game_id)
+        else:
+            result['boxscore'] = fetch_boxscore(game_id)
 
     if action == 'playbyplay' and len(sys.argv) > 2:
-        result['playByPlay'] = fetch_playbyplay(sys.argv[2])
+        game_id = sys.argv[2]
+        if _is_espn_summer_game_id(game_id):
+            result['playByPlay'] = fetch_espn_summer_playbyplay(game_id)
+        else:
+            result['playByPlay'] = fetch_playbyplay(game_id)
 
     if action == 'espn_playbyplay' and len(sys.argv) > 2:
         result['playByPlay'] = fetch_espn_playbyplay(sys.argv[2])
 
+    if action == 'espn_summer_boxscore' and len(sys.argv) > 2:
+        match_date = sys.argv[3] if len(sys.argv) > 3 else None
+        result['boxscore'] = fetch_espn_summer_boxscore(sys.argv[2], match_date)
+
+    if action == 'espn_summer_playbyplay' and len(sys.argv) > 2:
+        match_date = sys.argv[3] if len(sys.argv) > 3 else None
+        result['playByPlay'] = fetch_espn_summer_playbyplay(sys.argv[2], match_date)
+
     if action == 'quarters' and len(sys.argv) > 2:
         game_id = sys.argv[2]
         match_date = sys.argv[3] if len(sys.argv) > 3 else None
-        result['quarterScores'] = fetch_quarter_scores_from_scoreboard(game_id, match_date)
+        if _is_espn_summer_game_id(game_id):
+            result['quarterScores'] = fetch_espn_summer_quarter_scores(game_id, match_date)
+        else:
+            result['quarterScores'] = fetch_quarter_scores_from_scoreboard(game_id, match_date)
+
+    if action == 'espn_summer_quarters' and len(sys.argv) > 2:
+        match_date = sys.argv[3] if len(sys.argv) > 3 else None
+        result['quarterScores'] = fetch_espn_summer_quarter_scores(sys.argv[2], match_date)
 
     if action == 'player_career' and len(sys.argv) > 2:
         result['career'] = fetch_player_career(int(sys.argv[2]))
@@ -3086,7 +3468,16 @@ def main():
         result['shots'] = fetch_shot_chart(player_id, season)
 
     if action == 'game_shot_chart' and len(sys.argv) > 2:
-        shot_result = fetch_game_shot_chart(sys.argv[2])
+        game_id = sys.argv[2]
+        if _is_espn_summer_game_id(game_id):
+            shot_result = {
+                'shots': [],
+                'source': 'ESPN_NBA_SUMMER',
+                'mode': 'UNAVAILABLE',
+                'message': 'ESPN 夏季联赛官方公开数据未提供投篮坐标，系统不会生成模拟投篮点。',
+            }
+        else:
+            shot_result = fetch_game_shot_chart(game_id)
         result['shots'] = shot_result.get('shots', [])
         result['source'] = shot_result.get('source', 'NONE')
         result['mode'] = shot_result.get('mode', 'UNAVAILABLE')

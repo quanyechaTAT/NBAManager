@@ -132,7 +132,9 @@
   --gi-text: #F8FAFC;
   --gi-muted: #94A3B8;
   --gi-home: #3B82F6;
+  --gi-home-rgb: 59, 130, 246;
   --gi-away: #F97316;
+  --gi-away-rgb: 249, 115, 22;
   --gi-success: #10B981;
   --gi-danger: #EF4444;
   --gi-warning: #F59E0B;
@@ -211,7 +213,9 @@
   --gi-text: #0F172A;
   --gi-muted: #64748B;
   --gi-home: #2563EB;
+  --gi-home-rgb: 37, 99, 235;
   --gi-away: #EA580C;
+  --gi-away-rgb: 234, 88, 12;
   --gi-success: #059669;
   --gi-danger: #DC2626;
   --gi-warning: #D97706;
@@ -2985,4 +2989,57 @@ html, body {
   [data-theme="light"] .mini-stat {
     flex: 1 1 100%;
   }
+}
+
+/* ===== 亮色主题：比赛走势 ===== */
+
+/*
+ * 走势组件使用 CSS 变量控制所有颜色。
+ * 在此覆盖变量即可让组件自动适配亮色主题，
+ * 无需尝试覆盖 scoped 样式中的具体属性。
+ */
+
+/* 走势卡片变量覆盖 */
+[data-theme="light"] .game-trend-card {
+  --trend-home: var(--gi-home);
+  --trend-away: var(--accent-light);
+  --trend-home-soft: rgba(var(--gi-home-rgb), 0.08);
+  --trend-away-soft: rgba(var(--gi-away-rgb), 0.06);
+  --trend-surface: #FFFFFF;
+  --trend-panel: #FFFFFF;
+  --trend-hover: #F1F5F9;
+  --trend-text: #0F172A;
+  --trend-muted: #475569;
+  --trend-dim: #94A3B8;
+  --trend-border: #E2E8F0;
+  --trend-border-strong: #CBD5E1;
+  --trend-grid: rgba(0, 0, 0, 0.05);
+  --quarter-fill-a: rgba(241, 245, 249, 0.6);
+  --quarter-fill-b: rgba(248, 250, 252, 0.4);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.03);
+}
+
+/* 走势图变量覆盖 */
+[data-theme="light"] .momentum-area {
+  --crosshair-color: rgba(0, 0, 0, 0.08);
+}
+
+/* ===== 亮色主题：比赛聊天室 ===== */
+[data-theme="light"] .game-chat {
+  --chat-surface: #FFFFFF;
+  --chat-panel: #FFFFFF;
+  --chat-border: #E2E8F0;
+  --chat-text: #0F172A;
+  --chat-muted: #475569;
+  --chat-dim: #94A3B8;
+  --chat-accent: var(--accent);
+  --chat-accent-soft: var(--accent-lighter);
+  --chat-input-bg: #F8FAFC;
+  --chat-hover: #F1F5F9;
+  --chat-bubble-bg: #F1F5F9;
+  --chat-bubble-self: rgba(var(--accent-orange-rgb), 0.06);
+  background:
+    radial-gradient(ellipse 60% 40% at 10% 0%, rgba(var(--accent-orange-rgb, 232, 93, 38), 0.02), transparent),
+    #FFFFFF;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }

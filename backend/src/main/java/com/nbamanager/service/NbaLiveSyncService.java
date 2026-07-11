@@ -224,6 +224,29 @@ public class NbaLiveSyncService {
     }
 
     /**
+     * 如果新数据是中文版本而旧的是英文版本，升级为中文版本。
+     * 本系统面向中文用户，优先保留中文内容。
+     */
+    private void upgradeToChinese(GameNews old, String headline, String description, String content) {
+        if (headline == null || headline.isEmpty()) return;
+        if (old.getTitle() != null && old.getTitle().equals(headline)) return;
+        // 新标题含中文且旧标题不含中文 → 升级
+        boolean newHasChinese = headline.chars().anyMatch(c -> c >= 0x4E00 && c <= 0x9FFF);
+        boolean oldHasChinese = old.getTitle() != null && old.getTitle().chars().anyMatch(c -> c >= 0x4E00 && c <= 0x9FFF);
+        if (newHasChinese && !oldHasChinese) {
+            log.info("升级为中文版本: {} → {}", old.getTitle(), headline);
+            old.setTitle(headline);
+            if (description != null && !description.isEmpty()) {
+                old.setSummary(description.length() > 300 ? description.substring(0, 297) + "..." : description);
+            }
+            if (content != null && !content.isEmpty()) {
+                old.setContent(content);
+            }
+            gameNewsRepository.save(old);
+        }
+    }
+
+    /**
      * 计算字符串中中文字符的数量
      */
     private int countChineseChars(String text) {
@@ -253,7 +276,18 @@ public class NbaLiveSyncService {
         String awayTeam = newsItem.optString("awayTeam", "");
         String nbaGameId = newsItem.optString("nbaGameId", "");
 
-        // 检查是否已存在相同标题或相同来源URL的新闻（防止英文版和翻译版重复）
+        // 按 nbaGameId 查重
+        if (nbaGameId != null && !nbaGameId.isEmpty()) {
+            List<GameNews> byGameId = gameNewsRepository.findByNbaGameId(nbaGameId.trim());
+            if (!byGameId.isEmpty()) {
+                // 如果新数据是中文版本，尝试更新为中文
+                GameNews old = byGameId.get(0);
+                upgradeToChinese(old, headline, description, content);
+                return 0;
+            }
+        }
+
+        // 按 sourceUrl 查重
         List<GameNews> existing;
         if (sourceUrl != null && !sourceUrl.isEmpty()) {
             existing = gameNewsRepository.findByTitleOrSourceUrl(headline, sourceUrl);
@@ -262,28 +296,17 @@ public class NbaLiveSyncService {
         }
 
         if (!existing.isEmpty()) {
-            // 如果已存在但没有nbaGameId，尝试补充
             GameNews old = existing.get(0);
+            // 补充 nbaGameId
             if (nbaGameId != null && !nbaGameId.isEmpty()) {
                 if (old.getNbaGameId() == null || old.getNbaGameId().isEmpty()) {
                     old.setNbaGameId(nbaGameId);
-                    gameNewsRepository.save(old);
                 }
             }
-            // 如果新数据是中文版本而旧的是英文版本，更新为中文版本
-            if (headline != null && !headline.isEmpty()
-                    && old.getTitle() != null && !old.getTitle().equals(headline)
-                    && headline.chars().anyMatch(c -> c > 0x4E00 && c < 0x9FFF)) {
-                old.setTitle(headline);
-                if (description != null && !description.isEmpty()) {
-                    old.setSummary(description.length() > 300 ? description.substring(0, 297) + "..." : description);
-                }
-                if (content != null && !content.isEmpty()) {
-                    old.setContent(content);
-                }
-                gameNewsRepository.save(old);
-            }
-            return 0; // 已存在，跳过
+            // 如果新数据是中文版本，尝试更新为中文
+            upgradeToChinese(old, headline, description, content);
+            gameNewsRepository.save(old);
+            return 0;
         }
 
         // 解析发布时间
@@ -305,8 +328,11 @@ public class NbaLiveSyncService {
         news.setSummary(description.length() > 300 ? description.substring(0, 297) + "..." : description);
         news.setContent(content);
         news.setContentEn(contentEn);
-        news.setHomeTeam(homeTeam.isEmpty() ? "待定" : homeTeam);
-        news.setAwayTeam(awayTeam.isEmpty() ? "待定" : awayTeam);
+        // 只有真正的比赛才设置主客队，一般新闻留空
+        boolean hasRealTeams = !homeTeam.isEmpty() && !awayTeam.isEmpty()
+                && !"待定".equals(homeTeam) && !"待定".equals(awayTeam);
+        news.setHomeTeam(hasRealTeams ? homeTeam : "");
+        news.setAwayTeam(hasRealTeams ? awayTeam : "");
         news.setHomeScore(null);
         news.setAwayScore(null);
         news.setGameStartTime(publishTime);

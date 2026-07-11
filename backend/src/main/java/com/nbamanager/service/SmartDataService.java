@@ -18,6 +18,8 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -65,25 +67,32 @@ public class SmartDataService {
                 int awayScore = game.optInt("awayScore", 0);
                 String status = game.optString("status", "SCHEDULED");
                 String gameId = game.optString("gameId", null);
+                String category = game.optString("category", "game");
+                String source = game.optString("source", null);
+                String league = game.optString("league", "");
+                LocalDateTime startTime = parseGameStartTime(game);
+                LocalDateTime endTime = startTime.plusHours(3);
+                String eventLabel = "summer_game".equals(category) ? "NBA夏季联赛" : "今日比赛";
 
                 GameNewsDto dto = new GameNewsDto(
                         (long) i,
                         String.format("%s %d : %d %s", awayTeam, awayScore, homeScore, homeTeam),
-                        String.format("今日比赛: %s vs %s", awayTeam, homeTeam),
-                        String.format("今日比赛: %s vs %s\n比分: %d : %d\n状态: %s",
-                                awayTeam, homeTeam, awayScore, homeScore,
-                                "LIVE".equals(status) ? "进行中" : "已结束"),
+                        String.format("%s: %s vs %s", eventLabel, awayTeam, homeTeam),
+                        String.format("%s: %s vs %s\n比分: %d : %d\n状态: %s%s",
+                                eventLabel, awayTeam, homeTeam, awayScore, homeScore,
+                                statusLabel(status),
+                                league == null || league.isBlank() ? "" : "\n联赛: " + league),
                         homeTeam,
                         awayTeam,
                         homeScore,
                         awayScore,
-                        LocalDateTime.now().minusHours(2),
-                        LocalDateTime.now().plusHours(3),
+                        startTime,
+                        endTime,
                         status,
                         LocalDateTime.now(),
                         gameId,
-                        "game",
-                        null,
+                        category,
+                        source,
                         null,
                         0,
                         0,
@@ -107,6 +116,29 @@ public class SmartDataService {
      * 获取新闻列表（带缓存）
      * 缓存30分钟，过期则从API获取
      */
+    private LocalDateTime parseGameStartTime(JSONObject game) {
+        String raw = game.optString("startTime", "");
+        if (raw == null || raw.isBlank()) {
+            return LocalDateTime.now();
+        }
+        try {
+            return OffsetDateTime.parse(raw.replace("Z", "+00:00"))
+                    .atZoneSameInstant(ZoneId.systemDefault())
+                    .toLocalDateTime();
+        } catch (Exception ignored) {
+            return LocalDateTime.now();
+        }
+    }
+
+    private String statusLabel(String status) {
+        return switch (status) {
+            case "LIVE" -> "进行中";
+            case "FINISHED" -> "已结束";
+            case "SCHEDULED", "UPCOMING" -> "未开始";
+            default -> status == null || status.isBlank() ? "未开始" : status;
+        };
+    }
+
     @Cacheable(value = "news", key = "'list:' + #pageable.pageNumber + ':' + #pageable.pageSize")
     public Page<GameNewsDto> getNewsWithCache(String keyword, Long userId, Pageable pageable) {
         return gameNewsService.list(keyword, userId, pageable);
@@ -291,6 +323,10 @@ public class SmartDataService {
     private String getPythonExecutable() {
         // 检查虚拟环境Python
         String[] venvPaths = {
+                "backend/scripts/venv312/Scripts/python.exe",
+                "backend/scripts/venv312/bin/python",
+                "scripts/venv312/Scripts/python.exe",
+                "scripts/venv312/bin/python",
                 "backend/scripts/venv/Scripts/python.exe",
                 "backend/scripts/venv/bin/python",
                 "scripts/venv/Scripts/python.exe",
@@ -325,9 +361,12 @@ public class SmartDataService {
                     int awayScore = game.optInt("awayScore", 0);
                     String status = game.optString("status", "SCHEDULED");
                     String gameId = game.optString("gameId", null);
+                    String category = game.optString("category", "game");
+                    String source = game.optString("source", null);
+                    LocalDateTime startTime = parseGameStartTime(game);
 
                     // 更新或创建GameNews记录
-                    updateOrCreateGameNews(homeTeam, awayTeam, homeScore, awayScore, status, gameId);
+                    updateOrCreateGameNews(homeTeam, awayTeam, homeScore, awayScore, status, gameId, category, source, startTime);
                 }
             } catch (Exception e) {
                 log.error("异步更新数据库失败: {}", e.getMessage());
@@ -336,47 +375,94 @@ public class SmartDataService {
     }
 
     private int updateOrCreateGameNews(String homeTeam, String awayTeam,
-                                       int homeScore, int awayScore, String status, String gameId) {
-        LocalDate today = LocalDate.now();
+                                       int homeScore, int awayScore, String status, String gameId,
+                                       String category, String source, LocalDateTime startTime) {
+        LocalDateTime safeStartTime = startTime != null ? startTime : LocalDateTime.now();
         LocalDateTime now = LocalDateTime.now();
+        LocalDateTime safeEndTime = safeStartTime.plusHours(3);
+        String safeCategory = category == null || category.isBlank() ? "game" : category;
+        String label = "summer_game".equals(safeCategory) ? "NBA夏季联赛" : "今日比赛";
 
-        // 查找今天的比赛
-        List<com.nbamanager.domain.GameNews> todayNews = gameNewsRepository
-                .findByHomeTeamAndAwayTeamAndDate(homeTeam, awayTeam, today);
+        // 优先用 nbaGameId 查重（避免因日期不一致导致重复创建）
+        com.nbamanager.domain.GameNews existing = null;
+        if (gameId != null && !gameId.isBlank()) {
+            List<com.nbamanager.domain.GameNews> byGameId = gameNewsRepository.findByNbaGameId(gameId);
+            if (!byGameId.isEmpty()) {
+                existing = byGameId.get(0);
+            }
+        }
+        // 降级：按主客队+日期查重
+        if (existing == null) {
+            LocalDate today = safeStartTime.toLocalDate();
+            List<com.nbamanager.domain.GameNews> todayNews = gameNewsRepository
+                    .findByHomeTeamAndAwayTeamAndDate(homeTeam, awayTeam, today);
+            if (!todayNews.isEmpty()) {
+                existing = todayNews.get(0);
+            }
+        }
 
-        if (!todayNews.isEmpty()) {
-            com.nbamanager.domain.GameNews news = todayNews.get(0);
+        if (existing != null) {
             if ("LIVE".equals(status) || "FINISHED".equals(status)) {
-                news.setHomeScore(homeScore);
-                news.setAwayScore(awayScore);
-                news.setTitle(String.format("%s %d : %d %s", awayTeam, awayScore, homeScore, homeTeam));
+                existing.setHomeScore(homeScore);
+                existing.setAwayScore(awayScore);
+                existing.setTitle(String.format("%s %d : %d %s", awayTeam, awayScore, homeScore, homeTeam));
             }
-            if (!news.getStatus().equals(status)) {
-                news.setStatus(status);
+            if (!existing.getStatus().equals(status)) {
+                existing.setStatus(status);
             }
-            if (gameId != null && !gameId.isEmpty() && (news.getNbaGameId() == null || news.getNbaGameId().isEmpty())) {
-                news.setNbaGameId(gameId);
+            if (gameId != null && !gameId.isEmpty() && (existing.getNbaGameId() == null || existing.getNbaGameId().isEmpty())) {
+                existing.setNbaGameId(gameId);
             }
-            gameNewsRepository.save(news);
+            existing.setGameStartTime(safeStartTime);
+            existing.setGameEndTime(safeEndTime);
+            existing.setHomeTeam(homeTeam);
+            existing.setAwayTeam(awayTeam);
+            existing.setCategory(safeCategory);
+            existing.setSourceUrl(source);
+            gameNewsRepository.save(existing);
             return 1;
-        } else if ("LIVE".equals(status) || "FINISHED".equals(status)) {
+        } else {
+            log.info("创建比赛记录: {} vs {}, gameId={}, category={}", homeTeam, awayTeam, gameId, safeCategory);
             com.nbamanager.domain.GameNews news = new com.nbamanager.domain.GameNews();
             news.setTitle(String.format("%s %d : %d %s", awayTeam, awayScore, homeScore, homeTeam));
-            news.setSummary(String.format("今日比赛: %s vs %s, 比分 %d:%d", awayTeam, homeTeam, awayScore, homeScore));
+            news.setSummary(String.format("%s: %s vs %s, 比分 %d:%d", label, awayTeam, homeTeam, awayScore, homeScore));
+            news.setContent(news.getSummary());
             news.setHomeTeam(homeTeam);
             news.setAwayTeam(awayTeam);
             news.setHomeScore(homeScore);
             news.setAwayScore(awayScore);
-            news.setGameStartTime(now.minusHours(2));
-            news.setGameEndTime(now.plusHours(3));
+            news.setGameStartTime(safeStartTime);
+            news.setGameEndTime(safeEndTime);
             news.setCreateTime(now);
             news.setStatus(status);
             news.setNbaGameId(gameId);
-            news.setCategory("game");
+            news.setCategory(safeCategory);
+            news.setSourceUrl(source);
             gameNewsRepository.save(news);
             return 1;
         }
-        return 0;
+    }
+
+    /**
+     * 如果新数据是中文版本而旧的是英文版本，升级为中文版本。
+     * 本系统面向中文用户，优先保留中文内容。
+     */
+    private void upgradeToChinese(com.nbamanager.domain.GameNews old, String headline, String description, String content) {
+        if (headline == null || headline.isEmpty()) return;
+        if (old.getTitle() != null && old.getTitle().equals(headline)) return;
+        boolean newHasChinese = headline.chars().anyMatch(c -> c >= 0x4E00 && c <= 0x9FFF);
+        boolean oldHasChinese = old.getTitle() != null && old.getTitle().chars().anyMatch(c -> c >= 0x4E00 && c <= 0x9FFF);
+        if (newHasChinese && !oldHasChinese) {
+            log.info("升级为中文版本: {} → {}", old.getTitle(), headline);
+            old.setTitle(headline);
+            if (description != null && !description.isEmpty()) {
+                old.setSummary(description.length() > 300 ? description.substring(0, 297) + "..." : description);
+            }
+            if (content != null && !content.isEmpty()) {
+                old.setContent(content);
+            }
+            gameNewsRepository.save(old);
+        }
     }
 
     private int createNewsFromJson(JSONObject newsItem) {
@@ -390,23 +476,39 @@ public class SmartDataService {
         String awayTeam = newsItem.optString("awayTeam", "");
         String nbaGameId = newsItem.optString("nbaGameId", "");
 
-        // 检查是否已存在
+        // 按 nbaGameId 查重
+        if (nbaGameId != null && !nbaGameId.isEmpty()) {
+            List<com.nbamanager.domain.GameNews> byGameId = gameNewsRepository.findByNbaGameId(nbaGameId.trim());
+            if (!byGameId.isEmpty()) {
+                // 如果新数据是中文版本，尝试升级
+                upgradeToChinese(byGameId.get(0), headline, description, content);
+                return 0;
+            }
+        }
+        // 按 sourceUrl 查重
         if (sourceUrl != null && !sourceUrl.isEmpty()) {
             List<com.nbamanager.domain.GameNews> existing = gameNewsRepository.findByTitleOrSourceUrl(headline, sourceUrl);
             if (!existing.isEmpty()) {
+                upgradeToChinese(existing.get(0), headline, description, content);
                 return 0;
             }
         }
 
         LocalDateTime now = LocalDateTime.now();
+        log.info("创建新闻: title={}, nbaGameId={}, category={}", headline, nbaGameId, category);
         com.nbamanager.domain.GameNews news = new com.nbamanager.domain.GameNews();
         news.setTitle(headline);
         news.setSummary(description.length() > 300 ? description.substring(0, 297) + "..." : description);
         news.setContent(content);
-        news.setHomeTeam(homeTeam.isEmpty() ? "待定" : homeTeam);
-        news.setAwayTeam(awayTeam.isEmpty() ? "待定" : awayTeam);
-        news.setGameStartTime(now);
-        news.setGameEndTime(now.plusHours(2));
+        // 只有真正的比赛才设置主客队，一般新闻留空避免显示"待定 vs 待定"
+        boolean hasRealTeams = !homeTeam.isEmpty() && !awayTeam.isEmpty()
+                && !"待定".equals(homeTeam) && !"待定".equals(awayTeam);
+        news.setHomeTeam(hasRealTeams ? homeTeam : "");
+        news.setAwayTeam(hasRealTeams ? awayTeam : "");
+        // 优先使用真实比赛时间，避免用 now() 导致比赛被错误归入今天
+        LocalDateTime gameStartTime = parseGameStartTime(newsItem);
+        news.setGameStartTime(gameStartTime);
+        news.setGameEndTime(gameStartTime.plusHours(2));
         news.setCreateTime(now);
         news.setStatus("FINISHED");
         news.setNbaGameId(nbaGameId.isEmpty() ? null : nbaGameId);

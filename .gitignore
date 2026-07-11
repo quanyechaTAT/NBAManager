@@ -49,6 +49,7 @@ nohup.out
 # Claude Code / Superpowers
 .claude/
 .superpowers/
+.agents/
 
 # IDE
 .vscode/

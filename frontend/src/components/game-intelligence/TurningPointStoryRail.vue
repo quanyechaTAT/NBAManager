@@ -8,6 +8,7 @@
       <article
         v-for="tp in displayPoints"
         :key="tp.id"
+        :data-tp-id="tp.id"
         class="tp-card"
         :class="[typeClass(tp.type), impactClass(tp.impactLevel)]"
       >
@@ -149,6 +150,11 @@ function fallbackExplanation(tp: TurningPoint): string {
   transition: transform 0.18s ease, border-color 0.18s ease;
 }
 .tp-card:hover { transform: translateY(-2px); border-color: rgba(255, 255, 255, 0.14); }
+.tp-card.tp-highlight {
+  border-color: var(--gi-home, #3b82f6);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3), 0 0 20px rgba(59, 130, 246, 0.15);
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
 
 .tp-card.tp-run { border-left: 3px solid #10b981; }
 .tp-card.tp-overtake { border-left: 3px solid #f97316; }

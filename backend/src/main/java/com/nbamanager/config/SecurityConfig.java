@@ -65,6 +65,9 @@ public class SecurityConfig {
                                 .permitAll()
                                 .requestMatchers("/ws")
                                 .permitAll()
+                                // 上传文件静态资源
+                                .requestMatchers("/uploads/**")
+                                .permitAll()
                                 // 季后赛数据修正（临时）
                                 .requestMatchers(HttpMethod.POST, "/api/playoff/fix-data")
                                 .permitAll()
@@ -119,6 +122,15 @@ public class SecurityConfig {
                                 .permitAll()
                                 .requestMatchers(HttpMethod.GET, "/api/notifications/**")
                                 .permitAll()
+                                // 聊天历史接口（公开可读）
+                                .requestMatchers(HttpMethod.GET, "/api/chat/**")
+                                .permitAll()
+                                // 聊天图片上传（需认证）
+                                .requestMatchers(HttpMethod.POST, "/api/chat/upload")
+                                .authenticated()
+                                // 聊天消息删除（需认证）
+                                .requestMatchers(HttpMethod.DELETE, "/api/chat/**")
+                                .authenticated()
                                 // 其他 GET 请求需要认证
                                 .requestMatchers(HttpMethod.GET, "/api/**")
                                 .authenticated()

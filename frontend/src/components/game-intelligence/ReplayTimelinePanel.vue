@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import type { TimelineEvent } from '@/api/types'
 import { getTimelineDescription } from '@/utils/replayText'
 
@@ -16,6 +16,7 @@ const emit = defineEmits<{
 const periodFilter = ref<number | 'all'>('all')
 const typeFilter = ref<string>('all')
 const searchQuery = ref('')
+const rowRefs = new Map<number, HTMLElement>()
 
 const periods = [
   { label: '全部', value: 'all' as const },
@@ -126,6 +127,33 @@ function hasScore(event: TimelineEvent): boolean {
   return event.homeScore !== null && event.homeScore !== undefined
     && event.awayScore !== null && event.awayScore !== undefined
 }
+
+function setRowRef(event: TimelineEvent, el: Element | null) {
+  if (el instanceof HTMLElement) {
+    rowRefs.set(event.id, el)
+  } else {
+    rowRefs.delete(event.id)
+  }
+}
+
+watch(
+  () => props.selectedEvent?.id,
+  async (id) => {
+    if (!id) return
+    const visible = filteredEvents.value.some(event => event.id === id)
+    if (!visible) {
+      periodFilter.value = 'all'
+      typeFilter.value = 'all'
+      searchQuery.value = ''
+    }
+    await nextTick()
+    rowRefs.get(id)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+      inline: 'nearest',
+    })
+  }
+)
 </script>
 
 <template>
@@ -182,6 +210,7 @@ function hasScore(event: TimelineEvent): boolean {
       <div
         v-for="event in filteredEvents"
         :key="event.id"
+        :ref="(el) => setRowRef(event, el)"
         class="timeline-row"
         :class="{ selected: isSelected(event) }"
         @click="onSelect(event)"

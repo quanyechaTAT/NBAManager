@@ -56,7 +56,7 @@ public class MatchDetailService {
         List<GameBoxScore> records = gameBoxScoreRepository.findByGameId(nbaGameId);
 
         if (records.isEmpty()) {
-            fetchFromPython("boxscore", nbaGameId);
+            fetchFromPython(resolveBoxScoreAction(nbaGameId), nbaGameId);
             records = gameBoxScoreRepository.findByGameId(nbaGameId);
         }
 
@@ -248,19 +248,20 @@ public class MatchDetailService {
     @Cacheable(value = "playByPlay", key = "#gameId + ':' + #period", unless = "#result.isEmpty()")
     @Transactional
     public List<PlayByPlayDto> getPlayByPlay(String gameId, Integer period) {
+        String resolvedGameId = gameIdMappingService.getNbaGameId(gameId);
         List<PlayByPlay> records;
         if (period != null) {
-            records = playByPlayRepository.findByGameIdAndPeriodOrderByEventOrderAsc(gameId, period);
+            records = playByPlayRepository.findByGameIdAndPeriodOrderByEventOrderAsc(resolvedGameId, period);
         } else {
-            records = playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId);
+            records = playByPlayRepository.findByGameIdOrderByEventOrderAsc(resolvedGameId);
         }
 
         if (records.isEmpty()) {
-            fetchFromPython("playbyplay", gameId);
+            fetchFromPython(resolvePlayByPlayAction(resolvedGameId), resolvedGameId);
             if (period != null) {
-                records = playByPlayRepository.findByGameIdAndPeriodOrderByEventOrderAsc(gameId, period);
+                records = playByPlayRepository.findByGameIdAndPeriodOrderByEventOrderAsc(resolvedGameId, period);
             } else {
-                records = playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId);
+                records = playByPlayRepository.findByGameIdOrderByEventOrderAsc(resolvedGameId);
             }
         }
 
@@ -275,11 +276,15 @@ public class MatchDetailService {
         log.info("获取逐节比分: 原始gameId={}, 转换后gameId={}", gameId, nbaGameId);
 
         // 先从数据库获取Play-by-Play数据
+        if (isEspnSummerGameId(nbaGameId)) {
+            return fetchQuarterScoresFromScoreboard(nbaGameId, resolveMatchDate(nbaGameId));
+        }
+
         List<PlayByPlay> allEvents = playByPlayRepository.findByGameIdOrderByEventOrderAsc(nbaGameId);
 
         // 如果数据库没有数据，调用Python脚本获取
         if (allEvents.isEmpty()) {
-            fetchFromPython("playbyplay", nbaGameId);
+            fetchFromPython(resolvePlayByPlayAction(nbaGameId), nbaGameId);
             allEvents = playByPlayRepository.findByGameIdOrderByEventOrderAsc(nbaGameId);
         }
 
@@ -510,7 +515,7 @@ public class MatchDetailService {
             }
 
             JSONObject data = new JSONObject(jsonStr);
-            if ("boxscore".equals(dataType)) {
+            if ("boxscore".equals(dataType) || "espn_summer_boxscore".equals(dataType)) {
                 // 支持两种格式：{boxscore: {players: [...]}} 或 {players: [...]}
                 JSONArray playersArray = null;
                 if (data.has("boxscore") && !data.isNull("boxscore")) {
@@ -524,7 +529,7 @@ public class MatchDetailService {
                 if (playersArray != null) {
                     saveBoxScore(playersArray, gameId);
                 }
-            } else if ("playbyplay".equals(dataType) && data.has("playByPlay") && !data.isNull("playByPlay")) {
+            } else if (("playbyplay".equals(dataType) || "espn_summer_playbyplay".equals(dataType)) && data.has("playByPlay") && !data.isNull("playByPlay")) {
                 savePlayByPlay(data.getJSONArray("playByPlay"), gameId);
             }
 
@@ -585,10 +590,31 @@ public class MatchDetailService {
             pbp.setPlayerId(obj.has("playerId") && !obj.isNull("playerId") ? obj.getLong("playerId") : null);
             pbp.setPlayerName(obj.optString("playerName", ""));
             pbp.setTeamId(obj.has("teamId") && !obj.isNull("teamId") ? obj.getLong("teamId") : null);
+            pbp.setTeamName(obj.optString("teamName", ""));
+            pbp.setSource(obj.optString("source", isEspnSummerGameId(gameId) ? "ESPN_NBA_SUMMER" : "NBA_PLAY_BY_PLAY"));
+            pbp.setActionType(obj.optString("actionType", obj.optString("eventType", "")));
+            pbp.setEventOrder(obj.optInt("eventOrder", i + 1));
+            pbp.setScoreMargin(pbp.getHomeScore() - pbp.getAwayScore());
+            pbp.setIsScoringPlay(obj.optBoolean("isScoringPlay", pbp.getHomeScore() > 0 || pbp.getAwayScore() > 0));
+            pbp.setIsHighlightCandidate(obj.optBoolean("isHighlightCandidate", false));
+            pbp.setCreatedAt(java.time.LocalDateTime.now());
+            pbp.setUpdatedAt(java.time.LocalDateTime.now());
             records.add(pbp);
         }
         playByPlayRepository.saveAll(records);
         log.info("保存play-by-play数据: {}条记录, gameId={}", records.size(), gameId);
+    }
+
+    private boolean isEspnSummerGameId(String gameId) {
+        return gameId != null && gameId.startsWith("401");
+    }
+
+    private String resolveBoxScoreAction(String gameId) {
+        return isEspnSummerGameId(gameId) ? "espn_summer_boxscore" : "boxscore";
+    }
+
+    private String resolvePlayByPlayAction(String gameId) {
+        return isEspnSummerGameId(gameId) ? "espn_summer_playbyplay" : "playbyplay";
     }
 
     private String findScriptPath() {

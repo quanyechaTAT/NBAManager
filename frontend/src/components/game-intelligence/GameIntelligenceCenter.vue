@@ -4,9 +4,12 @@
     <div class="gi-row gi-row-trend">
       <GameTrendCard
         :data="momentumData"
+        :timeline-events="timelineEvents"
         :home-team="homeTeam"
         :away-team="awayTeam"
+        :selected-event="selectedEvent"
         @point-click="handleMomentumClick"
+        @run-click="handleRunClick"
       />
       <AISummaryCard
         :summary="summary"
@@ -34,7 +37,7 @@
     </div>
 
     <!-- Turning Points rail -->
-    <TurningPointStoryRail :points="turningPoints" />
+    <TurningPointStoryRail ref="tpRailRef" :points="turningPoints" />
 
     <!-- Stat comparison -->
     <StatComparisonPanel :items="comparisonItems" />
@@ -50,6 +53,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import GameTrendCard from './GameTrendCard.vue'
 import AISummaryCard from './AISummaryCard.vue'
 import ReplayTimelinePanel from './ReplayTimelinePanel.vue'
@@ -59,7 +63,7 @@ import StatComparisonPanel from './StatComparisonPanel.vue'
 import PlayerPerformanceRail from './PlayerPerformanceRail.vue'
 import type { TimelineEvent, MomentumSnapshot, Highlight, TurningPoint, GameSummary, BoxScorePlayer } from '@/api/types'
 
-defineProps<{
+const props = defineProps<{
   gameId: string
   homeTeam: string
   awayTeam: string
@@ -74,12 +78,51 @@ defineProps<{
   selectedEvent: TimelineEvent | null
 }>()
 
-defineEmits<{ selectEvent: [event: TimelineEvent] }>()
+const emit = defineEmits<{ selectEvent: [event: TimelineEvent] }>()
+const tpRailRef = ref<InstanceType<typeof TurningPointStoryRail> | null>(null)
+
+function handleRunClick(startOrder: number, endOrder: number) {
+  // Find matching turning point by event order range
+  const match = props.turningPoints.find(tp =>
+    tp.type === 'RUN' && tp.startEventOrder != null && tp.endEventOrder != null
+      && Math.abs(tp.startEventOrder - startOrder) <= 3
+      && Math.abs(tp.endEventOrder - endOrder) <= 3
+  ) || props.turningPoints.find(tp =>
+    tp.startEventOrder != null && Math.abs(tp.startEventOrder - startOrder) <= 5
+  )
+
+  const railEl = tpRailRef.value?.$el as HTMLElement | undefined
+  if (!railEl) return
+
+  if (match) {
+    const card = railEl.querySelector(`[data-tp-id="${match.id}"]`) as HTMLElement | null
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      card.classList.add('tp-highlight')
+      setTimeout(() => card.classList.remove('tp-highlight'), 1500)
+      return
+    }
+  }
+
+  // Fallback: scroll to the turning points section
+  railEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 function handleMomentumClick(snapshot: MomentumSnapshot) {
-  // Parent handles finding the nearest timeline event
-  const ev = (window as any).__gi_momentum_click?.(snapshot)
-  if (ev) (window as any).__gi_select_event?.(ev)
+  const exact = props.timelineEvents.find(e => e.eventOrder === snapshot.eventOrder)
+  if (exact) {
+    emit('selectEvent', exact)
+    return
+  }
+
+  const nearest = props.timelineEvents.reduce<TimelineEvent | null>((best, event) => {
+    if (!best) return event
+    return Math.abs(event.eventOrder - snapshot.eventOrder) < Math.abs(best.eventOrder - snapshot.eventOrder)
+      ? event
+      : best
+  }, null)
+
+  if (nearest) emit('selectEvent', nearest)
 }
 </script>
 
@@ -99,7 +142,7 @@ function handleMomentumClick(snapshot: MomentumSnapshot) {
   align-items: start;
 }
 .gi-row-trend {
-  grid-template-columns: 1.45fr 0.95fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 .gi-row-main {
   grid-template-columns: minmax(320px, 0.9fr) minmax(340px, 0.95fr);

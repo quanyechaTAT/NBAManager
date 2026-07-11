@@ -65,6 +65,7 @@ public class DashboardOverviewService {
 
     private List<GameNewsDto> loadTodayGames(List<String> partialErrors) {
         try {
+            // 直接从数据库读取（快速），实时数据由前端单独请求 /api/news/today
             return gameNewsService.getTodayGames().stream()
                     .filter(this::hasValidGameTeams)
                     .limit(10)
@@ -105,6 +106,7 @@ public class DashboardOverviewService {
 
     private boolean hasValidGameTeams(GameNewsDto game) {
         return game.nbaGameId() != null
+                && !game.nbaGameId().isBlank()
                 && isPresentTeam(game.homeTeam())
                 && isPresentTeam(game.awayTeam());
     }

@@ -19,8 +19,9 @@ public interface GameNewsRepository extends JpaRepository<GameNews, Long> {
             + "g.title LIKE %:q% OR g.homeTeam LIKE %:q% OR g.awayTeam LIKE %:q%")
     Page<GameNews> search(@Param("q") String q, Pageable pageable);
 
-    /** 查询今日赛事（比赛开始时间在今天范围内） */
-    @Query("SELECT g FROM GameNews g WHERE g.gameStartTime >= :start AND g.gameStartTime < :end ORDER BY g.gameStartTime ASC")
+    /** 查询今日赛事（仅比赛类，排除普通新闻） */
+    @Query("SELECT g FROM GameNews g WHERE g.gameStartTime >= :start AND g.gameStartTime < :end "
+            + "AND g.category IN ('game', 'summer_game') ORDER BY g.gameStartTime ASC")
     List<GameNews> findTodayGames(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
     /** 统计总数 */

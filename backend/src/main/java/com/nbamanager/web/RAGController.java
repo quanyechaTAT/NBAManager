@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
+import org.json.JSONObject;
 
 /**
  * RAG 智能问答接口
@@ -100,7 +101,11 @@ public class RAGController {
                 conn.disconnect();
             } catch (Exception e) {
                 try {
-                    String errorEvent = "data: {\"type\":\"error\",\"error\":\"" + e.getMessage() + "\"}\n\n";
+                    String errorJson = new JSONObject()
+                            .put("type", "error")
+                            .put("error", e.getMessage())
+                            .toString();
+                    String errorEvent = "data: " + errorJson + "\n\n";
                     outputStream.write(errorEvent.getBytes(StandardCharsets.UTF_8));
                     outputStream.flush();
                 } catch (Exception ignored) {}

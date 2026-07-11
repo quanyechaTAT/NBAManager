@@ -33,5 +33,6 @@ public class UserAccount {
     @Column(nullable = false, length = 16)
     private Role role;
 
-
+    @Column(length = 512)
+    private String avatarUrl;
 }

@@ -2,7 +2,7 @@ import { ref, onMounted } from 'vue'
 import { fetchDashboardOverview } from '@/api/dashboard'
 import type { DashboardStats, TeamRank, GameNews, Post } from '@/api/types'
 
-const CACHE_KEY = 'nba_dashboard_cache'
+const CACHE_KEY = 'nba_dashboard_cache_v2_summer_games'
 const CACHE_TTL = 5 * 60 * 1000
 
 interface DashboardCache {
@@ -59,11 +59,23 @@ export function useDashboardCache() {
     docCount.value = cached.docCount
   }
 
+  async function fetchTodayGames() {
+    try {
+      const { data } = await import('@/api/news').then(m => m.fetchTodayNews())
+      todayGames.value = data ?? []
+    } catch {
+      // Keep existing todayGames on failure
+    }
+  }
+
   async function fetchData() {
+    // Load today games separately (slow, ~9s) — don't block main dashboard
+    fetchTodayGames()
+
     const { data } = await fetchDashboardOverview()
     applyCache({
       stats: data.stats,
-      todayGames: data.todayGames ?? [],
+      todayGames: todayGames.value.length > 0 ? todayGames.value : (data.todayGames ?? []),
       westStandings: data.westStandings ?? [],
       eastStandings: data.eastStandings ?? [],
       topScorers: data.topScorers ?? data.stats?.topScorers ?? [],

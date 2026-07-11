@@ -179,6 +179,14 @@ public class EspnPlayByPlayProvider implements PlayByPlayProvider {
             String description = obj.optString("description", "");
             int homeScore = obj.optInt("homeScore", 0);
             int awayScore = obj.optInt("awayScore", 0);
+
+            // ESPN may omit scores for non-scoring events (substitutions, fouls, etc.)
+            // Carry forward the previous event's scores to avoid margin dropping to 0
+            if (homeScore == 0 && awayScore == 0 && i > 0) {
+                homeScore = prevHomeScore;
+                awayScore = prevAwayScore;
+            }
+
             String eventType = obj.optString("eventType", "");
             String actionType = obj.optString("actionType", "");
             String playerName = obj.optString("playerName", "");

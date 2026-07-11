@@ -59,29 +59,30 @@
         <router-link to="/news" class="section-link">查看全部</router-link>
       </div>
       <div class="games-scroll">
-        <div v-for="g in todayGames" :key="g.id" class="game-card" @click="goMatch(g)">
-          <div class="game-status" :class="g.status?.toLowerCase()">{{ statusLabel(g.status) }}</div>
+        <div v-for="g in todayGames" :key="g.id" class="game-card" :class="{ 'is-history': isHistoricalGame(g), 'is-summer': isSummerGame(g) }" @click="goMatch(g)">
+          <div class="game-card-top">
+            <span class="league-pill" :class="{ summer: isSummerGame(g) }">{{ gameLeagueLabel(g) }}</span>
+            <span class="game-type">{{ gameTypeLabel(g) }}</span>
+            <span class="game-time">{{ formatGameTime(g.gameStartTime) }}</span>
+          </div>
+          <div class="game-title">{{ g.title }}</div>
           <div class="game-teams">
-            <div class="game-team">
-              <img v-if="getLogo(g.homeTeam)" :src="getLogo(g.homeTeam)" class="game-logo" alt="" />
-              <span v-else class="game-logo-fb">{{ g.homeTeam?.charAt(0) }}</span>
-              <span class="game-team-name">{{ g.homeTeam }}</span>
-            </div>
-            <div class="game-score">
-              <span :class="{ win: g.homeScore > g.awayScore }">{{ g.homeScore ?? '-' }}</span>
-              <span class="game-sep">:</span>
-              <span :class="{ win: g.awayScore > g.homeScore }">{{ g.awayScore ?? '-' }}</span>
-            </div>
             <div class="game-team">
               <img v-if="getLogo(g.awayTeam)" :src="getLogo(g.awayTeam)" class="game-logo" alt="" />
               <span v-else class="game-logo-fb">{{ g.awayTeam?.charAt(0) }}</span>
               <span class="game-team-name">{{ g.awayTeam }}</span>
             </div>
+            <div class="game-score">
+              <span :class="{ win: isWinner(g, 'away') }">{{ g.awayScore ?? '-' }}</span>
+              <span class="game-sep">-</span>
+              <span :class="{ win: isWinner(g, 'home') }">{{ g.homeScore ?? '-' }}</span>
+            </div>
+            <div class="game-team">
+              <img v-if="getLogo(g.homeTeam)" :src="getLogo(g.homeTeam)" class="game-logo" alt="" />
+              <span v-else class="game-logo-fb">{{ g.homeTeam?.charAt(0) }}</span>
+              <span class="game-team-name">{{ g.homeTeam }}</span>
+            </div>
           </div>
-          <button class="game-ai-btn" @click.stop="goMatchAI(g)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5"/></svg>
-            AI 分析
-          </button>
         </div>
       </div>
     </section>
@@ -273,12 +274,58 @@ function statusLabel(s?: string) {
   return map[s || ''] || s || '未开始'
 }
 
-function goMatch(g: GameNews) {
-  if (g.nbaGameId) router.push({ path: '/match-detail', query: { gameId: String(g.nbaGameId) } })
+function isHistoricalGame(g: GameNews) {
+  return g.category === 'historical_game' || g.sourceUrl === 'match_records'
 }
 
-function goMatchAI(g: GameNews) {
-  router.push({ path: '/smart-search', query: { q: `分析${g.homeTeam} vs ${g.awayTeam}这场比赛的关键看点` } })
+function isSummerGame(g: GameNews) {
+  return g.category === 'summer_game' || g.sourceUrl === 'ESPN_NBA_SUMMER'
+}
+
+function gameLeagueLabel(g: GameNews) {
+  if (isSummerGame(g)) return '夏联'
+  if (isHistoricalGame(g)) return '历史'
+  return 'NBA'
+}
+
+function gameTypeLabel(g: GameNews) {
+  if (isSummerGame(g)) return 'NBA夏季联赛'
+  if (isHistoricalGame(g)) return '真实比赛补位'
+  return '今日赛事'
+}
+
+function isWinner(g: GameNews, side: 'home' | 'away') {
+  if (g.status !== 'FINISHED') return false
+  const score = side === 'home' ? g.homeScore : g.awayScore
+  const other = side === 'home' ? g.awayScore : g.homeScore
+  return score != null && other != null && score > other
+}
+
+function formatGameTime(t?: string) {
+  if (!t) return ''
+  const d = new Date(t)
+  if (Number.isNaN(d.getTime())) return ''
+  const today = new Date()
+  if (d.toDateString() === today.toDateString()) {
+    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  }
+  return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+}
+
+function goMatch(g: GameNews) {
+  if (!g.nbaGameId) return
+  router.push({
+    path: '/match-detail',
+    query: {
+      gameId: String(g.nbaGameId),
+      status: g.status,
+      homeTeam: g.homeTeam,
+      awayTeam: g.awayTeam,
+      homeScore: g.homeScore != null ? String(g.homeScore) : undefined,
+      awayScore: g.awayScore != null ? String(g.awayScore) : undefined,
+      returnTo: '/dashboard'
+    }
+  })
 }
 
 function goTeamDetail(teamName: string) {
@@ -538,27 +585,72 @@ function goPlayerDetail(playerId: number) {
 }
 .game-sep { font-size: 14px; color: var(--text-dim); }
 .game-score .win { color: var(--accent); }
-.game-ai-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  padding: 6px;
-  background: var(--bg-page);
-  border: 1px solid var(--border-light);
-  border-radius: 6px;
-  color: var(--text-muted);
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 0.15s;
-  justify-content: center;
-}
-.game-ai-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
 
 /* ===== 摘要区 ===== */
+.game-card {
+  flex-basis: 216px;
+  min-height: 136px;
+  border-radius: 6px;
+  padding: 12px 10px 10px;
+}
+.game-card:hover {
+  transform: translateY(-1px);
+}
+.game-card.is-history {
+  border-style: dashed;
+}
+.game-card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.league-pill {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #f8d99b;
+  color: #7c4a03;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.league-pill.summer {
+  background: rgba(14, 165, 233, 0.14);
+  color: #0369a1;
+}
+.game-type {
+  min-width: 0;
+  flex: 1;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.game-time {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.game-title {
+  height: 34px;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.game-logo,
+.game-logo-fb {
+  width: 34px;
+  height: 34px;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;

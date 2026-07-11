@@ -32,7 +32,7 @@ export const useAuthStore = defineStore('auth', () => {
     setProfile(p)
     token.value = jwt
     profile.value = p
-    avatarUrl.value = getAvatarForUser(p.username)
+    avatarUrl.value = p.avatarUrl || getAvatarForUser(p.username)
   }
 
   function logout() {

@@ -36,3 +36,11 @@ app:
     expiration-ms: 86400000
   cache:
     ttl-seconds: 1800
+  websocket:
+    allowed-origins: ${WS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}
+  chat:
+    cleanup-enabled: ${CHAT_CLEANUP_ENABLED:true}
+    retention-days: ${CHAT_RETENTION_DAYS:180}
+    cleanup-batch-size: ${CHAT_CLEANUP_BATCH_SIZE:1000}
+    cleanup-cron: ${CHAT_CLEANUP_CRON:0 0 3 * * ?}
+    cleanup-max-batches: ${CHAT_CLEANUP_MAX_BATCHES:500}

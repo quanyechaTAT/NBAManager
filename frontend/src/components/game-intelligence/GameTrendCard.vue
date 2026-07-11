@@ -1,10 +1,5 @@
 <template>
   <section class="game-trend-card">
-    <div class="trend-topbar">
-      <span>DARK THEME · 当前暗色模式</span>
-      <strong>INTEGRATED REPLAY CARD</strong>
-    </div>
-
     <header class="game-trend-header">
       <div class="title-row">
         <strong>比赛走势</strong>
@@ -63,15 +58,10 @@
           :chart-left="chartPadding.left"
           :chart-width="chartSize.width - chartPadding.left - chartPadding.right"
           @select="selectByOrder"
+          @run-click="(start, end) => emit('runClick', start, end)"
         />
       </div>
 
-      <TrendOverviewCard
-        :model="model"
-        :metrics="model.metrics"
-        :home-team="homeTeam"
-        :away-team="awayTeam"
-      />
     </div>
 
     <div v-else class="empty-state">暂无走势数据</div>
@@ -84,7 +74,6 @@ import type { MomentumSnapshot, TimelineEvent } from '@/api/types'
 import { getTeamLogo } from '@/utils/teamLogos'
 import EventStrip from './game-trend/EventStrip.vue'
 import MomentumArea from './game-trend/MomentumArea.vue'
-import TrendOverviewCard from './game-trend/TrendOverviewCard.vue'
 import type { TrendDisplayMode } from './game-trend/types'
 import { buildTrendModel, findNearestPoint } from './game-trend/trendUtils'
 
@@ -98,6 +87,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   pointClick: [snapshot: MomentumSnapshot]
+  runClick: [startOrder: number, endOrder: number]
 }>()
 
 const displayMode = ref<TrendDisplayMode>('lead') // kept for API compatibility
@@ -180,8 +170,8 @@ function teamInitial(name: string, fallback: string): string {
 .game-trend-card {
   --trend-home: var(--gi-home);
   --trend-away: var(--accent-light);
-  --trend-home-soft: rgba(59, 130, 246, 0.18);
-  --trend-away-soft: rgba(249, 115, 22, 0.16);
+  --trend-home-soft: rgba(var(--gi-home-rgb), 0.18);
+  --trend-away-soft: rgba(var(--gi-away-rgb), 0.16);
   --trend-surface: var(--bg-card);
   --trend-panel: var(--bg-panel);
   --trend-hover: var(--bg-hover);
@@ -201,55 +191,20 @@ function teamInitial(name: string, fallback: string): string {
   overflow: hidden;
   color: var(--trend-text);
   background:
-    radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.16), transparent 28%),
-    radial-gradient(circle at 100% 0%, rgba(249, 115, 22, 0.13), transparent 30%),
-    linear-gradient(135deg, rgba(8, 16, 30, 0.98), rgba(14, 24, 44, 0.96) 52%, rgba(22, 18, 26, 0.98));
-  border: 1px solid var(--trend-border);
-  border-radius: 18px;
+    radial-gradient(circle at 0% 0%, var(--trend-home-soft), transparent 28%),
+    radial-gradient(circle at 100% 0%, var(--trend-away-soft), transparent 30%),
+    var(--trend-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
   box-shadow:
     var(--shadow-lg),
     inset 0 1px 0 var(--border-subtle);
-}
-
-.game-trend-card::before {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(var(--border-subtle) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
-  background-size: 34px 34px;
-  mask-image: linear-gradient(180deg, var(--bg-page), transparent 72%);
-  opacity: 0.34;
-  pointer-events: none;
-  content: '';
+  backdrop-filter: blur(4px);
 }
 
 .game-trend-card > * {
   position: relative;
   z-index: 1;
-}
-
-.trend-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  min-height: 24px;
-  color: var(--trend-muted);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.1em;
-}
-
-.trend-topbar span {
-  color: var(--trend-home);
-}
-
-.trend-topbar strong {
-  color: var(--trend-muted);
-  font-size: 12px;
-  font-weight: 950;
-  letter-spacing: 0.16em;
 }
 
 .game-trend-header {
@@ -321,14 +276,12 @@ function teamInitial(name: string, fallback: string): string {
   padding: 10px 14px;
   overflow: hidden;
   background:
-    linear-gradient(90deg, rgba(59, 130, 246, 0.15), rgba(17, 24, 39, 0.7) 47%, rgba(249, 115, 22, 0.15)),
-    rgba(var(--bg-card-rgb), 0.85);
-  border: 1px solid var(--trend-border);
+    linear-gradient(90deg, rgba(var(--gi-home-rgb), 0.12), rgba(var(--bg-card-rgb), 0.85) 47%, rgba(var(--gi-away-rgb), 0.12)),
+    var(--trend-surface);
+  border: 1px solid var(--border-subtle);
   border-radius: 16px;
-  box-shadow:
-    var(--shadow-md),
-    inset 0 1px 0 var(--border-subtle);
-  backdrop-filter: blur(20px) saturate(150%);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(4px);
 }
 
 .score-team {
@@ -434,23 +387,22 @@ function teamInitial(name: string, fallback: string): string {
 
 .trend-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 260px);
+  grid-template-columns: 1fr;
   gap: 10px;
-  align-items: stretch;
+  align-items: start;
 }
 
 .trend-main-card {
+  align-self: start;
   min-width: 0;
   padding: 10px;
   background:
-    radial-gradient(circle at 50% 0%, var(--trend-home-soft), transparent 38%),
-    rgba(var(--bg-card-rgb), 0.78);
-  border: 1px solid var(--trend-border);
-  border-radius: 18px;
-  box-shadow:
-    var(--shadow-md),
-    inset 0 1px 0 var(--border-subtle);
-  backdrop-filter: blur(18px) saturate(145%);
+    radial-gradient(circle at 50% 0%, rgba(var(--gi-home-rgb), 0.06), transparent 38%),
+    var(--trend-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(4px);
 }
 
 .empty-state {
@@ -462,12 +414,6 @@ function teamInitial(name: string, fallback: string): string {
   border: 1px dashed var(--trend-border);
   border-radius: var(--radius-xl);
   font-weight: 800;
-}
-
-@media (max-width: 1180px) {
-  .trend-layout {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 860px) {

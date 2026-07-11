@@ -14,11 +14,8 @@
         :key="player.playerId"
         class="pp-card"
         :class="{
-          'is-starter': player.starter,
-          'hovered': hoveredId === player.playerId
+          'is-starter': player.starter
         }"
-        @mouseenter="hoveredId = player.playerId"
-        @mouseleave="hoveredId = null"
         @click="goToPlayer(player)"
       >
         <!-- rank ribbon -->
@@ -68,8 +65,8 @@
           <span class="chip chip-to">TO {{ player.turnovers }}</span>
         </div>
 
-        <!-- expanded detail on hover -->
-        <div v-if="hoveredId === player.playerId" class="expanded-detail">
+        <!-- detailed stats (always visible) -->
+        <div class="expanded-detail">
           <div class="detail-row">
             <span class="detail-label">正负值</span>
             <span class="detail-value" :class="player.plusMinus >= 0 ? 'pm-pos' : 'pm-neg'">
@@ -141,7 +138,6 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
-const hoveredId = ref<number | null>(null)
 const brokenAvatarIds = ref<Set<number>>(new Set())
 
 /** Combined player list with performance score, sorted descending, top 10 */

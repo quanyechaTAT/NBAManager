@@ -158,6 +158,13 @@ public class NbaPlayByPlayProvider implements PlayByPlayProvider {
             String description = obj.optString("description", "");
             int homeScore = obj.optInt("homeScore", 0);
             int awayScore = obj.optInt("awayScore", 0);
+
+            // API may omit scores for non-scoring events — carry forward previous scores
+            if (homeScore == 0 && awayScore == 0 && i > 0) {
+                homeScore = prevHomeScore;
+                awayScore = prevAwayScore;
+            }
+
             String eventType = obj.optString("eventType", "");
             String actionType = obj.optString("actionType", "");
             String playerName = obj.optString("playerName", "");
