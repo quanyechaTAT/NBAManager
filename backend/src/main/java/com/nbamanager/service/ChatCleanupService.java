@@ -52,10 +52,8 @@ public class ChatCleanupService {
             "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end",
             Long.class);
 
-    AtomicBoolean renewalFailed = new AtomicBoolean(false);
-
     /**
-     * 创建 watchdog 调度器。子类或测试可覆盖以注入可控调度器。
+     * 创建 watchdog 调度器。测试可覆盖以注入可控调度器。
      */
     ScheduledExecutorService createWatchdogExecutor() {
         return Executors.newSingleThreadScheduledExecutor(r -> {
@@ -91,12 +89,16 @@ public class ChatCleanupService {
             return;
         }
 
-        renewalFailed.set(false);
+        // 每次执行创建局部状态，避免跨任务干扰
+        AtomicBoolean renewalFailed = new AtomicBoolean(false);
         ScheduledExecutorService watchdog = createWatchdogExecutor();
-        ScheduledFuture<?> renewalTask = watchdog.scheduleAtFixedRate(
-                () -> renewLock(lockValue), renewalIntervalSeconds, renewalIntervalSeconds, TimeUnit.SECONDS);
+        ScheduledFuture<?> renewalTask = null;
 
         try {
+            renewalTask = watchdog.scheduleAtFixedRate(
+                    () -> renewLock(lockValue, renewalFailed),
+                    renewalIntervalSeconds, renewalIntervalSeconds, TimeUnit.SECONDS);
+
             Instant cutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS);
             log.info("开始清理{}天前的聊天消息, cutoff={}", retentionDays, cutoff);
 
@@ -121,13 +123,15 @@ public class ChatCleanupService {
 
             log.info("聊天消息清理完成, 共删除{}条", totalDeleted);
         } finally {
-            renewalTask.cancel(false);
+            if (renewalTask != null) {
+                renewalTask.cancel(false);
+            }
             watchdog.shutdown();
             safeUnlock(lockValue);
         }
     }
 
-    void renewLock(String lockValue) {
+    void renewLock(String lockValue, AtomicBoolean renewalFailed) {
         try {
             Long result = redisTemplate.execute(RENEWAL_SCRIPT,
                     Collections.singletonList(LOCK_KEY), lockValue, String.valueOf(LOCK_TTL_SECONDS));
