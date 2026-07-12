@@ -467,15 +467,18 @@ public class SmartDataService {
             if (isScheduled) {
                 news.setTitle(String.format("%s vs %s", awayTeam, homeTeam));
                 news.setSummary(String.format("%s: %s vs %s, 未开始", label, awayTeam, homeTeam));
+                news.setContent(String.format("%s: %s vs %s\n状态: 未开始", label, awayTeam, homeTeam));
                 news.setHomeScore(null);
                 news.setAwayScore(null);
             } else {
                 news.setTitle(String.format("%s %d : %d %s", awayTeam, awayScore, homeScore, homeTeam));
-                news.setSummary(String.format("%s: %s vs %s, 比分 %d:%d", label, awayTeam, homeTeam, awayScore, homeScore));
+                news.setSummary(String.format("%s: %s %d : %d %s", label, awayTeam, awayScore, homeScore, homeTeam));
+                news.setContent(String.format("%s: %s %d : %d %s\n状态: %s",
+                        label, awayTeam, awayScore, homeScore, homeTeam,
+                        "LIVE".equals(status) ? "进行中" : "已结束"));
                 news.setHomeScore(homeScore);
                 news.setAwayScore(awayScore);
             }
-            news.setContent(news.getSummary());
             news.setHomeTeam(homeTeam);
             news.setAwayTeam(awayTeam);
             news.setGameStartTime(startTime != null ? safeStartTime : null);
