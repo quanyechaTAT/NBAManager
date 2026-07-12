@@ -424,11 +424,24 @@ public class SmartDataService {
                 existing.setHomeScore(homeScore);
                 existing.setAwayScore(awayScore);
                 existing.setTitle(String.format("%s %d : %d %s", awayTeam, awayScore, homeScore, homeTeam));
+                existing.setSummary(String.format("%s: %s %d : %d %s", label, awayTeam, awayScore, homeScore, homeTeam));
+                existing.setContent(String.format("%s: %s %d : %d %s\n状态: %s",
+                        label, awayTeam, awayScore, homeScore, homeTeam,
+                        "LIVE".equals(status) ? "进行中" : "已结束"));
             } else if (isScheduled) {
                 // SCHEDULED：比分设为 null，不写 0:0
                 existing.setHomeScore(null);
                 existing.setAwayScore(null);
                 existing.setTitle(String.format("%s vs %s", awayTeam, homeTeam));
+                existing.setSummary(String.format("%s: %s vs %s, 未开始", label, awayTeam, homeTeam));
+                existing.setContent(String.format("%s: %s vs %s\n状态: 未开始", label, awayTeam, homeTeam));
+            } else {
+                // LIVE/FINISHED 但上游比分为空（0:0），只更新状态文案
+                existing.setTitle(String.format("%s vs %s", awayTeam, homeTeam));
+                existing.setSummary(String.format("%s: %s vs %s, %s", label, awayTeam, homeTeam,
+                        "LIVE".equals(status) ? "进行中" : "已结束"));
+                existing.setContent(String.format("%s: %s vs %s\n状态: %s", label, awayTeam, homeTeam,
+                        "LIVE".equals(status) ? "进行中" : "已结束"));
             }
             if (!existing.getStatus().equals(status)) {
                 existing.setStatus(status);
