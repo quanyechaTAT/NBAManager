@@ -10,6 +10,7 @@ export interface LoginRes {
   token: string
   username: string
   role: Role
+  avatarUrl?: string | null
 }
 
 export interface ChangePasswordBody {
@@ -35,4 +36,12 @@ export function changePasswordApi(body: ChangePasswordBody) {
 
 export function changeUsernameApi(body: ChangeUsernameBody) {
   return request.put<LoginRes>('/auth/username', body)
+}
+
+export function uploadAvatarApi(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return request.post<{ avatarUrl: string }>('/profile/avatar', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
 }

@@ -82,7 +82,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useGameChat, type LocalChatMessage } from '@/composables/useGameChat'
@@ -114,6 +114,8 @@ const {
 const scrollContainer = ref<HTMLElement | null>(null)
 const isAtBottom = ref(true)
 const hasNewMessages = ref(false)
+let initialScrollPending = true
+let resizeObserver: ResizeObserver | null = null
 
 function checkIfAtBottom() {
   const el = scrollContainer.value
@@ -132,6 +134,15 @@ function scrollToBottom(smooth = false) {
   hasNewMessages.value = false
 }
 
+function positionAtLatestMessage() {
+  if (!initialScrollPending || loadingHistory.value || messages.value.length === 0) return
+  const el = scrollContainer.value
+  if (!el || el.clientHeight === 0) return
+  scrollToBottom()
+  isAtBottom.value = true
+  initialScrollPending = false
+}
+
 const isLoadingMore = ref(false)
 
 function onScroll() {
@@ -143,9 +154,30 @@ watch(() => messages.value.length, () => {
   // Don't auto-scroll when prepending older messages
   if (isLoadingMore.value) return
   nextTick(() => {
-    if (isAtBottom.value) scrollToBottom()
+    positionAtLatestMessage()
+    if (!initialScrollPending && isAtBottom.value) scrollToBottom()
     else hasNewMessages.value = true
   })
+})
+
+watch(loadingHistory, (loading) => {
+  if (!loading) nextTick(positionAtLatestMessage)
+})
+
+watch(() => props.gameId, () => {
+  initialScrollPending = true
+  isAtBottom.value = true
+  hasNewMessages.value = false
+})
+
+onMounted(() => {
+  resizeObserver = new ResizeObserver(() => positionAtLatestMessage())
+  if (scrollContainer.value) resizeObserver.observe(scrollContainer.value)
+  nextTick(positionAtLatestMessage)
+})
+
+onUnmounted(() => {
+  resizeObserver?.disconnect()
 })
 
 async function handleLoadMore() {

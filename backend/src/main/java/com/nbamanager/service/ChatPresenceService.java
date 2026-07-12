@@ -118,6 +118,25 @@ public class ChatPresenceService {
         }
     }
 
+    public Set<String> updateUserAvatar(Long userId, String avatarUrl) {
+        Set<String> affectedGames = new HashSet<>();
+        localSessions.replaceAll((sessionId, info) -> {
+            if (!info.userId().equals(userId)) return info;
+            affectedGames.add(info.gameId());
+            if (redisAvailable) {
+                try {
+                    redisTemplate.opsForHash().put(
+                            SESSION_PREFIX + sessionId, "avatarUrl", avatarUrl != null ? avatarUrl : "");
+                } catch (Exception e) {
+                    log.warn("Redis presence头像更新失败: {}", e.getMessage());
+                }
+            }
+            return new SessionInfo(info.sessionId(), info.gameId(), info.userId(), info.username(),
+                    avatarUrl, info.role(), info.connectedAt());
+        });
+        return Set.copyOf(affectedGames);
+    }
+
     public ChatPresenceResponse getPresence(String gameId) {
         // Collect unique users from local sessions
         Map<Long, ChatPresenceResponse.Member> uniqueUsers = new LinkedHashMap<>();

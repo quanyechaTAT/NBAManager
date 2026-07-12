@@ -188,7 +188,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
-import { changePasswordApi } from '@/api/auth'
+import { changePasswordApi, uploadAvatarApi } from '@/api/auth'
 import { fetchTeams } from '@/api/team'
 import { fetchPlayers } from '@/api/player'
 import { fetchFollowedPlayerIds, fetchFollowedTeamIds, fetchFavoritedPostIds, fetchFavoritedNewsIds } from '@/api/favorite'
@@ -254,20 +254,22 @@ function triggerAvatarUpload() {
   avatarInput.value?.click()
 }
 
-function onAvatarChange(e: Event) {
+async function onAvatarChange(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
   if (file.size > 2 * 1024 * 1024) {
     ElMessage.warning('图片大小不能超过 2MB')
     return
   }
-  const reader = new FileReader()
-  reader.onload = (ev) => {
-    const url = ev.target?.result as string
-    auth.setAvatar(url)
+  try {
+    const { data } = await uploadAvatarApi(file)
+    auth.setAvatar(data.avatarUrl)
     ElMessage.success('头像已更新')
+  } catch {
+    ElMessage.error('头像上传失败')
+  } finally {
+    ;(e.target as HTMLInputElement).value = ''
   }
-  reader.readAsDataURL(file)
 }
 
 async function loadFollowedPlayers() {

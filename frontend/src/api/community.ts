@@ -93,6 +93,10 @@ export function deleteComment(id: number) {
   return request.delete(`/comments/${id}`)
 }
 
+export function updateComment(id: number, content: string) {
+  return request.put<Comment>(`/comments/${id}`, { content })
+}
+
 export function toggleCommentLike(id: number) {
   return request.post<{ liked: boolean }>(`/comments/${id}/like`)
 }

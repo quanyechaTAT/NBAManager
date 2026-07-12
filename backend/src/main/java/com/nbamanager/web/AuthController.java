@@ -55,7 +55,10 @@ public class AuthController {
             log.info("管理员 {} 登录成功", principal.getUsername());
         }
 
-        return new LoginResponse(token, principal.getUsername(), principal.getRole());
+        String avatarUrl = userAccountRepository.findById(principal.getId())
+                .map(UserAccount::getAvatarUrl)
+                .orElse(null);
+        return new LoginResponse(token, principal.getUsername(), principal.getRole(), avatarUrl);
     }
 
     /**
@@ -86,7 +89,7 @@ public class AuthController {
         userAccountRepository.save(user);
 
         String token = jwtService.generateToken(user.getUsername(), user.getRole(), user.getId());
-        return new LoginResponse(token, user.getUsername(), user.getRole());
+        return new LoginResponse(token, user.getUsername(), user.getRole(), user.getAvatarUrl());
     }
 
     @PutMapping("/password")
@@ -133,6 +136,6 @@ public class AuthController {
 
         // 生成新的token
         String token = jwtService.generateToken(user.getUsername(), user.getRole(), user.getId());
-        return new LoginResponse(token, user.getUsername(), user.getRole());
+        return new LoginResponse(token, user.getUsername(), user.getRole(), user.getAvatarUrl());
     }
 }

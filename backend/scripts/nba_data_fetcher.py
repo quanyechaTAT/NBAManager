@@ -1176,13 +1176,32 @@ def fetch_player_stats():
 
 
 def fetch_today_games():
-    """从nba_api获取今日比赛（实时数据）"""
+    """从多个来源获取今日比赛（多来源合并，不是 fallback 替代）"""
     _init_team_map()
     print("正在获取今日比赛数据...", file=sys.stderr)
 
+    # 按 gameId 去重，合并所有来源
+    seen_game_ids = set()
     result = []
 
-    # 方式1: 尝试live endpoint（有实时比分和时钟）
+    def _add_games(games, source_label):
+        added = 0
+        for g in games:
+            gid = g.get('gameId', '')
+            if gid and gid in seen_game_ids:
+                continue
+            if gid:
+                seen_game_ids.add(gid)
+            g.setdefault('source', '')
+            g.setdefault('category', 'game')
+            g.setdefault('league', '')
+            result.append(g)
+            added += 1
+        if added:
+            print(f"{source_label}获取到 {added} 场比赛", file=sys.stderr)
+
+    # 来源1: NBA Live Scoreboard（常规赛/季后赛）
+    nba_games = []
     try:
         from nba_api.live.nba.endpoints import scoreboard as live_sb
         sb = live_sb.ScoreBoard(timeout=15)
@@ -1200,7 +1219,7 @@ def fetch_today_games():
                 status = 'LIVE'
             else:
                 status = 'FINISHED'
-            result.append({
+            nba_games.append({
                 'gameId': game.get('gameId', ''),
                 'homeTeam': home_cn,
                 'awayTeam': away_cn,
@@ -1210,63 +1229,67 @@ def fetch_today_games():
                 'startTime': game.get('gameEt', ''),
                 'period': game.get('period', 0),
                 'gameClock': game.get('gameClock', ''),
+                'source': 'NBA_LIVE',
+                'category': 'game',
+                'league': 'NBA',
             })
-        if result:
-            print(f"Live API获取到 {len(result)} 场今日比赛", file=sys.stderr)
-            return result
     except Exception as e:
-        print(f"Live scoreboard失败，切换到ScoreboardV3: {e}", file=sys.stderr)
+        print(f"Live scoreboard失败: {e}", file=sys.stderr)
 
-    # 方式2: 使用ScoreboardV3（兼容性更好，支持代理）
-    # 由于中国与美国的时差，需要同时检查今天和昨天的比赛
-    try:
-        seen_game_ids = set()
-        for days_offset in [0, -1]:
-            check_date = datetime.now() + timedelta(days=days_offset)
-            date_str = check_date.strftime('%m/%d/%Y')
-            try:
-                sb = ScoreboardV3(game_date=date_str, timeout=15)
-                data = sb.get_dict()
-                time.sleep(0.5)
-                for game in data.get('scoreboard', {}).get('games', []):
-                    game_id = game.get('gameId', '')
-                    if game_id in seen_game_ids:
-                        continue
-                    seen_game_ids.add(game_id)
-                    home = game.get('homeTeam', {})
-                    away = game.get('awayTeam', {})
-                    home_cn = TEAM_ABBR_MAP.get(home.get('teamTricode', ''), home.get('teamName', ''))
-                    away_cn = TEAM_ABBR_MAP.get(away.get('teamTricode', ''), away.get('teamName', ''))
-                    game_status = game.get('gameStatus', 0)
-                    if game_status == 1:
-                        status = 'SCHEDULED'
-                    elif game_status == 2:
-                        status = 'LIVE'
-                    else:
-                        status = 'FINISHED'
-                    result.append({
-                        'gameId': game_id,
-                        'homeTeam': home_cn,
-                        'awayTeam': away_cn,
-                        'homeScore': _safe_int(home.get('score')),
-                        'awayScore': _safe_int(away.get('score')),
-                        'status': status,
-                        'startTime': game.get('gameEt', ''),
-                        'period': game.get('period', 0),
-                        'gameClock': game.get('gameClock', ''),
-                    })
-            except Exception as e:
-                print(f"ScoreboardV3查询{date_str}失败: {e}", file=sys.stderr)
-    except Exception as e:
-        print(f"ScoreboardV3整体失败: {e}", file=sys.stderr)
+    _add_games(nba_games, "NBA Live")
 
-    if not result:
-        summer_games = fetch_espn_summer_today_games()
-        if summer_games:
-            print(f"ESPN Summer League获取到 {len(summer_games)} 场今日比赛", file=sys.stderr)
-            return summer_games
+    # 来源2: ScoreboardV3（NBA 官方备用）
+    if not nba_games:
+        try:
+            for days_offset in [0, -1]:
+                check_date = datetime.now() + timedelta(days=days_offset)
+                date_str = check_date.strftime('%m/%d/%Y')
+                try:
+                    sb = ScoreboardV3(game_date=date_str, timeout=15)
+                    data = sb.get_dict()
+                    time.sleep(0.5)
+                    v3_games = []
+                    for game in data.get('scoreboard', {}).get('games', []):
+                        home = game.get('homeTeam', {})
+                        away = game.get('awayTeam', {})
+                        home_cn = TEAM_ABBR_MAP.get(home.get('teamTricode', ''), home.get('teamName', ''))
+                        away_cn = TEAM_ABBR_MAP.get(away.get('teamTricode', ''), away.get('teamName', ''))
+                        game_status = game.get('gameStatus', 0)
+                        if game_status == 1:
+                            status = 'SCHEDULED'
+                        elif game_status == 2:
+                            status = 'LIVE'
+                        else:
+                            status = 'FINISHED'
+                        v3_games.append({
+                            'gameId': game.get('gameId', ''),
+                            'homeTeam': home_cn,
+                            'awayTeam': away_cn,
+                            'homeScore': _safe_int(home.get('score')),
+                            'awayScore': _safe_int(away.get('score')),
+                            'status': status,
+                            'startTime': game.get('gameEt', ''),
+                            'period': game.get('period', 0),
+                            'gameClock': game.get('gameClock', ''),
+                            'source': 'NBA_SCOREBOARD_V3',
+                            'category': 'game',
+                            'league': 'NBA',
+                        })
+                    _add_games(v3_games, f"ScoreboardV3({date_str})")
+                except Exception as e:
+                    print(f"ScoreboardV3查询{date_str}失败: {e}", file=sys.stderr)
+        except Exception as e:
+            print(f"ScoreboardV3整体失败: {e}", file=sys.stderr)
 
-    print(f"获取到 {len(result)} 场今日比赛", file=sys.stderr)
+    # 来源3: ESPN Summer League（始终采集，不因 NBA 有数据而跳过）
+    summer_games = fetch_espn_summer_today_games()
+    if summer_games:
+        _add_games(summer_games, "ESPN Summer League")
+
+    # 按 startTime 排序
+    result.sort(key=lambda g: g.get('startTime', ''))
+
+    print(f"合计获取到 {len(result)} 场比赛", file=sys.stderr)
     return result
 
 

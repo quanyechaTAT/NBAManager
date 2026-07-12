@@ -29,11 +29,20 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class CommentService {
 
+    public record CommentTarget(Long postId, String gameId) {}
+
     private final CommentRepository commentRepository;
     private final CommentLikeRepository commentLikeRepository;
     private final PostRepository postRepository;
     private final UserAccountRepository userAccountRepository;
     private final NotificationService notificationService;
+
+    @Transactional(readOnly = true)
+    public CommentTarget getTarget(Long commentId) {
+        Comment comment = commentRepository.findById(commentId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "评论不存在: " + commentId));
+        return new CommentTarget(comment.getPostId(), comment.getGameId());
+    }
 
     @Transactional(readOnly = true)
     public List<CommentDto> listByPost(Long postId, Long currentUserId) {
@@ -209,6 +218,18 @@ public class CommentService {
         }
 
         return toDto(saved);
+    }
+
+    @CacheEvict(value = {"posts", "dashboard"}, allEntries = true)
+    @Transactional
+    public CommentDto update(Long id, Long userId, CommentRequest req) {
+        Comment comment = commentRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "评论不存在: " + id));
+        if (!comment.getUserId().equals(userId) && !isAdmin()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "无权修改此评论");
+        }
+        comment.setContent(req.content());
+        return toDto(commentRepository.save(comment));
     }
 
     @CacheEvict(value = {"posts", "dashboard"}, allEntries = true)

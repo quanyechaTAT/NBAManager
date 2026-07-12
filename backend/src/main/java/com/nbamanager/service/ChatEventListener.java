@@ -1,6 +1,7 @@
 package com.nbamanager.service;
 
 import com.nbamanager.security.UserPrincipal;
+import com.nbamanager.repository.UserAccountRepository;
 import com.nbamanager.web.dto.ChatPresenceResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,7 @@ public class ChatEventListener {
     private final ChatPresenceService presenceService;
     private final SimpMessagingTemplate messagingTemplate;
     private final ChatRedisPubSub chatRedisPubSub;
+    private final UserAccountRepository userAccountRepository;
 
     @EventListener
     public void handleSessionConnected(SessionConnectedEvent event) {
@@ -50,8 +52,11 @@ public class ChatEventListener {
         String sessionId = accessor.getSessionId();
         if (sessionId == null) return;
 
+        String avatarUrl = userAccountRepository.findById(user.getId())
+                .map(account -> account.getAvatarUrl())
+                .orElse(null);
         presenceService.userJoined(sessionId, gameId, user.getId(),
-                user.getUsername(), null, user.getRole());
+                user.getUsername(), avatarUrl, user.getRole());
 
         broadcastPresence(gameId);
         log.info("STOMP SUBSCRIBE: sessionId={}, user={}, gameId={}", sessionId, user.getUsername(), gameId);

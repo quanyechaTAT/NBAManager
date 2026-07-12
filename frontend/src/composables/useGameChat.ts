@@ -3,7 +3,12 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import SockJS from 'sockjs-client/dist/sockjs.min.js'
 import { Client, type IMessage } from '@stomp/stompjs'
 import { useAuthStore } from '@/stores/auth'
-import { fetchChatHistory, type ChatMessageResponse, type ChatPresenceResponse } from '@/api/chat'
+import {
+  fetchChatHistory,
+  fetchChatPresence,
+  type ChatMessageResponse,
+  type ChatPresenceResponse,
+} from '@/api/chat'
 
 export type MessageStatus = 'pending' | 'sent' | 'failed'
 
@@ -55,12 +60,9 @@ export function useGameChat(gameId: () => string) {
   }
 
   function replacePendingWithConfirmed(response: ChatMessageResponse) {
-    // Add server ID to seenIds to prevent duplicates on history reload
-    const serverKey = String(response.id)
-    seenIds.add(serverKey)
-
     const cid = response.clientMessageId
     if (cid && pendingMessages.has(cid)) {
+      seenIds.add(String(response.id))
       const idx = messages.value.findIndex(m => m.clientMessageId === cid)
       if (idx >= 0) {
         messages.value[idx] = { ...response, status: 'sent' }
@@ -98,6 +100,7 @@ export function useGameChat(gameId: () => string) {
       } else {
         messages.value.push(...newMessages)
       }
+      applyOwnAvatar(auth.avatarUrl)
 
       hasMore.value = data.hasMore
       return wasEmpty
@@ -105,6 +108,64 @@ export function useGameChat(gameId: () => string) {
       console.error('加载聊天历史失败:', e)
     } finally {
       loadingHistory.value = false
+    }
+  }
+
+  async function loadPresence() {
+    const gid = gameId()
+    if (!gid) return
+    try {
+      const { data } = await fetchChatPresence(gid)
+      if (currentGameId === gid && (!presence.value || data.updatedAt >= presence.value.updatedAt)) {
+        applyPresence(data)
+      }
+    } catch (e) {
+      console.error('加载聊天室成员失败:', e)
+    }
+  }
+
+  function applyPresence(data: ChatPresenceResponse) {
+    const currentUserId = getCurrentUserId()
+    const members = data.members.map(member => (
+      member.userId === currentUserId && auth.avatarUrl
+        ? { ...member, avatarUrl: auth.avatarUrl }
+        : member
+    ))
+    presence.value = { ...data, members }
+    const avatarByUser = new Map(members.map(member => [member.userId, member.avatarUrl]))
+    messages.value = messages.value.map(message => (
+      avatarByUser.has(message.userId)
+        ? { ...message, avatarUrl: avatarByUser.get(message.userId) ?? null }
+        : message
+    ))
+  }
+
+  function getCurrentUserId(): number | null {
+    try {
+      if (!auth.token) return null
+      return JSON.parse(atob(auth.token.split('.')[1])).userId ?? null
+    } catch {
+      return null
+    }
+  }
+
+  function applyOwnAvatar(avatarUrl: string | null) {
+    if (!avatarUrl) return
+    const currentUserId = getCurrentUserId()
+    messages.value = messages.value.map(message => (
+      message.userId === currentUserId || message.username === auth.username
+        ? { ...message, avatarUrl }
+        : message
+    ))
+    if (presence.value) {
+      presence.value = {
+        ...presence.value,
+        members: presence.value.members.map(member => (
+          member.userId === currentUserId || member.username === auth.username
+            ? { ...member, avatarUrl }
+            : member
+        )),
+      }
     }
   }
 
@@ -140,7 +201,16 @@ export function useGameChat(gameId: () => string) {
         reconnecting.value = false
         console.info('[chat] connected, subscribing gameId=', gid)
 
-        stompClient?.subscribe(`/topic/chat/${gid}`, (msg: IMessage) => {
+        const client = stompClient
+        if (!client) return
+
+        client.subscribe(`/topic/chat/${gid}/presence`, (msg: IMessage) => {
+          try {
+            applyPresence(JSON.parse(msg.body))
+          } catch { /* ignore */ }
+        })
+
+        client.subscribe(`/topic/chat/${gid}`, (msg: IMessage) => {
           try {
             const data = JSON.parse(msg.body)
             console.info('[chat] message received', { gameId: gid, messageId: data.id, type: data.type })
@@ -157,13 +227,7 @@ export function useGameChat(gameId: () => string) {
           } catch { /* ignore */ }
         })
 
-        stompClient?.subscribe(`/topic/chat/${gid}/presence`, (msg: IMessage) => {
-          try {
-            presence.value = JSON.parse(msg.body)
-          } catch { /* ignore */ }
-        })
-
-        stompClient?.subscribe('/user/queue/chat-errors', (msg: IMessage) => {
+        client.subscribe('/user/queue/chat-errors', (msg: IMessage) => {
           try {
             const err = JSON.parse(msg.body)
             console.warn('[chat] error:', err)
@@ -185,6 +249,8 @@ export function useGameChat(gameId: () => string) {
             }
           } catch { /* ignore */ }
         })
+
+        void loadPresence()
       },
       onDisconnect: () => {
         console.warn('[chat] disconnected')
@@ -237,7 +303,7 @@ export function useGameChat(gameId: () => string) {
       avatarUrl: auth.avatarUrl,
       role: auth.profile?.role || 'USER',
       type,
-      content: content.trim(),
+      content,
       imageUrl: imageUrl || null,
       createdAt: new Date().toISOString(),
       deleted: false,
@@ -251,7 +317,7 @@ export function useGameChat(gameId: () => string) {
       const payload: Record<string, unknown> = {
         clientMessageId,
         type,
-        content: content.trim(),
+        content,
       }
       if (imageUrl) payload.imageUrl = imageUrl
 
@@ -324,6 +390,8 @@ export function useGameChat(gameId: () => string) {
       }
     }
   })
+
+  watch(() => auth.avatarUrl, avatarUrl => applyOwnAvatar(avatarUrl), { immediate: true })
 
   onMounted(async () => {
     const gid = gameId()

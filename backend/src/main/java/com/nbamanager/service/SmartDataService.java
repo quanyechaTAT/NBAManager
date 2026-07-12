@@ -116,17 +116,32 @@ public class SmartDataService {
      * 获取新闻列表（带缓存）
      * 缓存30分钟，过期则从API获取
      */
+    private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
+
+    /** 公开方法：解析比赛开始时间（供 NbaLiveSyncService 调用） */
+    public LocalDateTime parseGameStartTimePublic(JSONObject game) {
+        return parseGameStartTime(game);
+    }
+
+    /** 公开方法：更新或创建比赛记录（供 NbaLiveSyncService 调用） */
+    public int upsertGameNews(String homeTeam, String awayTeam,
+                              int homeScore, int awayScore, String status, String gameId,
+                              String category, String source, LocalDateTime startTime) {
+        return updateOrCreateGameNews(homeTeam, awayTeam, homeScore, awayScore, status, gameId, category, source, startTime);
+    }
+
     private LocalDateTime parseGameStartTime(JSONObject game) {
         String raw = game.optString("startTime", "");
         if (raw == null || raw.isBlank()) {
-            return LocalDateTime.now();
+            return null;
         }
         try {
             return OffsetDateTime.parse(raw.replace("Z", "+00:00"))
-                    .atZoneSameInstant(ZoneId.systemDefault())
+                    .atZoneSameInstant(SHANGHAI)
                     .toLocalDateTime();
-        } catch (Exception ignored) {
-            return LocalDateTime.now();
+        } catch (Exception e) {
+            log.warn("解析比赛开始时间失败: raw={}, error={}", raw, e.getMessage());
+            return null;
         }
     }
 
@@ -377,11 +392,13 @@ public class SmartDataService {
     private int updateOrCreateGameNews(String homeTeam, String awayTeam,
                                        int homeScore, int awayScore, String status, String gameId,
                                        String category, String source, LocalDateTime startTime) {
-        LocalDateTime safeStartTime = startTime != null ? startTime : LocalDateTime.now();
         LocalDateTime now = LocalDateTime.now();
+        // startTime 为 null 时不伪造，使用 now 作为安全回退（仅用于 endTime 计算）
+        LocalDateTime safeStartTime = startTime != null ? startTime : now;
         LocalDateTime safeEndTime = safeStartTime.plusHours(3);
         String safeCategory = category == null || category.isBlank() ? "game" : category;
         String label = "summer_game".equals(safeCategory) ? "NBA夏季联赛" : "今日比赛";
+        boolean isScheduled = "SCHEDULED".equals(status) || "UPCOMING".equals(status);
 
         // 优先用 nbaGameId 查重（避免因日期不一致导致重复创建）
         com.nbamanager.domain.GameNews existing = null;
@@ -402,37 +419,54 @@ public class SmartDataService {
         }
 
         if (existing != null) {
-            if ("LIVE".equals(status) || "FINISHED".equals(status)) {
+            // 只有上游有真实比分时才覆盖（LIVE/FINISHED 且非 0:0，或 SCHEDULED 时保持 null）
+            if (!isScheduled && (homeScore > 0 || awayScore > 0)) {
                 existing.setHomeScore(homeScore);
                 existing.setAwayScore(awayScore);
                 existing.setTitle(String.format("%s %d : %d %s", awayTeam, awayScore, homeScore, homeTeam));
+            } else if (isScheduled) {
+                // SCHEDULED：比分设为 null，不写 0:0
+                existing.setHomeScore(null);
+                existing.setAwayScore(null);
+                existing.setTitle(String.format("%s vs %s", awayTeam, homeTeam));
             }
             if (!existing.getStatus().equals(status)) {
                 existing.setStatus(status);
             }
-            if (gameId != null && !gameId.isEmpty() && (existing.getNbaGameId() == null || existing.getNbaGameId().isEmpty())) {
+            if (gameId != null && !gameId.isEmpty()) {
                 existing.setNbaGameId(gameId);
             }
-            existing.setGameStartTime(safeStartTime);
-            existing.setGameEndTime(safeEndTime);
+            if (startTime != null) {
+                existing.setGameStartTime(safeStartTime);
+                existing.setGameEndTime(safeEndTime);
+            }
             existing.setHomeTeam(homeTeam);
             existing.setAwayTeam(awayTeam);
             existing.setCategory(safeCategory);
-            existing.setSourceUrl(source);
+            if (source != null && !source.isBlank()) {
+                existing.setSourceUrl(source);
+            }
             gameNewsRepository.save(existing);
             return 1;
         } else {
             log.info("创建比赛记录: {} vs {}, gameId={}, category={}", homeTeam, awayTeam, gameId, safeCategory);
             com.nbamanager.domain.GameNews news = new com.nbamanager.domain.GameNews();
-            news.setTitle(String.format("%s %d : %d %s", awayTeam, awayScore, homeScore, homeTeam));
-            news.setSummary(String.format("%s: %s vs %s, 比分 %d:%d", label, awayTeam, homeTeam, awayScore, homeScore));
+            if (isScheduled) {
+                news.setTitle(String.format("%s vs %s", awayTeam, homeTeam));
+                news.setSummary(String.format("%s: %s vs %s, 未开始", label, awayTeam, homeTeam));
+                news.setHomeScore(null);
+                news.setAwayScore(null);
+            } else {
+                news.setTitle(String.format("%s %d : %d %s", awayTeam, awayScore, homeScore, homeTeam));
+                news.setSummary(String.format("%s: %s vs %s, 比分 %d:%d", label, awayTeam, homeTeam, awayScore, homeScore));
+                news.setHomeScore(homeScore);
+                news.setAwayScore(awayScore);
+            }
             news.setContent(news.getSummary());
             news.setHomeTeam(homeTeam);
             news.setAwayTeam(awayTeam);
-            news.setHomeScore(homeScore);
-            news.setAwayScore(awayScore);
-            news.setGameStartTime(safeStartTime);
-            news.setGameEndTime(safeEndTime);
+            news.setGameStartTime(startTime != null ? safeStartTime : null);
+            news.setGameEndTime(startTime != null ? safeEndTime : null);
             news.setCreateTime(now);
             news.setStatus(status);
             news.setNbaGameId(gameId);

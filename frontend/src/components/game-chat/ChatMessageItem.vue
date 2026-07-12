@@ -105,6 +105,12 @@ const formattedTime = computed(() => {
   max-width: 68%;
 }
 
+.msg-item.is-self .msg-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
 .msg-meta {
   display: flex;
   align-items: center;
@@ -144,7 +150,8 @@ const formattedTime = computed(() => {
 
 .msg-bubble {
   padding: 12px 16px;
-  min-height: 42px;
+  width: fit-content;
+  max-width: 100%;
   background: var(--chat-bubble-bg, var(--bg-hover));
   border: 1px solid var(--chat-border, var(--border-light));
   border-radius: 14px;
@@ -167,6 +174,7 @@ const formattedTime = computed(() => {
   color: var(--chat-text, var(--text-primary));
   word-break: break-word;
   overflow-wrap: break-word;
+  white-space: pre-wrap;
 }
 
 .msg-image-wrap {

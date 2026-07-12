@@ -107,7 +107,8 @@
                   <button v-if="isPostAuthor" class="comment-action-btn" @click="togglePinItem(comment.id)">
                     {{ comment.pinned ? '取消置顶' : '置顶' }}
                   </button>
-                  <button v-if="auth.isAdmin || isPostAuthor" class="comment-action-btn danger" @click="deleteCommentItem(comment.id)">删除</button>
+                  <button v-if="canEditComment(comment)" class="comment-action-btn" @click="startEditComment(comment)">编辑</button>
+                  <button v-if="canDeleteComment(comment)" class="comment-action-btn danger" @click="deleteCommentItem(comment.id)">删除</button>
                 </div>
               </div>
             </div>
@@ -135,7 +136,8 @@
                     <svg viewBox="0 0 24 24" fill="none" :stroke="reply.likedByMe ? 'var(--accent)' : 'currentColor'" stroke-width="2" width="14" height="14"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
                     {{ reply.likeCount || '' }}
                   </button>
-                  <button v-if="auth.isAdmin || isPostAuthor" class="comment-action-btn danger" @click="deleteCommentItem(reply.id)">删除</button>
+                  <button v-if="canEditComment(reply)" class="comment-action-btn" @click="startEditComment(reply)">编辑</button>
+                  <button v-if="canDeleteComment(reply)" class="comment-action-btn danger" @click="deleteCommentItem(reply.id)">删除</button>
                 </div>
               </div>
             </div>
@@ -191,6 +193,14 @@
         <el-button type="primary" :loading="editSubmitting" @click="submitEdit">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="commentEditVisible" title="编辑评论" width="520px" destroy-on-close append-to-body>
+      <el-input v-model="commentEditContent" type="textarea" :rows="5" maxlength="2000" show-word-limit />
+      <template #footer>
+        <el-button @click="commentEditVisible = false">取消</el-button>
+        <el-button type="primary" :loading="commentEditSubmitting" :disabled="!commentEditContent.trim()" @click="submitCommentEdit">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 
   <EmojiPicker :visible="emoji.visible.value" :anchor="emoji.anchor.value" @select="emoji.onSelect" @close="emoji.close" />
@@ -200,9 +210,10 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { fetchPost, fetchComments, createComment, deleteComment, deletePost, updatePost, togglePostLike, toggleCommentLike, toggleCommentPin } from '@/api/community'
+import { fetchPost, fetchComments, createComment, deleteComment, updateComment, deletePost, updatePost, togglePostLike, toggleCommentLike, toggleCommentPin } from '@/api/community'
 import EmojiPicker from '@/components/EmojiPicker.vue'
 import { useEmojiPicker } from '@/composables/useEmojiPicker'
+import { useCommentRealtime } from '@/composables/useCommentRealtime'
 import AppEmpty from '@/components/common/AppEmpty.vue'
 import ShareButton from '@/components/ShareButton.vue'
 import { toggleFavorite, fetchFavoritedPostIds } from '@/api/favorite'
@@ -229,8 +240,20 @@ const editEmojiBtn = ref<HTMLElement | null>(null)
 const editVisible = ref(false)
 const editSubmitting = ref(false)
 const editForm = ref<PostRequest>({ title: '', content: '', category: 'DISCUSSION', tags: '' })
+const commentEditVisible = ref(false)
+const commentEditSubmitting = ref(false)
+const commentEditId = ref<number | null>(null)
+const commentEditContent = ref('')
 
 const postId = computed(() => Number(route.query.id) || 0)
+
+useCommentRealtime(
+  () => postId.value ? `/topic/comments/post/${postId.value}` : null,
+  () => {
+    void loadComments()
+    void loadPost()
+  },
+)
 const currentUserId = computed(() => {
   try {
     const token = auth.token
@@ -240,6 +263,8 @@ const currentUserId = computed(() => {
   } catch { return null }
 })
 const isPostAuthor = computed(() => post.value?.userId != null && currentUserId.value === post.value.userId)
+const canEditComment = (comment: Comment) => auth.isAdmin || currentUserId.value === comment.userId
+const canDeleteComment = (comment: Comment) => canEditComment(comment) || isPostAuthor.value
 const postUrl = computed(() => `${window.location.origin}/community/post?id=${postId.value}`)
 
 const categoryMap: Record<string, string> = { DISCUSSION: '讨论', NEWS: '新闻', DEBATE: '辩论', PREDICTION: '预测' }
@@ -346,6 +371,27 @@ async function deleteCommentItem(id: number) {
     ElMessage.success('已删除')
     loadComments()
   } catch { /* cancel */ }
+}
+
+function startEditComment(comment: Comment) {
+  commentEditId.value = comment.id
+  commentEditContent.value = comment.content
+  commentEditVisible.value = true
+}
+
+async function submitCommentEdit() {
+  if (commentEditId.value == null || !commentEditContent.value.trim()) return
+  commentEditSubmitting.value = true
+  try {
+    await updateComment(commentEditId.value, commentEditContent.value)
+    commentEditVisible.value = false
+    ElMessage.success('评论已更新')
+    await loadComments()
+  } catch {
+    ElMessage.error('编辑评论失败')
+  } finally {
+    commentEditSubmitting.value = false
+  }
 }
 
 async function toggleCommentLikeItem(comment: Comment) {

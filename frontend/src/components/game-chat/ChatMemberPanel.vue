@@ -13,7 +13,6 @@
         <div class="member-avatar">
           <img v-if="member.avatarUrl" :src="member.avatarUrl" class="member-avatar-img" @error="onImgError($event)" />
           <span v-else class="member-avatar-text">{{ member.username.charAt(0).toUpperCase() }}</span>
-          <span class="member-online-dot"></span>
         </div>
         <span class="member-name">{{ member.username }}</span>
         <span v-if="member.role === 'ADMIN'" class="member-admin-badge">管理员</span>
@@ -128,7 +127,6 @@ function onImgError(e: Event) {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  position: relative;
   overflow: hidden;
 }
 
@@ -136,17 +134,6 @@ function onImgError(e: Event) {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.member-online-dot {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--success, #22C55E);
-  border: 2px solid var(--chat-panel, var(--bg-panel));
 }
 
 .member-name {

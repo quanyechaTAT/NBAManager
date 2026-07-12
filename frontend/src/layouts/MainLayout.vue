@@ -111,7 +111,12 @@ watch(() => route.path, () => {
   if (mainRef.value) mainRef.value.scrollTop = 0
 })
 
-onMounted(() => { if (auth.token) notificationStore.startPolling() })
+onMounted(() => {
+  if (auth.token) {
+    notificationStore.startPolling()
+    void auth.syncLegacyAvatar()
+  }
+})
 onUnmounted(() => { notificationStore.stopPolling() })
 
 // 导航项

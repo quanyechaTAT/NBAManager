@@ -244,7 +244,8 @@
                       {{ comment.likedByMe ? '👍 已赞' : '👍' }} {{ comment.likeCount || '' }}
                     </el-button>
                     <el-button link size="small" @click="replyTo(comment.id)">回复</el-button>
-                    <el-button v-if="auth.isAdmin" link size="small" type="danger" @click="deleteCommentItem(comment.id)">删除</el-button>
+                    <el-button v-if="canEditComment(comment)" link size="small" @click="startEditComment(comment)">编辑</el-button>
+                    <el-button v-if="canEditComment(comment)" link size="small" type="danger" @click="deleteCommentItem(comment.id)">删除</el-button>
                   </div>
                 </div>
               </div>
@@ -261,7 +262,8 @@
                     <el-button :type="reply.likedByMe ? 'primary' : ''" link size="small" @click="toggleCommentLikeItem(reply)">
                       {{ reply.likedByMe ? '👍 已赞' : '👍' }} {{ reply.likeCount || '' }}
                     </el-button>
-                    <el-button v-if="auth.isAdmin" link size="small" type="danger" @click="deleteCommentItem(reply.id)">删除</el-button>
+                    <el-button v-if="canEditComment(reply)" link size="small" @click="startEditComment(reply)">编辑</el-button>
+                    <el-button v-if="canEditComment(reply)" link size="small" type="danger" @click="deleteCommentItem(reply.id)">删除</el-button>
                   </div>
                 </div>
               </div>
@@ -285,6 +287,13 @@
       </el-tabs>
     </div>
   </div>
+  <el-dialog v-model="commentEditVisible" title="编辑评论" width="520px" destroy-on-close append-to-body>
+    <el-input v-model="commentEditContent" type="textarea" :rows="5" maxlength="2000" show-word-limit />
+    <template #footer>
+      <el-button @click="commentEditVisible = false">取消</el-button>
+      <el-button type="primary" :loading="commentEditSubmitting" :disabled="!commentEditContent.trim()" @click="submitCommentEdit">保存</el-button>
+    </template>
+  </el-dialog>
   <EmojiPicker :visible="emoji.visible.value" :anchor="emoji.anchor.value" @select="emoji.onSelect" @close="emoji.close" />
 </template>
 
@@ -295,10 +304,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { fetchBoxScore, fetchQuarterScores, fetchPlayByPlay } from '@/api/matchDetail'
 import { fetchTimeline, fetchMomentum, fetchHighlights, fetchTurningPoints, fetchGameSummary } from '@/api/aiReplay'
 import { getGameShotChart } from '@/api/shotChart'
-import { fetchGameComments, createComment, deleteComment, toggleCommentLike } from '@/api/community'
+import { fetchGameComments, createComment, deleteComment, updateComment, toggleCommentLike } from '@/api/community'
 import EmojiPicker from '@/components/EmojiPicker.vue'
 import AppEmpty from '@/components/common/AppEmpty.vue'
 import { useEmojiPicker } from '@/composables/useEmojiPicker'
+import { useCommentRealtime } from '@/composables/useCommentRealtime'
 import ShotChart from '@/components/ShotChart.vue'
 import GameShotChartPanel from '@/components/shot-chart/GameShotChartPanel.vue'
 import LiveChat from '@/components/LiveChat.vue'
@@ -354,6 +364,22 @@ const commentSubmitting = ref(false)
 const emoji = useEmojiPicker()
 const commentEmojiBtn = ref<HTMLElement | null>(null)
 const replyEmojiBtn = ref<HTMLElement | null>(null)
+const commentEditVisible = ref(false)
+const commentEditSubmitting = ref(false)
+const commentEditId = ref<number | null>(null)
+const commentEditContent = ref('')
+const currentUserId = computed(() => {
+  try {
+    if (!auth.token) return null
+    return JSON.parse(atob(auth.token.split('.')[1])).userId ?? null
+  } catch { return null }
+})
+const canEditComment = (comment: Comment) => auth.isAdmin || currentUserId.value === comment.userId
+
+useCommentRealtime(
+  () => gameId.value ? `/topic/comments/game/${gameId.value}` : null,
+  () => void loadComments(),
+)
 
 // 当boxScore加载完成后，如果quarterScores为空，则从boxScore中获取
 watch(boxScore, (newVal) => {
@@ -630,6 +656,27 @@ async function deleteCommentItem(id: number) {
     ElMessage.success('已删除')
     loadComments()
   } catch { /* cancel */ }
+}
+
+function startEditComment(comment: Comment) {
+  commentEditId.value = comment.id
+  commentEditContent.value = comment.content
+  commentEditVisible.value = true
+}
+
+async function submitCommentEdit() {
+  if (commentEditId.value == null || !commentEditContent.value.trim()) return
+  commentEditSubmitting.value = true
+  try {
+    await updateComment(commentEditId.value, commentEditContent.value)
+    commentEditVisible.value = false
+    ElMessage.success('评论已更新')
+    await loadComments()
+  } catch {
+    ElMessage.error('编辑评论失败')
+  } finally {
+    commentEditSubmitting.value = false
+  }
 }
 
 async function toggleCommentLikeItem(comment: Comment) {

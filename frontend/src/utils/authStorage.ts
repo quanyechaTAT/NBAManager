@@ -6,7 +6,7 @@ export type Role = 'ADMIN' | 'USER'
 export interface StoredProfile {
   username: string
   role: Role
-  avatarUrl?: string
+  avatarUrl?: string | null
 }
 
 export function getToken(): string | null {

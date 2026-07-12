@@ -3,11 +3,15 @@ package com.nbamanager.service;
 import com.nbamanager.domain.ChatMessage;
 import com.nbamanager.domain.ChatMessageType;
 import com.nbamanager.repository.ChatMessageRepository;
+import com.nbamanager.repository.UserAccountRepository;
 import com.nbamanager.security.UserPrincipal;
 import com.nbamanager.web.dto.ChatMessageRequest;
 import com.nbamanager.web.dto.ChatMessageResponse;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,10 +26,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChatMessageService {
 
     private final ChatMessageRepository repo;
+    private final UserAccountRepository userAccountRepository;
     private static final int MAX_CONTENT_LENGTH = 500;
     private static final int RATE_LIMIT_COUNT = 5;
     private static final int RATE_LIMIT_SECONDS = 10;
-    private static final Pattern CONTROL_CHARS = Pattern.compile("[\\p{Cc}\\p{Cf}]");
+    private static final Pattern UNSAFE_CONTROL_CHARS = Pattern.compile("[\\p{Cc}\\p{Cf}&&[^\\n\\t]]");
 
     @Transactional
     public ChatMessage save(UserPrincipal user, String gameId, ChatMessageRequest req, String avatarUrl) {
@@ -71,7 +76,14 @@ public class ChatMessageService {
         int safeLimit = Math.min(Math.max(limit, 1), 100);
         var page = PageRequest.of(0, safeLimit, Sort.by(Sort.Direction.DESC, "id"));
         List<ChatMessage> messages = repo.findHistory(gameId, beforeId, page);
-        return messages.stream().map(this::toResponse).toList();
+        Set<Long> userIds = messages.stream().map(ChatMessage::getUserId).collect(Collectors.toSet());
+        Map<Long, String> currentAvatars = userAccountRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(
+                        account -> account.getId(),
+                        account -> account.getAvatarUrl() == null ? "" : account.getAvatarUrl()));
+        return messages.stream()
+                .map(message -> toResponse(message, currentAvatars.get(message.getUserId())))
+                .toList();
     }
 
     @Transactional
@@ -99,8 +111,9 @@ public class ChatMessageService {
             throw new IllegalArgumentException("消息内容不能为空");
         }
         // Remove control characters
-        String cleaned = CONTROL_CHARS.matcher(content).replaceAll("").trim();
-        if (cleaned.isEmpty()) {
+        String normalized = content.replace("\r\n", "\n").replace('\r', '\n');
+        String cleaned = UNSAFE_CONTROL_CHARS.matcher(normalized).replaceAll("");
+        if (cleaned.isBlank()) {
             throw new IllegalArgumentException("消息内容不能为空");
         }
         if (cleaned.length() > MAX_CONTENT_LENGTH) {
@@ -110,13 +123,17 @@ public class ChatMessageService {
     }
 
     public ChatMessageResponse toResponse(ChatMessage msg) {
+        return toResponse(msg, msg.getAvatarUrl());
+    }
+
+    private ChatMessageResponse toResponse(ChatMessage msg, String currentAvatarUrl) {
         return new ChatMessageResponse(
                 msg.getId(),
                 msg.getClientMessageId(),
                 msg.getGameId(),
                 msg.getUserId(),
                 msg.getUsername(),
-                msg.getAvatarUrl(),
+                currentAvatarUrl == null || currentAvatarUrl.isBlank() ? null : currentAvatarUrl,
                 null, // role will be enriched at broadcast time
                 msg.getMessageType(),
                 msg.isDeleted() ? null : msg.getContent(),

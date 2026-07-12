@@ -8,6 +8,7 @@ import {
   setToken as saveToken,
   type StoredProfile,
 } from '@/utils/authStorage'
+import { uploadAvatarApi } from '@/api/auth'
 
 function getAvatarForUser(username?: string): string | null {
   if (!username) return null
@@ -50,8 +51,24 @@ export const useAuthStore = defineStore('auth', () => {
 
   function setAvatar(url: string) {
     avatarUrl.value = url
-    if (profile.value?.username) {
+    if (profile.value) {
+      profile.value = { ...profile.value, avatarUrl: url }
+      setProfile(profile.value)
       setAvatarForUser(profile.value.username, url)
+    }
+  }
+
+  async function syncLegacyAvatar() {
+    if (!token.value || profile.value?.avatarUrl || !avatarUrl.value?.startsWith('data:image/')) return
+    try {
+      const response = await fetch(avatarUrl.value)
+      const blob = await response.blob()
+      const extension = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png'
+      const file = new File([blob], `legacy-avatar.${extension}`, { type: blob.type || 'image/png' })
+      const { data } = await uploadAvatarApi(file)
+      setAvatar(data.avatarUrl)
+    } catch (error) {
+      console.error('旧头像同步失败:', error)
     }
   }
 
@@ -74,5 +91,5 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { token, profile, avatarUrl, isAuthenticated, isAdmin, username, login, logout, hydrate, setAvatar, updateToken, setUsername }
+  return { token, profile, avatarUrl, isAuthenticated, isAdmin, username, login, logout, hydrate, setAvatar, syncLegacyAvatar, updateToken, setUsername }
 })

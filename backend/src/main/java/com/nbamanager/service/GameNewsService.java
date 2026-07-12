@@ -76,7 +76,8 @@ public class GameNewsService {
     @Cacheable(value = "todayGames", key = "'today'")
     @Transactional(readOnly = true)
     public List<GameNewsDto> getTodayGames() {
-        LocalDate today = LocalDate.now();
+        // 使用 Asia/Shanghai 时区判断"今天"，与存储时区一致
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
         LocalDateTime start = today.atStartOfDay();
         LocalDateTime end = today.plusDays(1).atStartOfDay();
         return gameNewsRepository.findTodayGames(start, end).stream()

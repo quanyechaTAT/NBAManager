@@ -41,6 +41,7 @@ public class NbaLiveSyncService {
     private final GameNewsRepository gameNewsRepository;
     private final MatchRecordRepository matchRecordRepository;
     private final GameNewsService gameNewsService;
+    private final SmartDataService smartDataService;
     private final PostService postService;
     private final DraftService draftService;
     private final NotificationService notificationService;
@@ -670,19 +671,23 @@ public class NbaLiveSyncService {
             int updated = 0;
             for (int i = 0; i < games.length(); i++) {
                 JSONObject game = games.getJSONObject(i);
-                String homeTeam = game.getString("homeTeam");
-                String awayTeam = game.getString("awayTeam");
+                String homeTeam = game.optString("homeTeam", "");
+                String awayTeam = game.optString("awayTeam", "");
                 int homeScore = game.optInt("homeScore", 0);
                 int awayScore = game.optInt("awayScore", 0);
                 String status = game.optString("status", "SCHEDULED");
                 String gameId = game.optString("gameId", null);
+                String category = game.optString("category", "game");
+                String source = game.optString("source", null);
+                String league = game.optString("league", "");
 
-                // 更新或创建GameNews记录（包括SCHEDULED的比赛，用于展示今日赛程）
-                updated += updateOrCreateGameNews(homeTeam, awayTeam, homeScore, awayScore, status, gameId);
+                // 使用 SmartDataService 的完整落库逻辑（含 startTime、category、source）
+                LocalDateTime startTime = smartDataService.parseGameStartTimePublic(game);
+                updated += smartDataService.upsertGameNews(homeTeam, awayTeam, homeScore, awayScore,
+                        status, gameId, category, source, startTime);
 
                 // 更新MatchRecord
                 updateMatchRecord(homeTeam, awayTeam, homeScore, awayScore, status, gameId);
-                // 注意：季后赛比赛不影响常规赛战绩，战绩由每日全量同步更新
             }
 
             // 补充已有新闻的nbaGameId（从MatchRecord中匹配）

@@ -113,7 +113,7 @@ async function submit() {
   loading.value = true
   try {
     const { data } = await registerApi({ username: form.username, password: form.password })
-    auth.login(data.token, { username: data.username, role: data.role })
+    auth.login(data.token, { username: data.username, role: data.role, avatarUrl: data.avatarUrl })
     ElMessage.success('注册成功，已自动登录')
     await router.replace('/dashboard')
   } catch (e: unknown) {

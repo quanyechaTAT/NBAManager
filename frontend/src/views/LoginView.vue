@@ -77,7 +77,7 @@ async function submit() {
   loading.value = true
   try {
     const { data } = await loginApi({ username: form.username, password: form.password })
-    auth.login(data.token, { username: data.username, role: data.role })
+    auth.login(data.token, { username: data.username, role: data.role, avatarUrl: data.avatarUrl })
     ElMessage.success('登录成功')
     const redirect = (route.query.redirect as string) || '/dashboard'
     await router.replace(redirect)
