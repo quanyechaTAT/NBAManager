@@ -19,14 +19,14 @@
     </div>
 
     <!-- 对阵图 -->
-    <div v-else class="bracket-wrapper">
+    <div v-else ref="bracketWrapper" class="bracket-wrapper">
       <!-- 桌面端：轴对称布局 -->
       <div class="bracket-desktop">
         <!-- 东部联盟（从上往下收敛） -->
         <div class="conf-half east-half">
           <h2 class="conf-title">东部联盟</h2>
           <div class="conf-bracket">
-            <div class="bracket-round">
+            <div class="bracket-round round-first">
               <div class="round-series">
                 <div v-for="m in eastRounds[1]" :key="m.id" class="series-card">
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
@@ -46,8 +46,12 @@
               </div>
               <span class="round-tag">首轮</span>
             </div>
-            <div class="bracket-connector"><div class="conn-vert"></div></div>
-            <div class="bracket-round">
+            <div class="bracket-connector connector-r1-r2" aria-hidden="true">
+              <svg viewBox="0 0 56 588" preserveAspectRatio="none">
+                <path d="M0 73.5 H28 V147 H56 M0 220.5 H28 V147 M0 367.5 H28 V441 H56 M0 514.5 H28 V441" />
+              </svg>
+            </div>
+            <div class="bracket-round round-semis">
               <div class="round-series">
                 <div v-for="m in eastRounds[2]" :key="m.id" class="series-card">
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
@@ -67,8 +71,12 @@
               </div>
               <span class="round-tag">半决赛</span>
             </div>
-            <div class="bracket-connector"><div class="conn-vert"></div></div>
-            <div class="bracket-round">
+            <div class="bracket-connector connector-r2-r3" aria-hidden="true">
+              <svg viewBox="0 0 56 588" preserveAspectRatio="none">
+                <path d="M0 147 H28 V294 H56 M0 441 H28 V294" />
+              </svg>
+            </div>
+            <div class="bracket-round round-conf-final">
               <div class="round-series">
                 <div v-for="m in eastRounds[3]" :key="m.id" class="series-card">
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
@@ -117,7 +125,7 @@
         <!-- 西部联盟（从下往上收敛） -->
         <div class="conf-half west-half">
           <div class="conf-bracket">
-            <div class="bracket-round">
+            <div class="bracket-round round-conf-final">
               <span class="round-tag">分区决赛</span>
               <div class="round-series">
                 <div v-for="m in westRounds[3]" :key="m.id" class="series-card">
@@ -137,8 +145,12 @@
                 </div>
               </div>
             </div>
-            <div class="bracket-connector"><div class="conn-vert"></div></div>
-            <div class="bracket-round">
+            <div class="bracket-connector connector-r2-r3" aria-hidden="true">
+              <svg viewBox="0 0 56 588" preserveAspectRatio="none">
+                <path d="M0 294 H28 V147 H56 M28 441 V294 H56" />
+              </svg>
+            </div>
+            <div class="bracket-round round-semis">
               <span class="round-tag">半决赛</span>
               <div class="round-series">
                 <div v-for="m in westRounds[2]" :key="m.id" class="series-card">
@@ -158,8 +170,12 @@
                 </div>
               </div>
             </div>
-            <div class="bracket-connector"><div class="conn-vert"></div></div>
-            <div class="bracket-round">
+            <div class="bracket-connector connector-r1-r2" aria-hidden="true">
+              <svg viewBox="0 0 56 588" preserveAspectRatio="none">
+                <path d="M0 147 H28 V73.5 H56 M0 147 H28 V220.5 H56 M0 441 H28 V367.5 H56 M0 441 H28 V514.5 H56" />
+              </svg>
+            </div>
+            <div class="bracket-round round-first">
               <span class="round-tag">首轮</span>
               <div class="round-series">
                 <div v-for="m in westRounds[1]" :key="m.id" class="series-card">
@@ -263,7 +279,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
 import { getTeamLogo } from '@/utils/teamLogos'
@@ -280,6 +296,7 @@ const loading = ref(false)
 const syncing = ref(false)
 const bracket = ref<PlayoffBracket | null>(null)
 const loadError = ref(false)
+const bracketWrapper = ref<HTMLElement | null>(null)
 
 const getLogo = (name: string) => getTeamLogo(name) || undefined
 
@@ -313,13 +330,29 @@ const f = computed(() => {
 })
 function rLabel(r: number) { return r === 1 ? '首轮' : r === 2 ? '半决赛' : '分区决赛' }
 
+async function centerBracket() {
+  await nextTick()
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+  if (bracketWrapper.value) {
+    bracketWrapper.value.scrollLeft = Math.max(
+      0,
+      (bracketWrapper.value.scrollWidth - bracketWrapper.value.clientWidth) / 2
+    )
+  }
+}
+
 async function load() {
   loading.value = true; loadError.value = false
   try {
     const { data } = await request.get('/nba/playoff', { params: { season: currentSeason } })
     bracket.value = data.eastern?.length > 0 || data.western?.length > 0 || data.finals ? data : null
   } catch { bracket.value = null; loadError.value = true }
-  finally { loading.value = false }
+  finally {
+    loading.value = false
+    if (bracket.value) await centerBracket()
+  }
 }
 async function syncData() {
   syncing.value = true
@@ -332,7 +365,7 @@ onMounted(load)
 
 <style scoped>
 /* ===== 页面 ===== */
-.playoff-page { max-width: 1200px; margin: 0 auto; padding: 24px 16px 80px; animation: fadeIn 0.3s ease; }
+.playoff-page { max-width: 1680px; margin: 0 auto; padding: 24px 16px 80px; animation: fadeIn 0.3s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ===== 标题栏 ===== */
@@ -347,40 +380,61 @@ onMounted(load)
 .state-msg { text-align: center; padding: 60px 0; color: var(--text-muted); font-size: 14px; }
 .retry-btn { margin-left: 8px; padding: 4px 12px; background: var(--accent); border: none; border-radius: 4px; color: #fff; font-size: 12px; cursor: pointer; }
 
-/* ===== 桌面端：轴对称布局 ===== */
-.bracket-desktop { display: flex; flex-direction: column; align-items: center; gap: 0; }
+/* ===== 桌面端：横向轴对称布局 ===== */
+.bracket-wrapper { width: 100%; overflow-x: auto; padding: 18px 0 22px; overscroll-behavior-inline: contain; scrollbar-color: var(--border-medium) transparent; scrollbar-gutter: stable; }
+.bracket-desktop { display: grid; width: 1980px; min-width: 1980px; margin: 0 auto; grid-template-columns: minmax(0, 1fr) 340px minmax(0, 1fr); align-items: center; gap: 28px; }
 .bracket-mobile { display: none; }
 
-.conf-half { width: 100%; display: flex; flex-direction: column; align-items: center; }
-.conf-title { text-align: center; margin: 12px 0; font-size: 14px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; }
-.conf-bracket { display: flex; flex-direction: column; align-items: center; gap: 0; }
+.conf-half { width: 100%; min-width: 0; display: flex; flex-direction: column; align-items: center; }
+.conf-title { text-align: center; margin: 16px 0 22px; font-size: 15px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; }
+.west-half .conf-title { order: -1; }
+.conf-bracket { display: flex; width: 100%; height: 588px; flex-direction: row; align-items: stretch; gap: 0; }
+.east-half .conf-bracket { flex-direction: row; }
+.west-half .conf-bracket { flex-direction: row; }
 
 /* 轮次 */
-.bracket-round { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.bracket-round { display: flex; min-width: 0; flex: 1; flex-direction: column; align-items: center; }
 .round-tag { font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; padding: 3px 10px; background: var(--bg-hover); border-radius: 4px; }
-.round-series { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; }
+.round-series { display: grid; width: 100%; height: 100%; grid-template-rows: repeat(8, minmax(0, 1fr)); align-items: center; justify-items: center; }
+.bracket-round .round-tag { position: absolute; z-index: 1; }
+.bracket-round { position: relative; }
+.round-first .round-tag { top: calc(12.5% - 84px); }
+.round-semis .round-tag { top: calc(25% - 84px); }
+.round-conf-final .round-tag { top: calc(50% - 84px); }
+.round-first .series-card:nth-child(1) { grid-row: 1 / 3; }
+.round-first .series-card:nth-child(2) { grid-row: 3 / 5; }
+.round-first .series-card:nth-child(3) { grid-row: 5 / 7; }
+.round-first .series-card:nth-child(4) { grid-row: 7 / 9; }
+.round-semis .series-card:nth-child(1) { grid-row: 2 / 4; }
+.round-semis .series-card:nth-child(2) { grid-row: 6 / 8; }
+.round-conf-final .series-card { grid-row: 4 / 6; }
 
 /* 连接线 */
-.bracket-connector { display: flex; justify-content: center; height: 24px; }
-.conn-vert { width: 2px; height: 100%; background: var(--border-light); }
+.bracket-connector { width: 56px; height: 588px; flex-shrink: 0; }
+.bracket-connector svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.bracket-connector path { fill: none; stroke: var(--border-medium); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 
 /* ===== 系列赛卡片（胶囊） ===== */
 .series-card {
-  display: flex; align-items: center; gap: 0;
-  width: 220px; height: 64px;
+  display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto 1fr; align-items: stretch;
+  width: 214px; height: 112px;
   background: var(--bg-card); border: 1px solid var(--border-light);
-  border-radius: 32px; padding: 0 10px;
+  border-radius: 14px; padding: 10px 14px;
   transition: all 0.15s; flex-shrink: 0;
 }
 .series-card:hover { border-color: var(--border-medium); box-shadow: var(--shadow-sm); }
 
-.sc-team { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; }
+.sc-team { position: relative; display: flex; box-sizing: border-box; width: 100%; min-width: 0; align-items: center; justify-content: center; padding: 0 34px; text-align: center; }
+.series-card > .sc-team:first-child { grid-column: 1; grid-row: 1; }
+.series-card > .sc-team:last-child { grid-column: 1; grid-row: 3; }
+.series-card > .sc-team:first-child .sc-logo { position: absolute; left: 0; }
+.series-card > .sc-team:last-child .sc-logo { position: absolute; right: 0; }
 .sc-team.win .sc-name { color: var(--accent); font-weight: 700; }
-.sc-logo { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border-light); display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--bg-hover); flex-shrink: 0; }
-.sc-logo img { width: 24px; height: 24px; object-fit: contain; }
+.sc-logo { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border-light); display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--bg-hover); flex-shrink: 0; }
+.sc-logo img { width: 21px; height: 21px; object-fit: contain; }
 .sc-fb { font-size: 12px; font-weight: 700; color: var(--text-muted); }
-.sc-name { font-size: 11px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 48px; }
-.sc-score { display: flex; align-items: center; gap: 3px; padding: 0 6px; font-size: 18px; font-weight: 800; color: var(--text-secondary); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.sc-name { width: 100%; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+.sc-score { display: flex; grid-column: 1; grid-row: 2; align-items: center; justify-content: center; gap: 7px; padding: 4px 0; border-top: 1px solid var(--border-light); border-bottom: 1px solid var(--border-light); font-size: 20px; font-weight: 800; color: var(--text-secondary); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .sc-sep { font-size: 12px; color: var(--text-dim); }
 .sc-score .win { color: var(--accent); }
 
@@ -400,6 +454,43 @@ onMounted(load)
 .fb-score .win { color: #fbbf24; }
 .fb-trophy { position: absolute; right: -6px; top: -6px; padding: 3px 8px; background: #fbbf24; border-radius: 10px; font-size: 10px; font-weight: 700; color: #0a2463; }
 
+.bracket-desktop .finals-banner { position: relative; width: 280px; margin: 0 auto; }
+.bracket-desktop .finals-banner::before,
+.bracket-desktop .finals-banner::after {
+  position: absolute;
+  top: 50%;
+  width: 58px;
+  border-top: 1.5px solid var(--border-medium);
+  content: '';
+}
+.bracket-desktop .finals-banner::before { right: 100%; }
+.bracket-desktop .finals-banner::after { left: 100%; }
+.bracket-desktop .fb-inner {
+  display: grid;
+  min-height: 250px;
+  grid-template-rows: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 24px 22px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-medium);
+  border-radius: 18px;
+  box-shadow: var(--shadow-sm);
+}
+.bracket-desktop .fb-side { position: relative; box-sizing: border-box; width: 100%; min-height: 42px; justify-content: center; padding: 0 52px; }
+.bracket-desktop .fb-left { grid-row: 1; }
+.bracket-desktop .fb-center { grid-row: 2; width: 100%; padding: 12px 0; border-top: 1px solid var(--border-light); border-bottom: 1px solid var(--border-light); }
+.bracket-desktop .fb-right { grid-row: 3; }
+.bracket-desktop .fb-left .fb-logo { position: absolute; left: 0; }
+.bracket-desktop .fb-right .fb-logo { position: absolute; right: 0; }
+.bracket-desktop .fb-logo { width: 42px; height: 42px; background: var(--bg-hover); border-color: var(--border-light); }
+.bracket-desktop .fb-name { width: 100%; overflow: hidden; color: var(--text-primary); font-size: 14px; text-align: center; text-overflow: ellipsis; }
+.bracket-desktop .fb-label { color: var(--text-muted); }
+.bracket-desktop .fb-score { color: var(--text-primary); font-size: 30px; }
+.bracket-desktop .fb-sep { color: var(--text-dim); }
+.bracket-desktop .fb-score .win { color: var(--accent); }
+.bracket-desktop .fb-trophy { right: 12px; top: 12px; max-width: 180px; overflow: hidden; background: var(--accent); color: var(--text-on-accent); text-overflow: ellipsis; white-space: nowrap; }
+
 /* ===== 移动端 ===== */
 .mob-conf { margin-bottom: 20px; }
 .mob-rounds { display: flex; flex-direction: column; align-items: center; gap: 0; }
@@ -411,11 +502,11 @@ onMounted(load)
   .bracket-mobile { display: block; }
   .playoff-page { padding: 16px 8px 80px; }
   .playoff-title { font-size: 18px; }
-  .series-card { width: 180px; height: 52px; border-radius: 26px; padding: 0 8px; }
+  .series-card { width: 220px; height: 108px; border-radius: 14px; padding: 9px 12px; }
   .sc-logo { width: 26px; height: 26px; }
   .sc-logo img { width: 20px; height: 20px; }
-  .sc-name { font-size: 10px; max-width: 36px; }
-  .sc-score { font-size: 15px; }
+  .sc-name { font-size: 11px; max-width: 126px; }
+  .sc-score { font-size: 19px; }
   .mob-series { gap: 8px; }
   .fb-inner { padding: 10px 14px; min-height: 60px; border-radius: 30px; gap: 10px; }
   .fb-logo { width: 32px; height: 32px; }

@@ -15,13 +15,17 @@ class MySQLDocumentSource:
         documents.extend(self.news())
         documents.extend(self.matches())
         documents.extend(self.historical_players())
+        documents.extend(self.draft_picks())
+        documents.extend(self.injury_reports())
         return documents
 
     def players(self) -> list[IndexDocument]:
         sql = """
             SELECT p.id, p.name, p.name_en, t.name AS team_name, p.position,
                    p.points_per_game, p.rebounds_per_game, p.assists_per_game,
-                   p.steals_per_game, p.blocks_per_game, p.games_played
+                   p.steals_per_game, p.blocks_per_game, p.games_played,
+                   p.field_goal_pct, p.three_point_pct, p.free_throw_pct,
+                   p.true_shooting_pct, p.efficiency, p.minutes_per_game
             FROM players p
             LEFT JOIN teams t ON p.team_id = t.id
             WHERE p.points_per_game > 0
@@ -31,11 +35,18 @@ class MySQLDocumentSource:
             rows = cursor.fetchall()
         docs = []
         for row in rows:
+            fg = (row.get("field_goal_pct") or 0) * 100
+            tp = (row.get("three_point_pct") or 0) * 100
+            ft = (row.get("free_throw_pct") or 0) * 100
+            ts = (row.get("true_shooting_pct") or 0) * 100
+            eff = row.get("efficiency") or 0
             text = (
                 f"{row.get('name')}是{row.get('team_name')}队的{row.get('position')}，"
                 f"本赛季出场{row.get('games_played')}次，场均{row.get('points_per_game')}分、"
                 f"{row.get('rebounds_per_game')}篮板、{row.get('assists_per_game')}助攻、"
                 f"{row.get('steals_per_game')}抢断、{row.get('blocks_per_game')}盖帽。"
+                f"投篮命中率{fg:.1f}%，三分命中率{tp:.1f}%，罚球命中率{ft:.1f}%，"
+                f"真实投篮命中率{ts:.1f}%，效率值{eff:.1f}。"
             )
             docs.append(
                 IndexDocument(
@@ -46,6 +57,8 @@ class MySQLDocumentSource:
                         "id": row.get("id"),
                         "name": row.get("name"),
                         "team": row.get("team_name"),
+                        "ppg": row.get("points_per_game"),
+                        "three_pct": row.get("three_point_pct"),
                     },
                 )
             )
@@ -165,6 +178,72 @@ class MySQLDocumentSource:
                         "type": "historical",
                         "id": row.get("id"),
                         "season": row.get("season"),
+                        "name": row.get("player_name"),
+                        "team": row.get("team_name"),
+                    },
+                )
+            )
+        return docs
+
+    def draft_picks(self, limit: int = 500) -> list[IndexDocument]:
+        sql = """
+            SELECT id, year, round, pick_number, player_name, team_name, player_position, notes
+            FROM draft_picks
+            ORDER BY year DESC, pick_number ASC
+            LIMIT %s
+        """
+        with self.database.cursor() as cursor:
+            cursor.execute(sql, (limit,))
+            rows = cursor.fetchall()
+        docs = []
+        for row in rows:
+            text = (
+                f"{row.get('year')}年NBA选秀第{row.get('round')}轮第{row.get('pick_number')}顺位："
+                f"{row.get('player_name')}被{row.get('team_name')}选中，位置{row.get('player_position') or '未知'}。"
+                f"{row.get('notes') or ''}"
+            )
+            docs.append(
+                IndexDocument(
+                    id=f"draft:{row.get('id')}",
+                    text=text,
+                    metadata={
+                        "type": "draft",
+                        "id": row.get("id"),
+                        "year": row.get("year"),
+                        "name": row.get("player_name"),
+                        "team": row.get("team_name"),
+                    },
+                )
+            )
+        return docs
+
+    def injury_reports(self, limit: int = 200) -> list[IndexDocument]:
+        sql = """
+            SELECT id, player_name, team_name, injury_type, description, status, start_date, expected_return
+            FROM injury_reports
+            ORDER BY start_date DESC
+            LIMIT %s
+        """
+        with self.database.cursor() as cursor:
+            cursor.execute(sql, (limit,))
+            rows = cursor.fetchall()
+        docs = []
+        for row in rows:
+            text = (
+                f"伤病报告：{row.get('player_name')}（{row.get('team_name')}），"
+                f"伤病类型：{row.get('injury_type') or '未知'}，"
+                f"状态：{row.get('status') or '未知'}，"
+                f"开始日期：{row.get('start_date') or '未知'}，"
+                f"预计回归：{row.get('expected_return') or '未知'}。"
+                f"{row.get('description') or ''}"
+            )
+            docs.append(
+                IndexDocument(
+                    id=f"injury:{row.get('id')}",
+                    text=text,
+                    metadata={
+                        "type": "injury",
+                        "id": row.get("id"),
                         "name": row.get("player_name"),
                         "team": row.get("team_name"),
                     },

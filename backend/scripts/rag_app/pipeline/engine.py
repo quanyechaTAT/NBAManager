@@ -126,6 +126,10 @@ class RAGEngine:
         structured_text = ""
         if classification.needs_structured_data:
             structured_text = self.structured.search(classification, top_k)
+        # 补充关键词匹配查询（选秀、伤病、三分命中率等）
+        keyword_text = self.structured.search_by_keywords(question, top_k)
+        if keyword_text:
+            structured_text = (structured_text + "\n\n" + keyword_text).strip()
 
         retrieved = self.retriever.retrieve(question, top_k, classification)
         search_results = self._search_web(question, classification.needs_web_search)

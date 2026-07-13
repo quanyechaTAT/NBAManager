@@ -49,7 +49,7 @@ export interface CommentRequest {
   gameId?: string
 }
 
-export function fetchPosts(params: { page: number; size: number; category?: string; q?: string }) {
+export function fetchPosts(params: { page: number; size: number; category?: string; q?: string; sort?: string }) {
   return request.get<PageResponse<Post>>('/posts', { params })
 }
 

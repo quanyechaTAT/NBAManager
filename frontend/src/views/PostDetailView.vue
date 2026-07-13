@@ -68,13 +68,20 @@
           </div>
 
           <!-- 发表评论 -->
-          <div class="comment-input">
-            <el-input v-model="newComment" type="textarea" :rows="3" placeholder="写下你的评论..." maxlength="2000" show-word-limit />
+          <div class="comment-composer">
+            <div class="comment-composer-heading">
+              <span class="comment-composer-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+              <div><strong>参与讨论</strong><span>留下你的观点，与社区一起交流</span></div>
+            </div>
+            <div class="comment-input">
+              <el-input v-model="newComment" type="textarea" :rows="5" placeholder="写下你的评论..." maxlength="2000" show-word-limit />
+            </div>
             <div class="comment-input-actions">
-              <div ref="commentEmojiBtn" class="emoji-trigger" @click="emoji.open(commentEmojiBtn!, e => newComment += e)">
+              <div class="comment-community-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg><span>文明发言，友善交流，共建良好讨论环境</span></div>
+              <div ref="commentEmojiBtn" class="emoji-trigger" title="插入表情" @click="emoji.open(commentEmojiBtn!, e => newComment += e)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
               </div>
-              <el-button type="primary" size="small" :loading="commentSubmitting" @click="submitComment" :disabled="!newComment.trim()">发表评论</el-button>
+              <el-button class="comment-submit" type="primary" :loading="commentSubmitting" @click="submitComment" :disabled="!newComment.trim()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>发表评论</el-button>
             </div>
           </div>
 
@@ -155,7 +162,10 @@
             </div>
           </div>
 
-          <AppEmpty v-if="comments.length === 0" description="暂无评论，来说两句吧" />
+          <div v-if="comments.length === 0" class="comment-empty">
+            <div class="comment-empty-visual" aria-hidden="true"><span class="comment-empty-orbit"></span><svg viewBox="0 0 64 64" fill="none"><path d="M12 17a8 8 0 0 1 8-8h24a8 8 0 0 1 8 8v18a8 8 0 0 1-8 8H30L18 53v-10a8 8 0 0 1-6-8Z" fill="currentColor" opacity=".22"/><circle cx="24" cy="27" r="2.5" fill="currentColor"/><circle cx="32" cy="27" r="2.5" fill="currentColor"/><circle cx="40" cy="27" r="2.5" fill="currentColor"/></svg></div>
+            <strong>暂无评论</strong><span>成为第一个参与讨论的人</span>
+          </div>
         </div>
       </div>
     </div>
@@ -194,8 +204,11 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="commentEditVisible" title="编辑评论" width="520px" destroy-on-close append-to-body>
-      <el-input v-model="commentEditContent" type="textarea" :rows="5" maxlength="2000" show-word-limit />
+    <el-dialog v-model="commentEditVisible" title="编辑评论" width="520px" destroy-on-close append-to-body @closed="emoji.close">
+      <div class="comment-edit-input">
+        <el-input v-model="commentEditContent" type="textarea" :rows="5" maxlength="2000" show-word-limit />
+        <button ref="commentEditEmojiBtn" class="emoji-trigger comment-edit-emoji" type="button" title="插入表情" @click="emoji.open(commentEditEmojiBtn!, value => commentEditContent += value)">😊</button>
+      </div>
       <template #footer>
         <el-button @click="commentEditVisible = false">取消</el-button>
         <el-button type="primary" :loading="commentEditSubmitting" :disabled="!commentEditContent.trim()" @click="submitCommentEdit">保存</el-button>
@@ -214,7 +227,6 @@ import { fetchPost, fetchComments, createComment, deleteComment, updateComment, 
 import EmojiPicker from '@/components/EmojiPicker.vue'
 import { useEmojiPicker } from '@/composables/useEmojiPicker'
 import { useCommentRealtime } from '@/composables/useCommentRealtime'
-import AppEmpty from '@/components/common/AppEmpty.vue'
 import ShareButton from '@/components/ShareButton.vue'
 import { toggleFavorite, fetchFavoritedPostIds } from '@/api/favorite'
 import { recordBrowse } from '@/api/browseHistory'
@@ -244,6 +256,7 @@ const commentEditVisible = ref(false)
 const commentEditSubmitting = ref(false)
 const commentEditId = ref<number | null>(null)
 const commentEditContent = ref('')
+const commentEditEmojiBtn = ref<HTMLElement | null>(null)
 
 const postId = computed(() => Number(route.query.id) || 0)
 
@@ -686,6 +699,9 @@ onMounted(() => { loadPost(); loadComments(); checkFavoriteStatus() })
 .reply-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 6px; }
 
 .textarea-toolbar { position: absolute; bottom: 30px; right: 8px; z-index: 10; }
+.comment-edit-input { position: relative; }
+.comment-edit-input :deep(.el-textarea__inner) { padding-bottom: 42px; }
+.comment-edit-emoji { position: absolute; left: 10px; bottom: 10px; z-index: 1; }
 
 /* 浅色主题 */
 [data-theme="light"] .post-card { border-color: var(--border-light); }
