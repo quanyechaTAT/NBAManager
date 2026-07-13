@@ -51,9 +51,17 @@ class RAGEngine:
             if not prepared["allowed"]:
                 return self._answer(REFUSAL_MESSAGE, prepared, start, success=True)
 
+            # 排名查询：在结构化数据前注入强调指令
+            structured_text = prepared["structured_text"]
+            if prepared["classification"].query_type.value == "ranking" and structured_text:
+                structured_text = (
+                    "【重要：以下排名数据是权威数据源，必须优先使用，不要用参考资料中的个别球员数据替代】\n"
+                    + structured_text
+                )
+
             prompt = build_user_prompt(
                 question,
-                prepared["structured_text"],
+                structured_text,
                 format_documents(prepared["documents"]),
                 format_search_results(prepared["search_results"]),
             )
@@ -96,9 +104,16 @@ class RAGEngine:
             yield {"type": "done", "response_time": round((time.time() - start) * 1000)}
             return
 
+        structured_text = prepared["structured_text"]
+        if classification.query_type.value == "ranking" and structured_text:
+            structured_text = (
+                "【重要：以下排名数据是权威数据源，必须优先使用，不要用参考资料中的个别球员数据替代】\n"
+                + structured_text
+            )
+
         prompt = build_user_prompt(
             question,
-            prepared["structured_text"],
+            structured_text,
             format_documents(prepared["documents"]),
             format_search_results(prepared["search_results"]),
         )
@@ -125,7 +140,7 @@ class RAGEngine:
         classification = self.classifier.classify(question)
         structured_text = ""
         if classification.needs_structured_data:
-            structured_text = self.structured.search(classification, top_k)
+            structured_text = self.structured.search(classification, top_k, question)
         # 补充关键词匹配查询（选秀、伤病、三分命中率等）
         keyword_text = self.structured.search_by_keywords(question, top_k)
         if keyword_text:
@@ -134,7 +149,7 @@ class RAGEngine:
         retrieved = self.retriever.retrieve(question, top_k, classification)
         search_results = self._search_web(question, classification.needs_web_search)
         search_documents = [item.content or item.title for item in search_results]
-        decision = self.evidence_gate.assess(structured_text, retrieved.documents + search_documents)
+        decision = self.evidence_gate.assess(structured_text, retrieved.documents + search_documents, question)
 
         used_tools = []
         if retrieved.documents:

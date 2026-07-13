@@ -10,7 +10,7 @@ class StructuredRepository:
     def __init__(self, database: Database):
         self.database = database
 
-    def search(self, classification: QueryClassification, top_k: int) -> str:
+    def search(self, classification: QueryClassification, top_k: int, question: str = "") -> str:
         try:
             if classification.query_type == QueryType.TEAM and classification.teams:
                 return self.team_summary(classification.teams)
@@ -19,7 +19,7 @@ class StructuredRepository:
             if classification.query_type == QueryType.MATCH and classification.teams:
                 return self.match_summary(classification.teams, top_k)
             if classification.query_type == QueryType.RANKING:
-                return self.ranking_summary(top_k)
+                return self.ranking_summary(top_k, question)
         except Exception as exc:
             print(f"Structured query failed: {exc}", file=sys.stderr)
         # Keyword-based fallback for common queries
@@ -61,6 +61,7 @@ class StructuredRepository:
         parts = []
         with self.database.cursor() as cursor:
             for player in players:
+                # 精确匹配优先
                 cursor.execute(
                     """
                     SELECT p.name, t.name AS team_name, p.position,
@@ -68,13 +69,29 @@ class StructuredRepository:
                            p.field_goal_pct, p.three_point_pct, p.games_played
                     FROM players p
                     LEFT JOIN teams t ON p.team_id = t.id
-                    WHERE p.name = %s OR p.name LIKE %s
+                    WHERE p.name = %s
                     ORDER BY p.points_per_game DESC
                     LIMIT 1
                     """,
-                    (player, f"%{player}%"),
+                    (player,),
                 )
                 row = cursor.fetchone()
+                # 精确匹配失败时才用模糊匹配
+                if not row:
+                    cursor.execute(
+                        """
+                        SELECT p.name, t.name AS team_name, p.position,
+                               p.points_per_game, p.rebounds_per_game, p.assists_per_game,
+                               p.field_goal_pct, p.three_point_pct, p.games_played
+                        FROM players p
+                        LEFT JOIN teams t ON p.team_id = t.id
+                        WHERE p.name LIKE %s
+                        ORDER BY p.points_per_game DESC
+                        LIMIT 1
+                        """,
+                        (f"%{player}%",),
+                    )
+                    row = cursor.fetchone()
                 if row:
                     fg = row.get("field_goal_pct") or 0
                     three = row.get("three_point_pct") or 0
@@ -108,25 +125,55 @@ class StructuredRepository:
             )
         return "\n".join(parts)
 
-    def ranking_summary(self, top_k: int) -> str:
+    def ranking_summary(self, top_k: int, question: str = "") -> str:
+        q = question.lower()
+        # 根据问题中的指标关键词选择排序字段
+        metric_map = [
+            (["三分", "three-point", "3分", "三分球"], "three_point_pct", "三分命中率", True),
+            (["投篮命中率", "fg%", "field goal"], "field_goal_pct", "投篮命中率", True),
+            (["罚球", "free throw"], "free_throw_pct", "罚球命中率", True),
+            (["篮板", "rebounds"], "rebounds_per_game", "篮板", False),
+            (["助攻", "assists"], "assists_per_game", "助攻", False),
+            (["抢断", "steals"], "steals_per_game", "抢断", False),
+            (["盖帽", "blocks"], "blocks_per_game", "盖帽", False),
+            (["效率", "efficiency", "per"], "efficiency", "效率值", False),
+            (["失误", "turnovers"], "turnovers_per_game", "失误", False),
+            (["上场时间", "分钟", "minutes"], "minutes_per_game", "上场时间", False),
+            (["使用率", "usage"], "usage_pct", "使用率", False),
+        ]
+        metric_col = "points_per_game"
+        metric_label = "得分"
+        is_pct = False
+        for keywords, col, label, pct in metric_map:
+            if any(kw in q for kw in keywords):
+                metric_col = col
+                metric_label = label
+                is_pct = pct
+                break
+
         with self.database.cursor() as cursor:
             cursor.execute(
-                """
-                SELECT p.name, t.name AS team_name, p.position,
-                       p.points_per_game, p.games_played
+                f"""
+                SELECT p.name, t.name AS team_name, p.{metric_col} AS metric_val
                 FROM players p
                 LEFT JOIN teams t ON p.team_id = t.id
-                WHERE p.points_per_game > 0 AND p.games_played >= 10
-                ORDER BY p.points_per_game DESC
+                WHERE p.{metric_col} > 0 AND p.games_played >= 10
+                ORDER BY p.{metric_col} DESC
                 LIMIT %s
                 """,
                 (top_k,),
             )
             rows = cursor.fetchall()
-        return "\n".join(
-            f"{idx + 1}. {row.get('name')}（{row.get('team_name')}）：场均{row.get('points_per_game')}分"
-            for idx, row in enumerate(rows)
-        )
+        if not rows:
+            return ""
+        parts = [f"{metric_label}排名："]
+        for idx, row in enumerate(rows):
+            val = row.get("metric_val") or 0
+            if is_pct:
+                parts.append(f"  {idx + 1}. {row.get('name')}（{row.get('team_name')}）：{val * 100:.1f}%")
+            else:
+                parts.append(f"  {idx + 1}. {row.get('name')}（{row.get('team_name')}）：{val}")
+        return "\n".join(parts)
 
     def draft_summary(self, top_k: int = 10) -> str:
         with self.database.cursor() as cursor:

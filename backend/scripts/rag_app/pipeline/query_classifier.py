@@ -60,13 +60,27 @@ PLAYER_ALIASES = {
     "塔图姆": "杰森-塔图姆",
     "布克": "德文-布克",
     "文班亚马": "维克托-文班亚马",
+    # 历史/退役球员（不在当前数据库中）
+    "迈克尔·乔丹": "__OUT_OF_SCOPE__",
+    "乔丹": "__OUT_OF_SCOPE__",
+    "科比": "__OUT_OF_SCOPE__",
+    "科比·布莱恩特": "__OUT_OF_SCOPE__",
+    "奥尼尔": "__OUT_OF_SCOPE__",
+    "邓肯": "__OUT_OF_SCOPE__",
+    "加内特": "__OUT_OF_SCOPE__",
+    "诺维茨基": "__OUT_OF_SCOPE__",
+    "韦德": "__OUT_OF_SCOPE__",
+    "艾弗森": "__OUT_OF_SCOPE__",
+    "麦迪": "__OUT_OF_SCOPE__",
+    "卡特": "__OUT_OF_SCOPE__",
+    "姚明": "__OUT_OF_SCOPE__",
 }
 
 TEAM_KEYWORDS = re.compile(r"战绩|排名|胜率|胜负|球队|东部|西部")
-PLAYER_KEYWORDS = re.compile(r"得分|篮板|助攻|抢断|盖帽|命中率|场均|球员")
+PLAYER_KEYWORDS = re.compile(r"场均|球员|数据|表现")
 MATCH_KEYWORDS = re.compile(r"比赛|比分|赛程|总决赛|季后赛|对阵|主场|客场")
 NEWS_KEYWORDS = re.compile(r"新闻|资讯|交易|伤病|报道")
-RANKING_KEYWORDS = re.compile(r"最高|排行|排名|前十|top|Top|TOP|第一")
+RANKING_KEYWORDS = re.compile(r"最高|排行|排名|前十|top|Top|TOP|第一|最多|得分王|篮板王|助攻王|抢断王|盖帽王|效率王")
 
 
 @dataclass(frozen=True)
@@ -82,12 +96,15 @@ class QueryClassifier:
     def classify(self, query: str) -> QueryClassification:
         teams = self._find_teams(query)
         players = self._find_players(query)
+        # 过滤掉库外球员
+        out_of_scope_players = [p for p in players if p == "__OUT_OF_SCOPE__"]
+        valid_players = [p for p in players if p != "__OUT_OF_SCOPE__"]
 
-        if RANKING_KEYWORDS.search(query) and PLAYER_KEYWORDS.search(query):
+        if RANKING_KEYWORDS.search(query):
             query_type = QueryType.RANKING
         elif TEAM_KEYWORDS.search(query) and teams:
             query_type = QueryType.TEAM
-        elif PLAYER_KEYWORDS.search(query) and players:
+        elif PLAYER_KEYWORDS.search(query) and valid_players:
             query_type = QueryType.PLAYER
         elif MATCH_KEYWORDS.search(query):
             query_type = QueryType.MATCH
@@ -103,7 +120,7 @@ class QueryClassifier:
             QueryType.RANKING,
         }
         needs_web_search = query_type == QueryType.NEWS or self._needs_web_search(query)
-        return QueryClassification(query_type, teams, players, needs_structured, needs_web_search)
+        return QueryClassification(query_type, teams, valid_players, needs_structured, needs_web_search)
 
     def _find_teams(self, query: str) -> list[str]:
         found = []
@@ -126,3 +143,12 @@ class QueryClassifier:
                 query,
             )
         )
+
+    def is_out_of_scope(self, query: str) -> bool:
+        """检测问题是否超出 NBA 数据库范围"""
+        out_of_scope = re.compile(
+            r"薪资帽|工资帽|规则|历史纪录|最伟大|goat|名人堂|"
+            r"nba2k|游戏|篮球鞋|球鞋|教练|裁判|总裁|老板|"
+            r"市值|收视率|转播合同|中国男篮|足球|天气"
+        )
+        return bool(out_of_scope.search(query.lower()))

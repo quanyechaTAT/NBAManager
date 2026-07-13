@@ -36,9 +36,14 @@ class HybridRetriever:
         return RetrievalResult(docs[:top_k], metas[:top_k], distances[:top_k])
 
     def _build_filter(self, classification: QueryClassification | None) -> dict | None:
-        if not classification or not classification.teams:
+        if not classification:
             return None
-        return {"team": {"$in": classification.teams}}
+        # 球员查询优先返回球员文档
+        if classification.players:
+            return {"type": "player"}
+        if classification.teams:
+            return {"team": {"$in": classification.teams}}
+        return None
 
     def _filter_by_distance(self, docs: list[str], metas: list[dict], distances: list[float], top_k: int):
         filtered = [
