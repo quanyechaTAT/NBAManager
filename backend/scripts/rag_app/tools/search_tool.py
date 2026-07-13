@@ -85,22 +85,42 @@ class BaiduSearchTool:
         return self.parse_results(html, limit)
 
     def fetch(self, query: str) -> str:
-        url = f"https://www.baidu.com/s?wd={quote_plus(query)}"
-        request = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0 Safari/537.36"
-                ),
-                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
-            },
-        )
-        with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-            raw = response.read()
-            charset = response.headers.get_content_charset() or "utf-8"
-            return raw.decode(charset, errors="ignore")
+        import time as _time
+        import random as _random
+
+        url = f"https://www.baidu.com/s?wd={quote_plus(query)}&rn=10"
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
+        ]
+
+        for attempt in range(3):
+            try:
+                request = urllib.request.Request(
+                    url,
+                    headers={
+                        "User-Agent": _random.choice(user_agents),
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
+                        "Accept-Encoding": "identity",
+                        "Connection": "keep-alive",
+                        "Cache-Control": "no-cache",
+                    },
+                )
+                with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                    raw = response.read()
+                    charset = response.headers.get_content_charset() or "utf-8"
+                    html = raw.decode(charset, errors="ignore")
+                    if len(html) > 2000 and "<h3" in html:
+                        return html
+                    # Short response = likely blocked, retry
+                    if attempt < 2:
+                        _time.sleep(1 + _random.random())
+            except Exception:
+                if attempt < 2:
+                    _time.sleep(1 + _random.random())
+        return ""
 
     def parse_results(self, html: str, limit: int = 5) -> list[SearchResult]:
         parser = _BaiduHTMLParser()

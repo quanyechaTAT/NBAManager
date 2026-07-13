@@ -119,7 +119,8 @@ class QueryClassifier:
             QueryType.MATCH,
             QueryType.RANKING,
         }
-        needs_web_search = query_type == QueryType.NEWS or self._needs_web_search(query)
+        # needs_web_search 独立于 query_type：任何包含实时/最新关键词的查询都应触发
+        needs_web_search = self._needs_web_search(query)
         return QueryClassification(query_type, teams, valid_players, needs_structured, needs_web_search)
 
     def _find_teams(self, query: str) -> list[str]:
