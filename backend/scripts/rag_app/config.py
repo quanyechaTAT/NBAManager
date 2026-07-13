@@ -79,10 +79,10 @@ class RAGSettings:
 
     # ── 联网搜索配置 ──
     search_enabled: bool = True
-    search_timeout_seconds: int = 5
+    search_timeout_seconds: int = 3
     search_top_k: int = 5
     search_cache_ttl_seconds: int = 600
-    search_providers: str = "espn_scoreboard,espn_news,google_news_rss,baidusearch"
+    search_providers: str = "espn_scoreboard,espn_news"
     baidu_min_interval_seconds: int = 15
     baidu_circuit_breaker_seconds: int = 600
     searxng_base_url: str = ""
