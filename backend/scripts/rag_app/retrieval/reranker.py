@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import glob
+from pathlib import Path
 import sys
 
 from rag_app.config import RAGSettings
@@ -11,6 +13,17 @@ class CrossEncoderReranker:
         self._model = None
         self._available = settings.reranker_enabled
 
+    def _resolve_model_path(self) -> str:
+        cache_dir = Path(self.settings.model_cache_dir)
+        pattern = cache_dir / "models--BAAI--bge-reranker-v2-m3" / "snapshots" / "*" / ""
+        snapshots = glob.glob(str(pattern))
+        if snapshots:
+            return snapshots[0]
+        direct_path = cache_dir / "BAAI--bge-reranker-v2-m3"
+        if direct_path.exists() and (direct_path / "config.json").exists():
+            return str(direct_path)
+        return self.settings.reranker_model
+
     def _load(self):
         if not self._available:
             return None
@@ -18,7 +31,9 @@ class CrossEncoderReranker:
             return self._model
         try:
             from sentence_transformers import CrossEncoder
-            self._model = CrossEncoder(self.settings.reranker_model, device=self.settings.reranker_device)
+            model_path = self._resolve_model_path()
+            print(f"Loading reranker model: {model_path}", file=sys.stderr)
+            self._model = CrossEncoder(model_path, device=self.settings.reranker_device)
             return self._model
         except Exception as exc:
             self._available = False

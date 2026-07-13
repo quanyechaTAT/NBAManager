@@ -14,9 +14,16 @@ class SentenceTransformerEmbeddings:
 
     def _resolve_model_path(self) -> str:
         cache_dir = Path(self.settings.model_cache_dir)
+        # 优先查找 HuggingFace 缓存结构
         pattern = cache_dir / "models--richinfoai--ritrieve_zh_v1" / "snapshots" / "*" / ""
         snapshots = glob.glob(str(pattern))
-        return snapshots[0] if snapshots else self.settings.embedding_model
+        if snapshots:
+            return snapshots[0]
+        # 其次查找直接下载的目录
+        direct_path = cache_dir / "richinfoai--ritrieve_zh_v1"
+        if direct_path.exists() and (direct_path / "config.json").exists():
+            return str(direct_path)
+        return self.settings.embedding_model
 
     def load(self):
         if self._model is not None:

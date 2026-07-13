@@ -157,6 +157,9 @@ class RAGEngine:
         if keyword_text:
             structured_text = (structured_text + "\n\n" + keyword_text).strip()
 
+        # 初始化 used_tools
+        used_tools: list[str] = []
+
         # 2. 向量检索
         retrieved = self.retriever.retrieve(question, top_k, classification)
         tool_trace.append({
@@ -179,11 +182,14 @@ class RAGEngine:
 
         search_results = []
         search_execution = SearchExecution()
+        search_attempted = False
+        search_success = False
         if should_search and self.settings.search_enabled:
+            search_attempted = True
             # 查询改写
             queries = self.query_rewriter.rewrite(question)
             all_results = []
-            for q in queries[:2]:  # 最多尝试 2 个改写查询
+            for q in queries[:2]:
                 results, execution = self.search_service.search(q, self.settings.search_top_k)
                 all_results.extend(results)
                 search_execution = execution
@@ -196,9 +202,17 @@ class RAGEngine:
                     seen_urls.add(r.url)
                     search_results.append(r)
             search_results = search_results[:self.settings.search_top_k]
+            search_success = len(search_results) > 0
+
+            # 只要尝试过联网，就必须记录到 used_tools
+            used_tools.append("web_search")
             tool_trace.append({
                 "tool": "web_search",
                 "providers_tried": search_execution.attempted_providers,
+                "provider_results": [
+                    {"provider": pr.provider, "status": pr.status, "count": pr.result_count, "error": pr.error}
+                    for pr in search_execution.provider_results
+                ],
                 "successful_provider": search_execution.successful_provider,
                 "status": search_execution.status,
                 "result_count": len(search_results),
@@ -208,18 +222,16 @@ class RAGEngine:
         # 4. 证据融合与决策
         search_documents = [r.snippet or r.title for r in search_results]
         all_documents = retrieved.documents + search_documents
-        decision = self.evidence_gate.assess(structured_text, all_documents, question)
+        decision = self.evidence_gate.assess(
+            structured_text, all_documents, question,
+            search_attempted=search_attempted, search_success=search_success,
+        )
 
-        # 5. 构建 used_tools
-        used_tools = []
+        # 5. 构建 used_tools（web_search 在步骤 3 中已添加）
         if retrieved.documents:
             used_tools.append("rag")
         if structured_text:
             used_tools.append("sql")
-        if search_results:
-            providers = set(r.provider for r in search_results)
-            for p in providers:
-                used_tools.append(p)
 
         return {
             "classification": classification,

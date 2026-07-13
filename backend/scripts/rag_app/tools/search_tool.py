@@ -57,6 +57,15 @@ class SearchResult:
 
 
 @dataclass
+class ProviderResult:
+    provider: str
+    status: str = "pending"  # success / empty / failed / skipped
+    result_count: int = 0
+    error: str = ""
+    elapsed_ms: int = 0
+
+
+@dataclass
 class SearchExecution:
     attempted: bool = False
     status: str = "not_requested"  # not_requested / skipped / success / empty / degraded / failed
@@ -64,6 +73,7 @@ class SearchExecution:
     attempted_providers: list[str] = field(default_factory=list)
     successful_provider: str = ""
     results: list[SearchResult] = field(default_factory=list)
+    provider_results: list[ProviderResult] = field(default_factory=list)
     error_code: str = ""
     elapsed_ms: int = 0
 
@@ -139,17 +149,27 @@ class EspnScoreboardProvider(SearchProvider):
         return results
 
     def _fetch_scoreboard(self) -> dict | None:
+        """合并 NBA 常规赛/季后赛 + 夏季联赛数据"""
         urls = [
             "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
             "https://site.api.espn.com/apis/site/v2/sports/basketball/nba-summer/scoreboard",
         ]
+        all_events = []
+        seen_ids = set()
         for url in urls:
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                    return json.loads(resp.read().decode("utf-8"))
+                    data = json.loads(resp.read().decode("utf-8"))
+                    for event in data.get("events", []):
+                        eid = event.get("id", "")
+                        if eid and eid not in seen_ids:
+                            seen_ids.add(eid)
+                            all_events.append(event)
             except Exception:
                 continue
+        if all_events:
+            return {"events": all_events}
         return None
 
 
@@ -448,18 +468,26 @@ class SearchService:
 
         # 顺序执行，合并所有 Provider 结果
         all_results: list[SearchResult] = []
+        has_failure = False
         for provider in providers_to_try:
             execution.attempted_providers.append(provider.name)
+            provider_start = int(_time.time() * 1000)
+            pr = ProviderResult(provider=provider.name)
             try:
                 results = provider.search(query, limit, context)
-                if results:
-                    filtered = self._filter_results(results, query)
-                    all_results.extend(filtered)
-                    if not execution.successful_provider:
-                        execution.successful_provider = provider.name
+                filtered = self._filter_results(results, query) if results else []
+                pr.result_count = len(filtered)
+                pr.status = "success" if filtered else "empty"
+                pr.elapsed_ms = int(_time.time() * 1000) - provider_start
+                all_results.extend(filtered)
+                if filtered and not execution.successful_provider:
+                    execution.successful_provider = provider.name
             except Exception as e:
-                execution.error_code = f"{provider.name}:{type(e).__name__}"
-                continue
+                pr.status = "failed"
+                pr.error = f"{type(e).__name__}: {str(e)[:100]}"
+                pr.elapsed_ms = int(_time.time() * 1000) - provider_start
+                has_failure = True
+            execution.provider_results.append(pr)
 
         # 去重并限制数量
         final = self._filter_results(all_results, query)[:limit]
@@ -467,6 +495,8 @@ class SearchService:
             execution.status = "success"
             execution.results = final
             self._cache[cache_key] = (_time.time(), final)
+        elif has_failure:
+            execution.status = "failed"
         else:
             execution.status = "empty"
         execution.elapsed_ms = int(_time.time() * 1000) - start_ms
@@ -476,6 +506,15 @@ class SearchService:
         filtered = []
         seen_urls = set()
         seen_titles = set()
+        query_lower = query.lower()
+        # 查询关键词用于相关性过滤
+        query_keywords = set()
+        for word in re.split(r'\s+', query_lower):
+            if len(word) >= 2:
+                query_keywords.add(word)
+        # NBA 相关关键词（不参与过滤，因为所有结果都应与 NBA 相关）
+        nba_generic = {"nba", "basketball", "篮球", "比赛", "news", "latest", "最新"}
+
         for r in results:
             if not r.title or not r.url:
                 continue
@@ -486,6 +525,15 @@ class SearchService:
             title_key = r.title.strip().lower()
             if title_key in seen_titles:
                 continue
+
+            # 相关性检查：标题或摘要必须包含查询中的至少一个关键词
+            text = (r.title + " " + r.snippet).lower()
+            specific_keywords = query_keywords - nba_generic
+            if specific_keywords:
+                has_keyword = any(kw in text for kw in specific_keywords)
+                if not has_keyword:
+                    continue  # 跳过不相关结果
+
             seen_urls.add(r.url)
             seen_titles.add(title_key)
             filtered.append(r)
