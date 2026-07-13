@@ -507,13 +507,15 @@ class SearchService:
         seen_urls = set()
         seen_titles = set()
         query_lower = query.lower()
-        # 查询关键词用于相关性过滤
         query_keywords = set()
         for word in re.split(r'\s+', query_lower):
             if len(word) >= 2:
                 query_keywords.add(word)
-        # NBA 相关关键词（不参与过滤，因为所有结果都应与 NBA 相关）
-        nba_generic = {"nba", "basketball", "篮球", "比赛", "news", "latest", "最新"}
+        nba_generic = {"nba", "basketball", "篮球", "比赛", "news", "latest", "最新", "scores", "score", "today", "今日", "今天"}
+        specific_keywords = query_keywords - nba_generic
+
+        # 结构化比赛 Provider：只做去重，不做关键词过滤
+        scoreboard_providers = {"espn_scoreboard"}
 
         for r in results:
             if not r.title or not r.url:
@@ -526,13 +528,14 @@ class SearchService:
             if title_key in seen_titles:
                 continue
 
-            # 相关性检查：标题或摘要必须包含查询中的至少一个关键词
-            text = (r.title + " " + r.snippet).lower()
-            specific_keywords = query_keywords - nba_generic
-            if specific_keywords:
-                has_keyword = any(kw in text for kw in specific_keywords)
-                if not has_keyword:
-                    continue  # 跳过不相关结果
+            # Scoreboard 结构化数据：跳过关键词过滤（比赛标题是 "Team A vs Team B"，不含查询关键词）
+            if r.provider not in scoreboard_providers:
+                # 新闻 Provider：检查相关性
+                if specific_keywords:
+                    text = (r.title + " " + r.snippet).lower()
+                    has_keyword = any(kw in text for kw in specific_keywords)
+                    if not has_keyword:
+                        continue
 
             seen_urls.add(r.url)
             seen_titles.add(title_key)
