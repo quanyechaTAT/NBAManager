@@ -439,6 +439,16 @@ class SearchService:
                 if provider.is_available():
                     self.providers.append(provider)
 
+    # 比赛类查询关键词
+    GAME_KEYWORDS = re.compile(
+        r"比赛|比分|赛程|赛果|今日比赛|夏联|夏季联赛|summer|league|scores?|game[s]?|"
+        r"scoreboard|战况|战报|结果|几比几|赢了|输了|大比分|小比分|加时"
+    )
+
+    def _is_game_query(self, query: str) -> bool:
+        """判断查询是否与比赛/比分/赛程相关"""
+        return bool(self.GAME_KEYWORDS.search(query.lower()))
+
     def search(self, query: str, limit: int = 5, context: dict | None = None,
                provider_filter: list[str] | None = None) -> tuple[list[SearchResult], SearchExecution]:
         execution = SearchExecution(attempted=True)
@@ -456,10 +466,16 @@ class SearchService:
                 execution.elapsed_ms = int(_time.time() * 1000) - start_ms
                 return cached_results, execution
 
-        # 选择 Provider
-        providers_to_try = self.providers
-        if provider_filter:
-            providers_to_try = [p for p in self.providers if p.name in provider_filter]
+        # 按查询意图选择 Provider
+        is_game = self._is_game_query(query)
+        providers_to_try = []
+        for p in self.providers:
+            if provider_filter and p.name not in provider_filter:
+                continue
+            # Scoreboard 只参与比赛类查询
+            if p.name == "espn_scoreboard" and not is_game:
+                continue
+            providers_to_try.append(p)
 
         if not providers_to_try:
             execution.status = "skipped"

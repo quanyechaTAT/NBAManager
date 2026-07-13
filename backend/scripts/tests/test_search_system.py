@@ -132,18 +132,18 @@ class TestSearchService:
     def test_per_provider_tracking(self):
         """每个 Provider 应有独立的状态追踪"""
         service = SearchService(self._make_settings())
-        mock_p1 = MagicMock(spec=EspnScoreboardProvider)
-        mock_p1.name = "espn_scoreboard"
-        mock_p1.is_available.return_value = True
-        mock_p1.search.return_value = [SearchResult("t1", "http://u1", "s1", "espn_scoreboard")]
+        mock_news = MagicMock(spec=EspnNewsProvider)
+        mock_news.name = "espn_news"
+        mock_news.is_available.return_value = True
+        mock_news.search.return_value = [SearchResult("NBA trade news", "http://u1", "NBA trade details", "espn_news")]
 
-        mock_p2 = MagicMock(spec=EspnNewsProvider)
-        mock_p2.name = "espn_news"
-        mock_p2.is_available.return_value = True
-        mock_p2.search.side_effect = Exception("timeout")
+        mock_google = MagicMock(spec=GoogleNewsRssProvider)
+        mock_google.name = "google_news_rss"
+        mock_google.is_available.return_value = True
+        mock_google.search.side_effect = Exception("timeout")
 
-        service.providers = [mock_p1, mock_p2]
-        results, execution = service.search("test", 5)
+        service.providers = [mock_news, mock_google]
+        results, execution = service.search("NBA trade latest", 5)
         assert len(execution.provider_results) == 2
         assert execution.provider_results[0].status == "success"
         assert execution.provider_results[1].status == "failed"
@@ -265,6 +265,124 @@ class TestSearchQueryRewriter:
         r = SearchQueryRewriter()
         candidates = r.rewrite("马刺最近动态")
         assert any("Spurs" in c for c in candidates)
+
+
+# ══════════════════════════════════════════════════════════════
+# Provider 路由测试
+# ══════════════════════════════════════════════════════════════
+
+class TestProviderRouting:
+    def _make_settings(self):
+        s = MagicMock()
+        s.search_timeout_seconds = 5
+        s.search_top_k = 5
+        s.search_cache_ttl_seconds = 600
+        s.search_providers = "espn_scoreboard,espn_news,google_news_rss"
+        s.baidu_min_interval_seconds = 15
+        s.baidu_circuit_breaker_seconds = 600
+        s.searxng_base_url = ""
+        return s
+
+    def _mock_scoreboard(self):
+        p = MagicMock(spec=EspnScoreboardProvider)
+        p.name = "espn_scoreboard"
+        p.is_available.return_value = True
+        p.search.return_value = [SearchResult("Knicks vs Spurs", "http://espn.com/1", "score", "espn_scoreboard")]
+        return p
+
+    def _mock_news(self):
+        p = MagicMock(spec=EspnNewsProvider)
+        p.name = "espn_news"
+        p.is_available.return_value = True
+        p.search.return_value = [SearchResult("Kawhi trade news", "http://espn.com/2", "trade details", "espn_news")]
+        return p
+
+    def _mock_google(self):
+        p = MagicMock(spec=GoogleNewsRssProvider)
+        p.name = "google_news_rss"
+        p.is_available.return_value = True
+        p.search.return_value = [SearchResult("NBA trade latest", "http://news.google.com/1", "trade news", "google_news_rss")]
+        return p
+
+    def test_trade_query_excludes_scoreboard(self):
+        """交易查询不应调用 espn_scoreboard"""
+        service = SearchService(self._make_settings())
+        sb = self._mock_scoreboard()
+        news = self._mock_news()
+        google = self._mock_google()
+        service.providers = [sb, news, google]
+
+        results, execution = service.search("NBA trade latest 2026-07-13", 5)
+
+        # Scoreboard 不应被调用
+        sb.search.assert_not_called()
+        # News 和 Google 应被调用
+        news.search.assert_called_once()
+        google.search.assert_called_once()
+        # 结果不应包含 scoreboard
+        assert all(r.provider != "espn_scoreboard" for r in results)
+
+    def test_injury_query_excludes_scoreboard(self):
+        """伤病查询不应调用 espn_scoreboard"""
+        service = SearchService(self._make_settings())
+        sb = self._mock_scoreboard()
+        news = self._mock_news()
+        service.providers = [sb, news]
+
+        results, execution = service.search("最近有谁受伤了", 5)
+        sb.search.assert_not_called()
+
+    def test_free_agent_query_excludes_scoreboard(self):
+        """自由市场查询不应调用 espn_scoreboard"""
+        service = SearchService(self._make_settings())
+        sb = self._mock_scoreboard()
+        news = self._mock_news()
+        service.providers = [sb, news]
+
+        results, execution = service.search("NBA自由市场最新消息", 5)
+        sb.search.assert_not_called()
+
+    def test_game_query_includes_scoreboard(self):
+        """比赛查询应调用 espn_scoreboard"""
+        service = SearchService(self._make_settings())
+        sb = self._mock_scoreboard()
+        news = self._mock_news()
+        service.providers = [sb, news]
+
+        results, execution = service.search("今天有什么NBA比赛", 5)
+        sb.search.assert_called_once()
+
+    def test_summer_league_query_includes_scoreboard(self):
+        """夏联查询应调用 espn_scoreboard"""
+        service = SearchService(self._make_settings())
+        sb = self._mock_scoreboard()
+        news = self._mock_news()
+        service.providers = [sb, news]
+
+        results, execution = service.search("NBA Summer League scores", 5)
+        sb.search.assert_called_once()
+
+    def test_player_query_excludes_scoreboard(self):
+        """球员动态查询不应调用 espn_scoreboard"""
+        service = SearchService(self._make_settings())
+        sb = self._mock_scoreboard()
+        news = self._mock_news()
+        service.providers = [sb, news]
+
+        results, execution = service.search("文班亚马最近表现", 5)
+        sb.search.assert_not_called()
+
+    def test_kawhi_trade_excludes_scoreboard(self):
+        """Kawhi Leonard trade 查询不应调用 espn_scoreboard"""
+        service = SearchService(self._make_settings())
+        sb = self._mock_scoreboard()
+        news = self._mock_news()
+        google = self._mock_google()
+        service.providers = [sb, news, google]
+
+        results, execution = service.search("Kawhi Leonard trade latest NBA", 5)
+        sb.search.assert_not_called()
+        assert all(r.provider != "espn_scoreboard" for r in results)
 
 
 if __name__ == "__main__":
