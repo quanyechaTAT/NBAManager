@@ -22,17 +22,29 @@ def create_router(engine_provider: Callable[[], RAGEngine]) -> APIRouter:
         return {"status": "ok", "model_loaded": False}
 
     @router.get("/query", response_model=QueryResponse)
-    def query_get(question: str, top_k: int = Query(5, ge=1, le=20), session_id: str | None = None):
-        return _to_response(engine().ask(question, top_k, session_id))
+    def query_get(
+        question: str,
+        top_k: int = Query(5, ge=1, le=20),
+        session_id: str | None = None,
+        force_web_search: bool = False,
+    ):
+        return _to_response(engine().ask(question, top_k, session_id, force_web_search))
 
     @router.post("/query", response_model=QueryResponse)
     def query_post(request: QueryRequest):
-        return _to_response(engine().ask(request.question, request.top_k, request.session_id))
+        return _to_response(engine().ask(
+            request.question, request.top_k, request.session_id, request.force_web_search
+        ))
 
     @router.get("/stream")
-    def stream_get(question: str, top_k: int = Query(5, ge=1, le=20), session_id: str | None = None):
+    def stream_get(
+        question: str,
+        top_k: int = Query(5, ge=1, le=20),
+        session_id: str | None = None,
+        force_web_search: bool = False,
+    ):
         return StreamingResponse(
-            (encode_sse(event) for event in engine().stream(question, top_k, session_id)),
+            (encode_sse(event) for event in engine().stream(question, top_k, session_id, force_web_search)),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
         )
@@ -40,7 +52,9 @@ def create_router(engine_provider: Callable[[], RAGEngine]) -> APIRouter:
     @router.post("/stream")
     def stream_post(request: QueryRequest):
         return StreamingResponse(
-            (encode_sse(event) for event in engine().stream(request.question, request.top_k, request.session_id)),
+            (encode_sse(event) for event in engine().stream(
+                request.question, request.top_k, request.session_id, request.force_web_search
+            )),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
         )
@@ -73,5 +87,8 @@ def _to_response(answer) -> QueryResponse:
         structured_data=answer.structured_data,
         search_results=answer.search_results or [],
         used_tools=answer.used_tools or [],
+        tool_trace=answer.tool_trace or [],
+        search_execution=answer.search_execution or {},
+        retrieval_quality=answer.retrieval_quality or {},
         error=answer.error,
     )

@@ -138,9 +138,15 @@ class QueryClassifier:
         return found
 
     def _needs_web_search(self, query: str) -> bool:
+        # 明确要求联网
+        if re.search(r"联网|搜索一下|查一下|网上|帮我查|搜一下", query):
+            return True
+        # 时效性关键词
         return bool(
             re.search(
-                r"最新|今天|今日|昨天|明天|实时|目前|现在|刚刚|近期|最近|新闻|资讯|交易|伤病|复出|签约|裁掉|官宣|报道称|报道",
+                r"最新|今天|今日|昨天|明天|实时|目前|现在|刚刚|近期|最近|"
+                r"新闻|资讯|交易|伤病|复出|签约|裁掉|官宣|报道称|报道|"
+                r"夏季联赛|自由市场|自由球员|选秀结果",
                 query,
             )
         )

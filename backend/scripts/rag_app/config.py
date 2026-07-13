@@ -77,6 +77,21 @@ class RAGSettings:
     host: str = "127.0.0.1"
     port: int = 8899
 
+    # ── 联网搜索配置 ──
+    search_enabled: bool = True
+    search_timeout_seconds: int = 8
+    search_top_k: int = 5
+    search_cache_ttl_seconds: int = 600
+    search_providers: str = "espn_scoreboard,espn_news,google_news_rss,baidusearch"
+    baidu_min_interval_seconds: int = 15
+    baidu_circuit_breaker_seconds: int = 600
+    searxng_base_url: str = ""
+    allow_general_web_search: bool = False
+    max_vector_distance: float = 0.68
+    min_rerank_score: float = 0.0
+    force_web_search: bool = False
+
+    # 向后兼容
     web_search_enabled: bool = True
     web_search_timeout_seconds: int = 8
     web_search_top_k: int = 5
@@ -113,6 +128,18 @@ class RAGSettings:
             web_search_enabled=_bool_env("RAG_WEB_SEARCH_ENABLED", True),
             web_search_timeout_seconds=int(os.environ.get("RAG_WEB_SEARCH_TIMEOUT_SECONDS", "8")),
             web_search_top_k=int(os.environ.get("RAG_WEB_SEARCH_TOP_K", "5")),
+            search_enabled=_bool_env("RAG_SEARCH_ENABLED", True),
+            search_timeout_seconds=int(os.environ.get("RAG_SEARCH_TIMEOUT_SECONDS", "8")),
+            search_top_k=int(os.environ.get("RAG_SEARCH_TOP_K", "5")),
+            search_cache_ttl_seconds=int(os.environ.get("RAG_SEARCH_CACHE_TTL_SECONDS", "600")),
+            search_providers=os.environ.get("RAG_SEARCH_PROVIDERS", "espn_scoreboard,espn_news,google_news_rss,baidusearch"),
+            baidu_min_interval_seconds=int(os.environ.get("RAG_BAIDU_MIN_INTERVAL_SECONDS", "15")),
+            baidu_circuit_breaker_seconds=int(os.environ.get("RAG_BAIDU_CIRCUIT_BREAKER_SECONDS", "600")),
+            searxng_base_url=os.environ.get("RAG_SEARXNG_BASE_URL", ""),
+            allow_general_web_search=_bool_env("RAG_ALLOW_GENERAL_WEB_SEARCH", False),
+            max_vector_distance=float(os.environ.get("RAG_MAX_VECTOR_DISTANCE", "0.68")),
+            min_rerank_score=float(os.environ.get("RAG_MIN_RERANK_SCORE", "0")),
+            force_web_search=_bool_env("RAG_FORCE_WEB_SEARCH", False),
         )
         settings.resolve_devices()
         return settings

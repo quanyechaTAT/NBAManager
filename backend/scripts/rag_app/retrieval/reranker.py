@@ -18,7 +18,6 @@ class CrossEncoderReranker:
             return self._model
         try:
             from sentence_transformers import CrossEncoder
-
             self._model = CrossEncoder(self.settings.reranker_model, device=self.settings.reranker_device)
             return self._model
         except Exception as exc:
@@ -26,10 +25,19 @@ class CrossEncoderReranker:
             print(f"Reranker disabled: {exc}", file=sys.stderr)
             return None
 
-    def rerank(self, query: str, documents: list[str], metadatas: list[dict], distances: list[float], top_k: int):
+    def rerank(self, query: str, documents: list[str], metadatas: list[dict],
+               distances: list[float], top_k: int):
+        """向后兼容：不返回 rerank_scores"""
+        docs, metas, dists, _ = self.rerank_with_scores(query, documents, metadatas, distances, top_k)
+        return docs, metas, dists
+
+    def rerank_with_scores(self, query: str, documents: list[str], metadatas: list[dict],
+                           distances: list[float], top_k: int):
+        """返回 (docs, metas, distances, rerank_scores)"""
         model = self._load()
         if not model or not documents:
-            return documents[:top_k], metadatas[:top_k], distances[:top_k]
+            scores = [0.0] * len(documents)
+            return documents[:top_k], metadatas[:top_k], distances[:top_k], scores[:top_k]
 
         scores = model.predict([[query, doc] for doc in documents])
         rows = sorted(
@@ -38,4 +46,9 @@ class CrossEncoderReranker:
             reverse=True,
         )
         rows = rows[:top_k]
-        return [r[0] for r in rows], [r[1] for r in rows], [float(r[2]) for r in rows]
+        return (
+            [r[0] for r in rows],
+            [r[1] for r in rows],
+            [float(r[2]) for r in rows],
+            [float(r[3]) for r in rows],
+        )

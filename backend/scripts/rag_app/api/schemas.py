@@ -7,6 +7,7 @@ class QueryRequest(BaseModel):
     question: str
     top_k: int = Field(5, ge=1, le=20)
     session_id: str | None = None
+    force_web_search: bool = False
 
 
 class QueryResponse(BaseModel):
@@ -20,4 +21,7 @@ class QueryResponse(BaseModel):
     structured_data: bool = False
     search_results: list[dict] = []
     used_tools: list[str] = []
+    tool_trace: list[dict] = []
+    search_execution: dict = {}
+    retrieval_quality: dict = {}
     error: str = ""
