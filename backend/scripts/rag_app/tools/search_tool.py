@@ -544,9 +544,10 @@ class SearchService:
             if title_key in seen_titles:
                 continue
 
-            # Scoreboard 结构化数据：跳过关键词过滤（比赛标题是 "Team A vs Team B"，不含查询关键词）
-            if r.provider not in scoreboard_providers:
-                # 新闻 Provider：检查相关性
+            # 官方 Provider 跳过关键词过滤：ESPN 是 NBA 官方来源，结果总是相关
+            trusted_providers = {"espn_scoreboard", "espn_news"}
+            if r.provider not in trusted_providers:
+                # 第三方 Provider：检查关键词相关性
                 if specific_keywords:
                     text = (r.title + " " + r.snippet).lower()
                     has_keyword = any(kw in text for kw in specific_keywords)
