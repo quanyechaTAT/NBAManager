@@ -1,13 +1,5 @@
 <template>
-  <div class="page-wrapper animated-bg">
-    <div class="bg-particles">
-      <div class="particle"></div>
-      <div class="particle"></div>
-      <div class="particle"></div>
-      <div class="particle"></div>
-    </div>
-    <div class="bg-grid"></div>
-
+  <div class="page-wrapper">
     <div class="page-inner">
       <el-card shadow="never" class="card slide-up-enter">
         <div class="section-head">
@@ -331,10 +323,11 @@ onMounted(() => load())
 
 <style scoped>
 .page-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
   min-height: calc(100vh - 108px);
   position: relative;
-  border-radius: var(--radius-lg);
-  padding: 0;
   animation: pageFadeIn 0.4s var(--ease-smooth) forwards;
   opacity: 0;
   transform: translateY(12px);
@@ -375,7 +368,7 @@ onMounted(() => load())
   left: 0;
   width: 40px;
   height: 2px;
-  background: linear-gradient(90deg, var(--purple), transparent);
+  background: var(--accent);
   border-radius: 1px;
 }
 .section-head h2 {
@@ -392,11 +385,10 @@ onMounted(() => load())
   font-size: 13px;
 }
 .card {
-  max-width: 1300px;
   background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
   border-radius: var(--radius-xl) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24) !important;
+  box-shadow: var(--shadow-md) !important;
   transition: all var(--duration-normal) var(--ease-smooth);
   position: relative;
   z-index: 1;
@@ -409,7 +401,7 @@ onMounted(() => load())
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--purple), var(--accent), var(--cyan));
+  background: var(--accent);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 
@@ -432,9 +424,9 @@ onMounted(() => load())
   transition: all var(--duration-fast) var(--ease-smooth);
 }
 .mini-stat:hover {
-  border-color: var(--purple);
+  border-color: var(--accent);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px var(--purple-glow);
+  box-shadow: 0 4px 12px var(--accent-glow);
 }
 .mini-stat-value {
   font-family: var(--font-heading);
@@ -474,7 +466,7 @@ onMounted(() => load())
   letter-spacing: 1px;
 }
 .round-1 {
-  background: linear-gradient(135deg, var(--purple), var(--purple-light));
+  background: var(--accent);
   color: #fff;
 }
 .round-2 {
@@ -521,7 +513,7 @@ onMounted(() => load())
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
-  background: linear-gradient(135deg, var(--purple) 0%, #5A4BD1 100%);
+  background: var(--bg-hover);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -532,7 +524,7 @@ onMounted(() => load())
   object-fit: cover;
 }
 .player-avatar-placeholder {
-  color: #fff;
+  color: var(--text-muted);
   font-size: 13px;
   font-weight: 700;
   font-family: var(--font-heading);
