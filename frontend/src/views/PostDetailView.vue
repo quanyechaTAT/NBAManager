@@ -23,7 +23,7 @@
           </div>
           <!-- 作者信息 -->
           <div class="post-author-bar" v-if="post.username">
-            <div class="author-avatar">{{ post.username?.charAt(0)?.toUpperCase() }}</div>
+            <div class="author-avatar"><img v-if="post.avatarUrl" :src="post.avatarUrl" alt="" @error="(e: Event) => { (e.target as HTMLImageElement).style.display='none'; (e.target as HTMLImageElement).parentElement!.textContent = post.username?.charAt(0)?.toUpperCase() ?? '' }" /><template v-else>{{ post.username?.charAt(0)?.toUpperCase() }}</template></div>
             <div class="author-info">
               <span class="author-name">{{ post.username }}</span>
               <span class="author-time">发布于 {{ formatTime(post.createTime) }}</span>
@@ -231,11 +231,13 @@ import ShareButton from '@/components/ShareButton.vue'
 import { toggleFavorite, fetchFavoritedPostIds } from '@/api/favorite'
 import { recordBrowse } from '@/api/browseHistory'
 import { useAuthStore } from '@/stores/auth'
+import { useIdentityStore } from '@/stores/identity'
 import type { Post, Comment, PostRequest } from '@/api/community'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const identityStore = useIdentityStore()
 
 const loading = ref(false)
 const post = ref<Post | null>(null)
@@ -474,6 +476,24 @@ watch(postId, () => {
   }
 }, { immediate: false })
 
+// 实时身份同步：更新帖子作者和评论用户名/头像
+watch(() => identityStore.revision, () => {
+  if (post.value) {
+    const id = identityStore.getIdentity(post.value.userId)
+    if (id) post.value = { ...post.value, username: id.username, avatarUrl: id.avatarUrl }
+  }
+  comments.value = comments.value.map(c => applyIdentityToComment(c))
+})
+
+function applyIdentityToComment(c: Comment): Comment {
+  const id = identityStore.getIdentity(c.userId)
+  const updated = id ? { ...c, username: id.username, avatarUrl: id.avatarUrl } : c
+  if (c.replies?.length) {
+    updated.replies = c.replies.map(r => applyIdentityToComment(r))
+  }
+  return updated
+}
+
 onMounted(() => { loadPost(); loadComments(); checkFavoriteStatus() })
 </script>
 
@@ -542,6 +562,12 @@ onMounted(() => { loadPost(); loadComments(); checkFavoriteStatus() })
   font-size: 14px;
   font-weight: 700;
   flex-shrink: 0;
+  overflow: hidden;
+}
+.author-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .author-info { display: flex; flex-direction: column; gap: 2px; }
 .author-name { font-size: 14px; font-weight: 600; color: var(--text-primary); }
