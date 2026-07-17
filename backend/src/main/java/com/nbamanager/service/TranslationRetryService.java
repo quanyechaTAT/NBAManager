@@ -1,5 +1,6 @@
 package com.nbamanager.service;
 
+import com.nbamanager.config.PythonTimeoutProperties;
 import com.nbamanager.domain.Player;
 import com.nbamanager.repository.PlayerRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class TranslationRetryService {
 
     private final PlayerRepository playerRepository;
+    private final PythonScriptRunner pythonScriptRunner;
+    private final PythonTimeoutProperties pythonTimeoutProperties;
 
     // 翻译缓存，避免重复调用API
     private final Map<String, String> translationCache = new ConcurrentHashMap<>();
@@ -39,9 +42,13 @@ public class TranslationRetryService {
     /**
      * 每小时执行一次翻译重试（在整点后10分钟执行，避免与其他任务冲突）
      */
-    @Scheduled(cron = "0 10 * * * *")
     @Transactional
     public void retryTranslations() {
+        retryTranslations(null);
+    }
+
+    @Transactional
+    public void retryTranslations(Long jobId) {
         // 使用compareAndSet保证原子性，防止重复执行
         if (!translating.compareAndSet(false, true)) {
             log.info("翻译任务正在进行中，跳过本次执行");
@@ -69,7 +76,8 @@ public class TranslationRetryService {
                     .map(Player::getNameEn)
                     .toList();
 
-            Map<String, String> translations = callTranslationScript(englishNames);
+            Map<String, String> translations = callTranslationScript(englishNames, jobId);
+            if (translations == null) return;
 
             // 更新球员记录
             for (Player player : untranslatedPlayers) {
@@ -99,16 +107,10 @@ public class TranslationRetryService {
     /**
      * 调用Python翻译脚本
      */
-    private Map<String, String> callTranslationScript(List<String> englishNames) {
+    private Map<String, String> callTranslationScript(List<String> englishNames, Long jobId) {
         Map<String, String> result = new ConcurrentHashMap<>();
 
         try {
-            String scriptPath = findTranslateScript();
-            if (scriptPath == null) {
-                log.warn("翻译脚本未找到，跳过翻译");
-                return result;
-            }
-
             // 将英文名写入临时文件
             File tempFile = File.createTempFile("translate_input_", ".json");
             tempFile.deleteOnExit();
@@ -122,52 +124,21 @@ public class TranslationRetryService {
 
             java.nio.file.Files.write(tempFile.toPath(), sb.toString().getBytes(StandardCharsets.UTF_8));
 
-            // 调用翻译脚本
-            ProcessBuilder pb = new ProcessBuilder("python", scriptPath, tempFile.getAbsolutePath());
-            pb.redirectErrorStream(false);
-            pb.directory(new File(scriptPath).getParentFile());
-            pb.environment().put("PYTHONIOENCODING", "utf-8");
-
-            // 传递MIMO API配置
-            String mimoApiKey = com.nbamanager.config.EnvFileReader.get("MIMO_API_KEY");
-            String mimoBaseUrl = com.nbamanager.config.EnvFileReader.get("MIMO_BASE_URL");
-            if (mimoApiKey != null && !mimoApiKey.isEmpty()) {
-                pb.environment().put("MIMO_API_KEY", mimoApiKey);
-            }
-            if (mimoBaseUrl != null && !mimoBaseUrl.isEmpty()) {
-                pb.environment().put("MIMO_BASE_URL", mimoBaseUrl);
-            }
-
-            Process process = pb.start();
-
-            // 读取输出
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-            }
-
-            // 读取错误输出
-            StringBuilder errorOutput = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    errorOutput.append(line).append("\n");
-                }
-            }
-
-            int exitCode = process.waitFor();
-            if (exitCode != 0) {
-                log.warn("翻译脚本执行失败: {}", errorOutput.toString().trim());
+            PythonScriptRunner.PythonResult pythonResult = jobId == null
+                    ? pythonScriptRunner.run(
+                            "translate_names.py", new String[]{tempFile.getAbsolutePath()},
+                            pythonTimeoutProperties.getTranslationSeconds())
+                    : pythonScriptRunner.runForJob(
+                            "translate_names.py", new String[]{tempFile.getAbsolutePath()},
+                            pythonTimeoutProperties.getTranslationSeconds(), jobId);
+            if (!pythonResult.success()) {
+                log.warn("翻译脚本执行失败: {}", pythonResult.stderr().trim());
+                if (pythonResult.exitCode() == -2) return null;
                 return result;
             }
 
             // 解析JSON输出
-            String jsonStr = output.toString().trim();
+            String jsonStr = pythonResult.stdout().trim();
             if (!jsonStr.isEmpty()) {
                 org.json.JSONArray translations = new org.json.JSONArray(jsonStr);
                 for (int i = 0; i < translations.length() && i < englishNames.size(); i++) {
@@ -187,27 +158,6 @@ public class TranslationRetryService {
         }
 
         return result;
-    }
-
-    /**
-     * 查找翻译脚本路径
-     */
-    private String findTranslateScript() {
-        String[] possiblePaths = {
-                "backend/scripts/translate_names.py",
-                "scripts/translate_names.py",
-                "../scripts/translate_names.py",
-                "translate_names.py"
-        };
-
-        File baseDir = new File(System.getProperty("user.dir"));
-        for (String path : possiblePaths) {
-            File file = new File(baseDir, path);
-            if (file.exists()) {
-                return file.getAbsolutePath();
-            }
-        }
-        return null;
     }
 
     /**

@@ -4,7 +4,7 @@ import com.nbamanager.domain.PlayerSeasonStats;
 import com.nbamanager.domain.TeamSeasonStats;
 import com.nbamanager.repository.PlayerSeasonStatsRepository;
 import com.nbamanager.repository.TeamSeasonStatsRepository;
-import com.nbamanager.util.PythonScriptRunner;
+import com.nbamanager.service.PythonScriptRunner;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -85,9 +85,61 @@ public class HistoricalDataSyncService {
     }
 
     /**
-     * 每日凌晨4点同步当前赛季常规赛数据
+     * 同步版本：供 Worker 调用，等待完成后返回
      */
-    @Scheduled(cron = "0 0 4 * * ?")
+    public void syncSeasonDataSync(String season) {
+        syncSeasonDataSync(season, null);
+    }
+
+    public void syncSeasonDataSync(String season, Long jobId) {
+        if (!syncing.compareAndSet(false, true)) {
+            throw new IllegalStateException("历史数据同步正在进行中，跳过: " + season);
+        }
+        log.info("开始同步 {} 赛季常规赛数据（同步模式）", season);
+        seasonService.updateSyncStatus(season, "SYNCING", 0, 0);
+        try {
+            JSONObject playerData = executeForJob("historical_players", season, 180, jobId);
+            int playerCount = 0;
+            if (playerData != null && playerData.has("players")) {
+                playerCount = savePlayerStats(playerData.getJSONArray("players"), season);
+            }
+            JSONObject teamData = executeForJob("historical_teams", season, 180, jobId);
+            int teamCount = 0;
+            if (teamData != null && teamData.has("teams")) {
+                teamCount = saveTeamStats(teamData.getJSONArray("teams"), season);
+            }
+            if (playerCount == 0 && teamCount == 0) {
+                seasonService.updateSyncStatus(season, "FAILED", 0, 0);
+                throw new RuntimeException("历史赛季数据为空: " + season);
+            }
+            if (playerCount == 0 || teamCount == 0) {
+                seasonService.updateSyncStatus(season, "PARTIAL", playerCount, teamCount);
+                throw new PartialSyncException(String.format("历史赛季数据不完整: %s, 球员%d条, 球队%d条", season, playerCount, teamCount));
+            }
+            seasonService.updateSyncStatus(season, "COMPLETED", playerCount, teamCount);
+            log.info("同步完成: {} 赛季, 球员{}条, 球队{}条", season, playerCount, teamCount);
+        } catch (PartialSyncException e) {
+            // 部分失败：状态已在上方写入 PARTIAL，不再覆盖
+            log.warn("同步 {} 赛季数据不完整: {}", season, e.getMessage());
+            throw e;
+        } catch (IllegalStateException e) {
+            // 已有任务在运行：不修改状态
+            throw e;
+        } catch (Exception e) {
+            log.error("同步 {} 赛季数据失败", season, e);
+            seasonService.updateSyncStatus(season, "FAILED", 0, 0);
+            throw e;
+        } finally {
+            syncing.set(false);
+        }
+    }
+
+    private JSONObject executeForJob(String action, String season, int timeoutSeconds, Long jobId) {
+        return jobId == null
+                ? scriptRunner.execute(action, new String[]{season}, timeoutSeconds)
+                : scriptRunner.executeForJob(action, new String[]{season}, timeoutSeconds, jobId);
+    }
+
     public void syncCurrentSeason() {
         // 检查是否需要轮转赛季
         seasonService.checkAndRotateSeasons();

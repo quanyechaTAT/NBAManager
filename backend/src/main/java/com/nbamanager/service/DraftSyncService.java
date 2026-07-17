@@ -1,7 +1,7 @@
 package com.nbamanager.service;
 
 import com.nbamanager.web.dto.DraftPickDto;
-import com.nbamanager.util.PythonScriptRunner;
+import com.nbamanager.service.PythonScriptRunner;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -36,12 +36,19 @@ public class DraftSyncService {
 
     @CacheEvict(value = {"drafts"}, allEntries = true)
     public Map<String, Object> syncDraftYear(int year) {
+        return syncDraftYear(year, null);
+    }
+
+    @CacheEvict(value = {"drafts"}, allEntries = true)
+    public Map<String, Object> syncDraftYear(int year, Long jobId) {
         if (!syncing.compareAndSet(false, true)) {
             return Map.of("status", "syncing", "year", year);
         }
 
         try {
-            JSONObject result = scriptRunner.execute("draft", new String[]{String.valueOf(year)}, 180);
+            JSONObject result = jobId == null
+                    ? scriptRunner.execute("draft", new String[]{String.valueOf(year)}, 180)
+                    : scriptRunner.executeForJob("draft", new String[]{String.valueOf(year)}, 180, jobId);
             if (result == null) {
                 throw new IllegalStateException("Python draft sync returned no result");
             }
@@ -95,17 +102,14 @@ public class DraftSyncService {
         return syncing.get();
     }
 
-    @Scheduled(cron = "0 */30 * 15-30 6 ?")
     public void syncDuringJuneDraftWindow() {
         syncDraftYear(currentDraftYear());
     }
 
-    @Scheduled(cron = "0 */30 * 1-10 7 ?")
     public void syncDuringJulyDraftWindow() {
         syncDraftYear(currentDraftYear());
     }
 
-    @Scheduled(cron = "0 20 4 * * ?")
     public void syncDraftDaily() {
         syncDraftYear(currentDraftYear());
     }

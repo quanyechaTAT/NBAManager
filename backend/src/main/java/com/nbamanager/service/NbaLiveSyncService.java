@@ -1,5 +1,6 @@
 package com.nbamanager.service;
 
+import com.nbamanager.config.PythonTimeoutProperties;
 import com.nbamanager.domain.GameNews;
 import com.nbamanager.domain.MatchRecord;
 import com.nbamanager.repository.GameNewsRepository;
@@ -14,9 +15,7 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -24,7 +23,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import jakarta.annotation.PostConstruct;
 
 /**
@@ -48,6 +46,8 @@ public class NbaLiveSyncService {
     private final WebSocketController webSocketController;
     private final NbaDataService nbaDataService;
     private final GameIdMappingService gameIdMappingService;
+    private final PythonScriptRunner pythonScriptRunner;
+    private final PythonTimeoutProperties pythonTimeoutProperties;
     private final org.springframework.context.ApplicationContext applicationContext;
 
     /**
@@ -65,7 +65,7 @@ public class NbaLiveSyncService {
     /**
      * 每6小时清理一次重复新闻
      */
-    @Scheduled(fixedRate = 21600000) // 6小时
+    @Scheduled(fixedRate = 21600000)
     public void scheduledCleanDuplicates() {
         try {
             cleanDuplicateNews();
@@ -77,7 +77,6 @@ public class NbaLiveSyncService {
     /**
      * 每日凌晨3点执行全量数据同步
      */
-    @Scheduled(cron = "0 0 3 * * ?")
     public void scheduledFullSync() {
         log.info("========== 定时全量同步开始 ==========");
         nbaDataSyncService.syncAll();
@@ -87,7 +86,6 @@ public class NbaLiveSyncService {
     /**
      * 季后赛期间每2小时同步季后赛数据（4-6月）
      */
-    @Scheduled(cron = "0 0 */2 4-6 * ?")
     public void syncPlayoffData() {
         try {
             // 动态计算当前赛季
@@ -124,20 +122,74 @@ public class NbaLiveSyncService {
     /**
      * 每小时同步NBA新闻
      */
-    @Scheduled(fixedRate = 3600000) // 1小时
     @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
     public void syncNbaNews() {
+        syncNbaNewsWithResult();
+    }
+
+    /**
+     * 解析新闻 JSON 结构为 SyncExecResult（包级可见，供测试调用）
+     */
+    static SyncExecResult parseNewsResult(JSONObject data) {
+        if (data == null || !data.has("news")) {
+            return SyncExecResult.failed("Python返回无数据");
+        }
+
+        if (!data.has("newsSourceStatus")) {
+            return SyncExecResult.failed("Python返回缺少 newsSourceStatus 字段");
+        }
+        String sourceStatus = data.getString("newsSourceStatus");
+        String providerSummary = data.has("newsProviderResults")
+                ? data.getJSONArray("newsProviderResults").toString() : "";
+
+        if ("failed".equals(sourceStatus)) {
+            return SyncExecResult.failed("所有新闻源失败: " + providerSummary);
+        }
+
+        JSONArray newsArray = data.getJSONArray("news");
+
+        if ("ok".equals(sourceStatus) && newsArray.isEmpty()) {
+            return SyncExecResult.failed("状态ok但数据为空，协议错误");
+        }
+        if ("empty".equals(sourceStatus) && !newsArray.isEmpty()) {
+            return SyncExecResult.failed("状态empty但有数据，协议错误");
+        }
+        if (!"ok".equals(sourceStatus) && !"empty".equals(sourceStatus)) {
+            return SyncExecResult.failed("未知状态: " + sourceStatus);
+        }
+
+        if (newsArray.isEmpty()) {
+            return SyncExecResult.noGames();
+        }
+
+        return SyncExecResult.success(newsArray.length(), 0, 0);
+    }
+
+    /**
+     * 同步新闻并返回结构化结果（供 Worker 使用，手动同步传 jobId 注册进程）
+     */
+    @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
+    public SyncExecResult syncNbaNewsWithResult() {
+        return syncNbaNewsWithResult(null);
+    }
+
+    @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
+    public SyncExecResult syncNbaNewsWithResult(Long jobId) {
         try {
-            JSONObject data = fetchNewsData();
-            if (data == null || !data.has("news")) {
-                return;
+            PythonJsonResult fetched = fetchNewsData(jobId);
+            if (fetched.failure() != null) {
+                return fetched.failure();
+            }
+            JSONObject data = fetched.data();
+            SyncExecResult parsed = parseNewsResult(data);
+            if (!parsed.providerSucceeded()) {
+                return parsed;
+            }
+            if (parsed.fetched() == 0) {
+                return parsed;
             }
 
             JSONArray newsArray = data.getJSONArray("news");
-            if (newsArray.isEmpty()) {
-                return;
-            }
-
             int added = 0;
             for (int i = 0; i < newsArray.length(); i++) {
                 JSONObject newsItem = newsArray.getJSONObject(i);
@@ -146,33 +198,24 @@ public class NbaLiveSyncService {
 
             if (added > 0) {
                 log.info("NBA新闻同步完成: 新增{}条新闻", added);
-
-                // 通过WebSocket广播新闻更新
                 try {
                     Map<String, Object> newsData = new HashMap<>();
                     newsData.put("timestamp", LocalDateTime.now().toString());
                     newsData.put("added", added);
                     webSocketController.broadcastNews(newsData);
-                    log.debug("已广播新闻更新到WebSocket");
                 } catch (Exception wsEx) {
                     log.warn("WebSocket广播失败: {}", wsEx.getMessage());
                 }
             }
 
-            // 清理超出100条的旧资讯
-            int cleanedNews = gameNewsService.cleanupOldNews(100);
-            if (cleanedNews > 0) {
-                log.info("清理旧资讯: 删除{}条", cleanedNews);
-            }
+            gameNewsService.cleanupOldNews(100);
+            postService.cleanupOldPosts(100);
 
-            // 清理超出100条的旧帖子
-            int cleanedPosts = postService.cleanupOldPosts(100);
-            if (cleanedPosts > 0) {
-                log.info("清理旧帖子: 删除{}条", cleanedPosts);
-            }
+            return SyncExecResult.success(newsArray.length(), added, 0);
 
         } catch (Exception e) {
-            log.warn("NBA新闻同步失败: {}", e.getMessage());
+            log.error("NBA新闻同步失败", e);
+            return SyncExecResult.failed("SYNC_ERROR", "新闻同步失败，请查看服务端任务日志");
         }
     }
 
@@ -298,10 +341,14 @@ public class NbaLiveSyncService {
 
         if (!existing.isEmpty()) {
             GameNews old = existing.get(0);
-            // 补充 nbaGameId
+            // 补充 nbaGameId（检查是否已被其他记录使用）
             if (nbaGameId != null && !nbaGameId.isEmpty()) {
                 if (old.getNbaGameId() == null || old.getNbaGameId().isEmpty()) {
-                    old.setNbaGameId(nbaGameId);
+                    // 检查该nbaGameId是否已被其他记录使用
+                    List<GameNews> conflict = gameNewsRepository.findByNbaGameId(nbaGameId.trim());
+                    if (conflict.isEmpty() || conflict.get(0).getId().equals(old.getId())) {
+                        old.setNbaGameId(nbaGameId);
+                    }
                 }
             }
             // 如果新数据是中文版本，尝试更新为中文
@@ -472,202 +519,125 @@ public class NbaLiveSyncService {
      * 从NBA API获取指定日期的比赛数据
      */
     private JSONObject fetchGamesByDate(String dateStr) {
-        try {
-            String scriptPath = findScriptPath();
-            ProcessBuilder pb = new ProcessBuilder("python", scriptPath, "games_by_date", dateStr);
-            pb.redirectErrorStream(false);
-            pb.directory(new File(scriptPath).getParentFile());
-            pb.environment().put("PYTHONIOENCODING", "utf-8");
+        return fetchGamesByDate(dateStr, null);
+    }
 
-            Process process = pb.start();
-
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-            }
-
-            boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                return null;
-            }
-
-            int exitCode = process.exitValue();
-            if (exitCode != 0) {
-                return null;
-            }
-
-            String jsonStr = output.toString().trim();
-            if (jsonStr.isEmpty()) {
-                return null;
-            }
-
-            return new JSONObject(jsonStr);
-
-        } catch (Exception e) {
-            log.error("调用Python脚本获取比赛数据失败: {}", e.getMessage());
+    private JSONObject fetchGamesByDate(String dateStr, Long jobId) {
+        int timeoutSeconds = pythonTimeoutProperties.getLiveSeconds();
+        PythonScriptRunner.PythonResult result = jobId != null
+                ? pythonScriptRunner.runForJob("nba_data_fetcher.py", new String[]{"games_by_date", dateStr}, timeoutSeconds, jobId)
+                : pythonScriptRunner.run("nba_data_fetcher.py", new String[]{"games_by_date", dateStr}, timeoutSeconds);
+        if (!result.success()) {
+            log.warn("调用Python脚本获取比赛数据失败: exitCode={}, stderr={}", result.exitCode(), result.stderr().substring(0, Math.min(200, result.stderr().length())));
             return null;
         }
+        String jsonStr = result.stdout().trim();
+        if (jsonStr.isEmpty()) return null;
+        try { return new JSONObject(jsonStr); } catch (Exception e) { return null; }
     }
 
     /**
      * 调用Python脚本获取新闻数据
      */
-    private JSONObject fetchNewsData() {
-        try {
-            String scriptPath = findScriptPath();
-            ProcessBuilder pb = new ProcessBuilder("python", scriptPath, "news", "20");
-            pb.redirectErrorStream(false); // 不合并stderr，避免错误信息混入JSON
-            pb.directory(new File(scriptPath).getParentFile());
-            pb.environment().put("PYTHONIOENCODING", "utf-8");
+    private PythonJsonResult fetchNewsData() {
+        return fetchNewsData(null);
+    }
 
-            // 代理配置（从.env文件读取，非硬编码）
-            String proxyHost = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_HOST");
-            String proxyPort = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_PORT");
-            if (proxyHost != null && !proxyHost.isEmpty()) {
-                pb.environment().put("NBA_PROXY_HOST", proxyHost);
-            }
-            if (proxyPort != null && !proxyPort.isEmpty()) {
-                pb.environment().put("NBA_PROXY_PORT", proxyPort);
-            }
-
-            // 传递翻译API配置（从系统环境变量或.env文件读取）
-            String mimoApiKey = com.nbamanager.config.EnvFileReader.get("MIMO_API_KEY");
-            String mimoBaseUrl = com.nbamanager.config.EnvFileReader.get("MIMO_BASE_URL");
-            if (mimoApiKey != null && !mimoApiKey.isEmpty()) {
-                pb.environment().put("MIMO_API_KEY", mimoApiKey);
-            }
-            if (mimoBaseUrl != null && !mimoBaseUrl.isEmpty()) {
-                pb.environment().put("MIMO_BASE_URL", mimoBaseUrl);
-            }
-
-            Process process = pb.start();
-
-            // 读取stdout（JSON数据）
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-            }
-
-            // 读取stderr（日志信息）
-            StringBuilder errorOutput = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    errorOutput.append(line).append("\n");
-                }
-            }
-
-            boolean finished = process.waitFor(60, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                log.warn("Python脚本获取新闻超时(60s)");
-                return null;
-            }
-
-            int exitCode = process.exitValue();
-            if (exitCode != 0) {
-                log.warn("Python脚本获取新闻失败, exitCode={}, error={}", exitCode, errorOutput.toString().trim());
-                return null;
-            }
-
-            String jsonStr = output.toString().trim();
-            if (jsonStr.isEmpty()) {
-                return null;
-            }
-
-            return new JSONObject(jsonStr);
-
-        } catch (Exception e) {
-            log.warn("调用Python脚本获取新闻失败: {}", e.getMessage());
-            return null;
-        }
+    private PythonJsonResult fetchNewsData(Long jobId) {
+        int timeoutSeconds = pythonTimeoutProperties.getLiveSeconds();
+        PythonScriptRunner.PythonResult result = jobId != null
+                ? pythonScriptRunner.runForJob("nba_data_fetcher.py", new String[]{"news", "20"}, timeoutSeconds, jobId)
+                : pythonScriptRunner.run("nba_data_fetcher.py", new String[]{"news", "20"}, timeoutSeconds);
+        return parsePythonJsonResult(result, "新闻", timeoutSeconds);
     }
 
     /**
      * 调用Python脚本获取选秀数据
      */
     private JSONObject fetchDraftData(int year) {
-        try {
-            String scriptPath = findScriptPath();
-            ProcessBuilder pb = new ProcessBuilder("python", scriptPath, "draft", String.valueOf(year));
-            pb.redirectErrorStream(true); // 合并stdout和stderr，避免死锁
-            pb.directory(new File(scriptPath).getParentFile());
-            pb.environment().put("PYTHONIOENCODING", "utf-8");
-
-            // 代理配置（从.env文件读取，非硬编码）
-            String proxyHost = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_HOST");
-            String proxyPort = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_PORT");
-            if (proxyHost != null && !proxyHost.isEmpty()) {
-                pb.environment().put("NBA_PROXY_HOST", proxyHost);
-            }
-            if (proxyPort != null && !proxyPort.isEmpty()) {
-                pb.environment().put("NBA_PROXY_PORT", proxyPort);
-            }
-
-            Process process = pb.start();
-
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-            }
-
-            boolean finished = process.waitFor(60, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                log.warn("Python脚本获取选秀数据超时(60s)");
-                return null;
-            }
-
-            int exitCode = process.exitValue();
-            if (exitCode != 0) {
-                log.warn("Python脚本获取选秀数据失败, exitCode={}, output={}", exitCode, output.toString().trim());
-                return null;
-            }
-
-            String jsonStr = output.toString().trim();
-            if (jsonStr.isEmpty()) {
-                return null;
-            }
-
-            return new JSONObject(jsonStr);
-
-        } catch (Exception e) {
-            log.warn("调用Python脚本获取选秀数据失败: {}", e.getMessage());
+        PythonScriptRunner.PythonResult result = pythonScriptRunner.run(
+                "nba_data_fetcher.py", new String[]{"draft", String.valueOf(year)},
+                pythonTimeoutProperties.getBulkSeconds());
+        if (!result.success()) {
+            log.warn("Python脚本获取选秀数据失败: exitCode={}, stderr={}", result.exitCode(), result.stderr().substring(0, Math.min(200, result.stderr().length())));
             return null;
         }
+        String jsonStr = result.stdout().trim();
+        if (jsonStr.isEmpty()) return null;
+        try { return new JSONObject(jsonStr); } catch (Exception e) { return null; }
     }
 
     /**
      * 每5分钟同步今日比赛比分（仅在有比赛时执行）
      */
-    @Scheduled(fixedRate = 300000) // 5分钟
     @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
     public void syncTodayGames() {
+        syncTodayGamesWithResult();
+    }
+
+    /**
+     * 解析今日比赛 JSON 结构为 SyncExecResult（包级可见，供测试调用）
+     */
+    static SyncExecResult parseTodayGamesResult(JSONObject data) {
+        if (data == null || !data.has("todayGames")) {
+            return SyncExecResult.failed("Python返回无数据");
+        }
+
+        if (!data.has("todayGamesSourceStatus")) {
+            return SyncExecResult.failed("Python返回缺少 todayGamesSourceStatus 字段");
+        }
+        String sourceStatus = data.getString("todayGamesSourceStatus");
+        String providerSummary = data.has("todayGamesProviderResults")
+                ? data.getJSONArray("todayGamesProviderResults").toString() : "";
+
+        if ("failed".equals(sourceStatus)) {
+            return SyncExecResult.failed("所有数据源失败: " + providerSummary);
+        }
+
+        JSONArray games = data.getJSONArray("todayGames");
+
+        if ("ok".equals(sourceStatus) && games.isEmpty()) {
+            return SyncExecResult.failed("状态ok但数据为空，协议错误");
+        }
+        if ("empty".equals(sourceStatus) && !games.isEmpty()) {
+            return SyncExecResult.failed("状态empty但有数据，协议错误");
+        }
+        if (!"ok".equals(sourceStatus) && !"empty".equals(sourceStatus)) {
+            return SyncExecResult.failed("未知状态: " + sourceStatus);
+        }
+
+        if (games.isEmpty()) {
+            return SyncExecResult.noGames();
+        }
+
+        return SyncExecResult.success(games.length(), 0, 0);
+    }
+
+    /**
+     * 同步今日比赛并返回结构化结果（供 Worker 使用，手动同步传 jobId 注册进程）
+     */
+    @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
+    public SyncExecResult syncTodayGamesWithResult() {
+        return syncTodayGamesWithResult(null);
+    }
+
+    @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
+    public SyncExecResult syncTodayGamesWithResult(Long jobId) {
         try {
-            JSONObject data = fetchTodayGamesData();
-            if (data == null || !data.has("todayGames")) {
-                return;
+            PythonJsonResult fetched = fetchTodayGamesData(jobId);
+            if (fetched.failure() != null) {
+                return fetched.failure();
+            }
+            JSONObject data = fetched.data();
+            SyncExecResult parsed = parseTodayGamesResult(data);
+            if (!parsed.providerSucceeded()) {
+                return parsed;
+            }
+            if (parsed.fetched() == 0) {
+                return parsed;
             }
 
             JSONArray games = data.getJSONArray("todayGames");
-            if (games.isEmpty()) {
-                return;
-            }
-
             int updated = 0;
             for (int i = 0; i < games.length(); i++) {
                 JSONObject game = games.getJSONObject(i);
@@ -679,42 +649,41 @@ public class NbaLiveSyncService {
                 String gameId = game.optString("gameId", null);
                 String category = game.optString("category", "game");
                 String source = game.optString("source", null);
-                String league = game.optString("league", "");
 
-                // 使用 SmartDataService 的完整落库逻辑（含 startTime、category、source）
                 LocalDateTime startTime = smartDataService.parseGameStartTimePublic(game);
                 updated += smartDataService.upsertGameNews(homeTeam, awayTeam, homeScore, awayScore,
                         status, gameId, category, source, startTime);
 
-                // 更新MatchRecord
                 updateMatchRecord(homeTeam, awayTeam, homeScore, awayScore, status, gameId);
             }
 
-            // 补充已有新闻的nbaGameId（从MatchRecord中匹配）
             int backfilled = backfillNbaGameId();
 
             if (updated > 0 || backfilled > 0) {
                 log.info("今日比赛同步完成: 更新{}条记录, 补充{}条nbaGameId", updated, backfilled);
-
-                // 通过WebSocket广播比分更新
                 try {
                     Map<String, Object> scoreData = new HashMap<>();
                     scoreData.put("timestamp", LocalDateTime.now().toString());
                     scoreData.put("updated", updated);
                     scoreData.put("games", games.toList());
                     webSocketController.broadcastScoreUpdate(scoreData);
-                    log.debug("已广播比分更新到WebSocket");
                 } catch (Exception wsEx) {
                     log.warn("WebSocket广播失败: {}", wsEx.getMessage());
                 }
             }
 
+            return SyncExecResult.success(games.length(), 0, updated);
+
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            log.error("今日比赛同步数据冲突", e);
+            return SyncExecResult.failed(
+                    "DATA_CONFLICT", "比赛数据存在重复的 NBA 比赛 ID，请检查数据一致性");
         } catch (Exception e) {
-            log.warn("今日比赛同步失败: {}", e.getMessage());
+            log.error("今日比赛同步失败", e);
+            return SyncExecResult.failed("SYNC_ERROR", "今日比赛同步失败，请查看服务端任务日志");
         }
     }
 
-    /**
     /**
      * 从MatchRecord中补充GameNews缺失的nbaGameId
      */
@@ -723,19 +692,40 @@ public class NbaLiveSyncService {
         List<GameNews> newsWithoutGameId = gameNewsRepository.findByNbaGameIdIsNullOrNbaGameIdEmpty();
 
         for (GameNews news : newsWithoutGameId) {
-            if (news.getHomeTeam() == null || news.getHomeTeam().equals("待定")) {
+            if (news.getHomeTeam() == null
+                    || news.getAwayTeam() == null
+                    || news.getHomeTeam().equals("待定")
+                    || news.getGameStartTime() == null) {
                 continue;
             }
-            // 按主队+客队查找对应的MatchRecord
-            List<MatchRecord> matches = matchRecordRepository
-                    .findHeadToHead(news.getHomeTeam(), news.getAwayTeam());
-            for (MatchRecord match : matches) {
-                if (match.getNbaGameId() != null && !match.getNbaGameId().isEmpty()) {
-                    news.setNbaGameId(match.getNbaGameId());
-                    gameNewsRepository.save(news);
-                    count++;
-                    break;
-                }
+
+            MatchRecord match = matchRecordRepository
+                    .findByHomeTeamAndAwayTeamAndMatchDate(
+                            news.getHomeTeam(),
+                            news.getAwayTeam(),
+                            news.getGameStartTime().toLocalDate())
+                    .orElse(null);
+            if (match == null || match.getNbaGameId() == null || match.getNbaGameId().isBlank()) {
+                continue;
+            }
+
+            String nbaGameId = match.getNbaGameId().trim();
+            boolean ownedByAnotherRecord = gameNewsRepository.findByNbaGameId(nbaGameId).stream()
+                    .anyMatch(owner -> !java.util.Objects.equals(owner.getId(), news.getId()));
+            if (ownedByAnotherRecord) {
+                log.warn("跳过 nbaGameId 回填，ID 已被占用: gameNewsId={}, nbaGameId={}",
+                        news.getId(), nbaGameId);
+                continue;
+            }
+
+            try {
+                news.setNbaGameId(nbaGameId);
+                gameNewsRepository.save(news);
+                count++;
+            } catch (org.springframework.dao.DataIntegrityViolationException e) {
+                news.setNbaGameId(null);
+                log.warn("跳过并发冲突的 nbaGameId 回填: gameNewsId={}, nbaGameId={}",
+                        news.getId(), nbaGameId);
             }
         }
         return count;
@@ -744,69 +734,64 @@ public class NbaLiveSyncService {
     /**
      * 调用Python脚本获取今日比赛数据
      */
-    private JSONObject fetchTodayGamesData() {
+    private PythonJsonResult fetchTodayGamesData() {
+        return fetchTodayGamesData(null);
+    }
+
+    private PythonJsonResult fetchTodayGamesData(Long jobId) {
+        int timeoutSeconds = pythonTimeoutProperties.getLiveSeconds();
+        PythonScriptRunner.PythonResult result = jobId != null
+                ? pythonScriptRunner.runForJob("nba_data_fetcher.py", new String[]{"today"}, timeoutSeconds, jobId)
+                : pythonScriptRunner.run("nba_data_fetcher.py", new String[]{"today"}, timeoutSeconds);
+        return parsePythonJsonResult(result, "今日比赛", timeoutSeconds);
+    }
+
+    private PythonJsonResult parsePythonJsonResult(
+            PythonScriptRunner.PythonResult result, String label, int timeoutSeconds) {
+        if (result.timedOut()) {
+            return PythonJsonResult.failed(SyncExecResult.failed(
+                    "PYTHON_TIMEOUT", label + "脚本执行超时（" + timeoutSeconds + "秒）"));
+        }
+        if (result.exitCode() == -2) {
+            return PythonJsonResult.failed(SyncExecResult.failed("CANCELLED", "任务已取消"));
+        }
+        if (!result.success()) {
+            String stderr = safeErrorSummary(result.stderr());
+            String message = label + "脚本执行失败（退出码 " + result.exitCode() + "）";
+            if (!stderr.isBlank()) {
+                message += ": " + stderr;
+            }
+            return PythonJsonResult.failed(SyncExecResult.failed("PYTHON_EXIT_ERROR", message));
+        }
+
+        String json = result.stdout() == null ? "" : result.stdout().trim();
+        if (json.isEmpty()) {
+            return PythonJsonResult.failed(SyncExecResult.failed(
+                    "PYTHON_EMPTY_OUTPUT", label + "脚本未返回数据"));
+        }
         try {
-            String scriptPath = findScriptPath();
-            ProcessBuilder pb = new ProcessBuilder("python", scriptPath, "today");
-            pb.redirectErrorStream(false); // 不合并stderr，避免错误信息混入JSON
-            pb.directory(new File(scriptPath).getParentFile());
-            pb.environment().put("PYTHONIOENCODING", "utf-8");
-
-            // 代理配置（从.env文件读取，非硬编码）
-            String proxyHost = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_HOST");
-            String proxyPort = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_PORT");
-            if (proxyHost != null && !proxyHost.isEmpty()) {
-                pb.environment().put("NBA_PROXY_HOST", proxyHost);
-            }
-            if (proxyPort != null && !proxyPort.isEmpty()) {
-                pb.environment().put("NBA_PROXY_PORT", proxyPort);
-            }
-
-            Process process = pb.start();
-
-            // 读取stdout（JSON数据）
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-            }
-
-            // 读取stderr（日志信息）
-            StringBuilder errorOutput = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    errorOutput.append(line).append("\n");
-                }
-            }
-
-            boolean finished = process.waitFor(60, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                log.warn("Python脚本获取今日比赛超时(60s)");
-                return null;
-            }
-
-            int exitCode = process.exitValue();
-            if (exitCode != 0) {
-                log.warn("Python脚本获取今日比赛失败, exitCode={}, error={}", exitCode, errorOutput.toString().trim());
-                return null;
-            }
-
-            String jsonStr = output.toString().trim();
-            if (jsonStr.isEmpty()) {
-                return null;
-            }
-
-            return new JSONObject(jsonStr);
-
+            return PythonJsonResult.success(new JSONObject(json));
         } catch (Exception e) {
-            log.warn("调用Python脚本获取今日比赛失败: {}", e.getMessage());
-            return null;
+            return PythonJsonResult.failed(SyncExecResult.failed(
+                    "PYTHON_PROTOCOL_ERROR", label + "脚本返回了无效 JSON"));
+        }
+    }
+
+    private String safeErrorSummary(String stderr) {
+        if (stderr == null) {
+            return "";
+        }
+        String normalized = stderr.replaceAll("[\\r\\n]+", " ").trim();
+        return normalized.length() > 200 ? normalized.substring(0, 200) : normalized;
+    }
+
+    private record PythonJsonResult(JSONObject data, SyncExecResult failure) {
+        private static PythonJsonResult success(JSONObject data) {
+            return new PythonJsonResult(data, null);
+        }
+
+        private static PythonJsonResult failed(SyncExecResult failure) {
+            return new PythonJsonResult(null, failure);
         }
     }
 
@@ -930,23 +915,5 @@ public class NbaLiveSyncService {
             newRecord.setNbaGameId(gameId);
             matchRecordRepository.save(newRecord);
         }
-    }
-
-    private String findScriptPath() {
-        String[] possiblePaths = {
-                "backend/scripts/nba_data_fetcher.py",
-                "scripts/nba_data_fetcher.py",
-                "../scripts/nba_data_fetcher.py",
-                "nba_data_fetcher.py"
-        };
-
-        File baseDir = new File(System.getProperty("user.dir"));
-        for (String path : possiblePaths) {
-            File file = new File(baseDir, path);
-            if (file.exists()) {
-                return file.getAbsolutePath();
-            }
-        }
-        return new File(baseDir, "backend/scripts/nba_data_fetcher.py").getAbsolutePath();
     }
 }
