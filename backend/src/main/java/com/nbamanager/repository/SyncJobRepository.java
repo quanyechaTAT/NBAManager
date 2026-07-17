@@ -15,6 +15,8 @@ public interface SyncJobRepository extends JpaRepository<SyncJob, Long> {
 
     Optional<SyncJob> findTopByModuleOrderByCreatedAtDesc(String module);
 
+    Optional<SyncJob> findTopByModuleAndStatusOrderByFinishedAtDesc(String module, String status);
+
     List<SyncJob> findTop20ByOrderByCreatedAtDesc();
 
     List<SyncJob> findByStatusIn(List<String> statuses);
