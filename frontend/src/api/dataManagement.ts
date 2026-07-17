@@ -1,78 +1,132 @@
 import request from '@/utils/request'
 
-export interface ModuleInfo {
-  key: string
-  name: string
-  icon: string
-  count: number
-  status: 'idle' | 'syncing' | 'success' | 'error' | 'pending' | 'paused'
-  progress: number
-  lastSyncTime: string
-  errorMessage?: string
-  paused?: boolean
-}
+export type SyncTriggerType = 'SCHEDULED' | 'MANUAL' | 'LOGIN_CATCHUP'
 
-export interface OverviewData {
-  modules: ModuleInfo[]
-  currentSeason: string
-  syncing: boolean
-  lastSyncTime: string
-}
-
-export interface ProgressData {
+export interface SyncJobResponse {
+  jobId: number
+  module: string
+  triggerType: SyncTriggerType
   status: string
   progress: number
-  lastSyncTime: string
-  errorMessage: string
-  paused?: boolean
+  stage: string | null
+  requestedBy: string
+  createdAt: string
+  startedAt: string | null
+  finishedAt: string | null
+  heartbeatAt: string | null
+  dataAsOf: string | null
+  source: string | null
+  fetchedCount: number
+  insertedCount: number
+  updatedCount: number
+  skippedCount: number
+  errorCode: string | null
+  errorMessage: string | null
+  cancelRequested: boolean
+  reused: boolean
 }
 
-/** 获取数据管理概览 */
-export function getDataOverview() {
-  return request.get<OverviewData>('/admin/data/overview')
+export interface SyncJobStepResponse {
+  id: number
+  module: string
+  stepOrder: number
+  status: string
+  progress: number
+  stage: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  fetchedCount: number
+  insertedCount: number
+  updatedCount: number
+  skippedCount: number
+  errorCode: string | null
+  errorMessage: string | null
 }
 
-/** 同步指定模块 */
+export interface SyncJobDetailResponse extends SyncJobResponse {
+  steps: SyncJobStepResponse[]
+}
+
+export interface SyncModuleOverview {
+  key: string
+  count: number
+  lastSuccessfulAt: string | null
+  latestJob: SyncJobResponse | null
+  activeJob: SyncJobResponse | null
+  activeFullStep: SyncJobStepResponse | null
+}
+
+export interface JobHistoryFilters {
+  module?: string
+  triggerType?: string
+  status?: string
+  page?: number
+  size?: number
+}
+
+export interface SyncJobPageResponse {
+  content: SyncJobResponse[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+}
+
+export interface SyncOverviewResponse {
+  currentSeason: string
+  modules: SyncModuleOverview[]
+}
+
+export function getSyncOverview() {
+  return request.get<SyncOverviewResponse>('/admin/overview')
+}
+
+/** 同步指定模块 → 返回 202 + jobId */
 export function syncModule(module: string) {
-  return request.post(`/admin/data/sync/${module}`)
+  return request.post<SyncJobResponse>(`/admin/sync/${module}`)
 }
 
 /** 全量同步 */
 export function syncAllModules() {
-  return request.post('/admin/data/sync-all')
+  return request.post<SyncJobResponse>('/admin/sync-all')
 }
 
-/** 暂停指定模块 */
-export function pauseModule(module: string) {
-  return request.post(`/admin/data/pause/${module}`)
+/** 查询任务状态 */
+export function getJob(jobId: number) {
+  return request.get<SyncJobResponse>(`/admin/jobs/${jobId}`)
 }
 
-/** 继续指定模块 */
-export function resumeModule(module: string) {
-  return request.post(`/admin/data/resume/${module}`)
+/** 最近任务列表 */
+export function getRecentJobs() {
+  return request.get<SyncJobResponse[]>('/admin/jobs')
 }
 
-/** 取消指定模块 */
-export function cancelModule(module: string) {
-  return request.post(`/admin/data/cancel/${module}`)
+/** 模块最新任务 */
+export function getLatestJob(module: string) {
+  return request.get<SyncJobResponse>(`/admin/jobs/module/${module}`)
 }
 
-/** 暂停所有模块 */
-export function pauseAllModules() {
-  return request.post('/admin/data/pause-all')
+/** 取消任务 */
+export function cancelJob(jobId: number) {
+  return request.post<{ accepted: boolean; job: SyncJobResponse }>(`/admin/jobs/${jobId}/cancel`)
 }
 
-/** 取消所有模块 */
-export function cancelAllModules() {
-  return request.post('/admin/data/cancel-all')
+/** 查询任务详情（含步骤） */
+export function getJobDetail(jobId: number) {
+  return request.get<SyncJobDetailResponse>(`/admin/jobs/${jobId}`)
 }
 
-/** 获取指定模块进度 */
-export function getModuleProgress(module: string) {
-  return request.get<ProgressData>(`/admin/data/progress/${module}`)
+/** 任务历史分页查询 */
+export function getJobHistory(filters: JobHistoryFilters) {
+  return request.get<SyncJobPageResponse>('/admin/jobs', { params: filters })
 }
 
-/** 获取所有模块进度 */
-export function getAllProgress() {
-  return request.get<Record<string, ProgressData>>('/admin/data/progress')
+/** 旧接口兼容：同步状态 */
+export function getSyncStatus() {
+  return request.get<{ syncing: boolean; jobs: SyncJobResponse[] }>('/admin/sync-status')
+}
+
+/** 旧接口兼容：触发同步 */
+export function triggerSync() {
+  return request.post<SyncJobResponse>('/admin/sync')
 }
