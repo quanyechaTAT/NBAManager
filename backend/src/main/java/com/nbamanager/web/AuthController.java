@@ -6,6 +6,7 @@ import com.nbamanager.exception.ApiException;
 import com.nbamanager.repository.UserAccountRepository;
 import com.nbamanager.security.JwtService;
 import com.nbamanager.security.UserPrincipal;
+import com.nbamanager.event.UserIdentityUpdatedEvent;
 import com.nbamanager.service.NbaDataSyncService;
 import com.nbamanager.web.dto.ChangePasswordRequest;
 import com.nbamanager.web.dto.ChangeUsernameRequest;
@@ -40,6 +41,7 @@ public class AuthController {
     private final UserAccountRepository userAccountRepository;
     private final PasswordEncoder passwordEncoder;
     private final NbaDataSyncService dataSyncService;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @PostMapping("/login")
     public LoginResponse login(@Valid @RequestBody LoginRequest request) {
@@ -49,10 +51,12 @@ public class AuthController {
         UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
         String token = jwtService.generateToken(principal.getUsername(), principal.getRole(), principal.getId());
 
-        // 管理员登录时不自动触发同步，避免阻塞其他同步任务
-        // 管理员可以通过数据管理页面手动触发同步
+        // 管理员登录时发布事件，异步检查遗漏调度补偿
         if (principal.getRole() == Role.ADMIN) {
             log.info("管理员 {} 登录成功", principal.getUsername());
+            eventPublisher.publishEvent(new com.nbamanager.event.AdminLoginEvent(
+                    principal.getUsername(),
+                    java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Shanghai"))));
         }
 
         String avatarUrl = userAccountRepository.findById(principal.getId())
@@ -133,6 +137,10 @@ public class AuthController {
 
         user.setUsername(request.newUsername());
         userAccountRepository.save(user);
+
+        // 发布身份变更事件（事务提交后广播）
+        eventPublisher.publishEvent(new UserIdentityUpdatedEvent(
+                user.getId(), user.getUsername(), user.getAvatarUrl()));
 
         // 生成新的token
         String token = jwtService.generateToken(user.getUsername(), user.getRole(), user.getId());

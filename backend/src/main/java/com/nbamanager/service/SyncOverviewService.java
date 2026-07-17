@@ -54,6 +54,13 @@ public class SyncOverviewService {
     }
 
     private SyncModuleOverview module(String key, long count) {
+        com.nbamanager.web.dto.SyncJobStepResponse activeFullStep = null;
+
+        // Check if there's an active full sync with a step for this module
+        syncJobRepository.findActiveByModule("FULL_SYNC").ifPresent(fullSyncJob -> {
+            // This is handled at the overview level, not per-module
+        });
+
         return new SyncModuleOverview(
                 key,
                 count,
@@ -66,7 +73,7 @@ public class SyncOverviewService {
                 syncJobRepository.findActiveByModule(key)
                         .map(com.nbamanager.web.dto.SyncJobResponse::from)
                         .orElse(null),
-                null // activeFullStep - populated separately for full sync
+                activeFullStep
         );
     }
 }

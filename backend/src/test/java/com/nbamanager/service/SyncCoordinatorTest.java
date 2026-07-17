@@ -28,6 +28,8 @@ class SyncCoordinatorTest {
 
     @Mock private SyncJobRepository syncJobRepository;
     @Mock private SyncJobStateService jobStateService;
+    @Mock private SyncJobStepStateService stepStateService;
+    @Mock private com.nbamanager.repository.SyncJobStepRepository stepRepository;
     @Mock private ThreadPoolTaskExecutor manualSyncExecutor;
     @Mock private SyncLockService syncLockService;
 
@@ -48,7 +50,8 @@ class SyncCoordinatorTest {
     void setUp() {
         lenient().when(syncLockService.renew(anyString(), anyString(), any())).thenReturn(true);
         coordinator = new SyncCoordinator(
-                syncJobRepository, jobStateService, manualSyncExecutor, syncLockService,
+                syncJobRepository, jobStateService, stepStateService, stepRepository,
+                manualSyncExecutor, syncLockService,
                 teamSyncWorker, playerSyncWorker, matchSyncWorker,
                 todayGamesSyncWorker, newsSyncWorker, draftSyncWorker,
                 playoffSyncWorker, historicalSyncWorker, translationSyncWorker,
@@ -56,10 +59,10 @@ class SyncCoordinatorTest {
         );
     }
 
-    // --- 全局锁被占用 ---
+    // --- 模块锁被占用 ---
 
     @Test
-    void globalLockHeld_throwsConflict() {
+    void moduleLockHeld_throwsConflict() {
         when(syncLockService.tryAcquire(anyString(), anyString(), any())).thenReturn(false);
 
         assertThatThrownBy(() -> coordinator.submitManual("TEAMS", "admin"))
@@ -69,53 +72,35 @@ class SyncCoordinatorTest {
         verify(syncJobRepository, never()).save(any());
     }
 
-    // --- 全局锁成功、模块锁被占用 ---
+    // --- 模块锁 Redis 抛异常 ---
 
     @Test
-    void moduleLockHeld_throwsConflict_releasesGlobalLock() {
-        when(syncLockService.tryAcquire(eq("nba:sync:lock:MANUAL"), anyString(), any())).thenReturn(true);
-        when(syncLockService.tryAcquire(eq("nba:sync:lock:TEAMS"), anyString(), any())).thenReturn(false);
-
-        assertThatThrownBy(() -> coordinator.submitManual("TEAMS", "admin"))
-                .isInstanceOf(com.nbamanager.exception.SyncJobConflictException.class);
-
-        // 全局锁释放
-        verify(syncLockService).release(eq("nba:sync:lock:MANUAL"), anyString());
-    }
-
-    // --- 获取模块锁时 Redis 抛异常 ---
-
-    @Test
-    void moduleLockThrows_releasesGlobalLock() {
-        when(syncLockService.tryAcquire(eq("nba:sync:lock:MANUAL"), anyString(), any())).thenReturn(true);
-        when(syncLockService.tryAcquire(eq("nba:sync:lock:TEAMS"), anyString(), any()))
+    void moduleLockThrows_throwsConflict() {
+        when(syncLockService.tryAcquire(anyString(), anyString(), any()))
                 .thenThrow(new RuntimeException("Redis connection lost"));
 
         assertThatThrownBy(() -> coordinator.submitManual("TEAMS", "admin"))
                 .isInstanceOf(RuntimeException.class);
-
-        // 全局锁应被释放
-        verify(syncLockService).release(eq("nba:sync:lock:MANUAL"), anyString());
     }
 
     // --- save 抛异常 ---
 
     @Test
-    void saveThrows_releasesBothLocks() {
+    void saveThrows_releasesLock() {
         when(syncLockService.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
         when(syncJobRepository.save(any(SyncJob.class))).thenThrow(new RuntimeException("DB error"));
 
         assertThatThrownBy(() -> coordinator.submitManual("TEAMS", "admin"))
                 .isInstanceOf(RuntimeException.class);
 
-        // 两个锁都应被释放（Lua 调用两次）
-        verify(syncLockService, times(2)).release(anyString(), anyString());
+        // 锁应被释放
+        verify(syncLockService).release(anyString(), anyString());
     }
 
     // --- Executor 拒绝任务 ---
 
     @Test
-    void executorRejects_releasesBothLocksAndDeletesJob() {
+    void executorRejects_releasesLockAndDeletesJob() {
         when(syncLockService.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
         when(syncJobRepository.save(any(SyncJob.class))).thenAnswer(inv -> {
             SyncJob j = inv.getArgument(0);
@@ -128,8 +113,8 @@ class SyncCoordinatorTest {
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("queue full");
 
-        // 两锁释放
-        verify(syncLockService, times(2)).release(anyString(), anyString());
+        // 锁释放
+        verify(syncLockService).release(anyString(), anyString());
         // 任务删除
         verify(syncJobRepository).deleteById(42L);
     }

@@ -24,6 +24,8 @@ public class SyncCoordinator {
 
     private final SyncJobRepository syncJobRepository;
     private final SyncJobStateService jobStateService;
+    private final SyncJobStepStateService stepStateService;
+    private final com.nbamanager.repository.SyncJobStepRepository stepRepository;
     private final org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor manualSyncExecutor;
     private final SyncLockService syncLockService;
 
@@ -185,49 +187,33 @@ public class SyncCoordinator {
     }
 
     private SyncJobResponse submitJob(String module, String triggerType, String requestedBy) {
-        String globalLockKey = "nba:sync:lock:MANUAL";
-        String globalLockUuid = java.util.UUID.randomUUID().toString();
-        String moduleLockKey = "nba:sync:lock:" + module;
-        String moduleLockUuid = java.util.UUID.randomUUID().toString();
-        long lockTtl = "FULL_SYNC".equals(module) ? 120 : 30;
+        boolean isFullSync = "FULL_SYNC".equals(module);
+        String lockKey = isFullSync ? "nba:sync:full" : "nba:sync:module:" + module;
+        String lockUuid = java.util.UUID.randomUUID().toString();
+        long lockTtlMinutes = isFullSync ? 120 : 30;
 
-        boolean globalHeld = false;
-        boolean moduleHeld = false;
+        boolean lockHeld = false;
         boolean ownershipTransferred = false;
         Long jobId = null;
 
         try {
-            // 1. 获取全局锁
-            Boolean globalAcquired;
+            // 1. 获取锁（全量用 full 锁，模块用模块锁）
+            Boolean acquired;
             try {
-                globalAcquired = syncLockService.tryAcquire(
-                        globalLockKey, globalLockUuid, java.time.Duration.ofMinutes(lockTtl));
+                acquired = syncLockService.tryAcquire(
+                        lockKey, lockUuid, java.time.Duration.ofMinutes(lockTtlMinutes));
             } catch (Exception e) {
                 throw new SyncJobConflictException(
                         org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
                         "SYNC_LOCK_UNAVAILABLE", "Redis 不可用，无法获取同步锁");
             }
-            if (globalAcquired == null || !globalAcquired) {
-                throw new SyncJobConflictException("SYNC_JOB_CONFLICT", "手动同步锁被占用，模块 " + module + " 无法启动");
+            if (acquired == null || !acquired) {
+                String msg = isFullSync ? "全量同步锁被占用" : "模块 " + module + " 已有任务在运行";
+                throw new SyncJobConflictException("SYNC_JOB_CONFLICT", msg);
             }
-            globalHeld = true;
+            lockHeld = true;
 
-            // 2. 获取模块锁
-            Boolean moduleAcquired;
-            try {
-                moduleAcquired = syncLockService.tryAcquire(
-                        moduleLockKey, moduleLockUuid, java.time.Duration.ofMinutes(lockTtl));
-            } catch (Exception e) {
-                throw new SyncJobConflictException(
-                        org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
-                        "SYNC_LOCK_UNAVAILABLE", "Redis 不可用，无法获取模块锁");
-            }
-            if (moduleAcquired == null || !moduleAcquired) {
-                throw new SyncJobConflictException("SYNC_JOB_CONFLICT", "模块 " + module + " 已有任务在运行");
-            }
-            moduleHeld = true;
-
-            // 3. 创建任务记录
+            // 2. 创建任务记录
             SyncJob job;
             try {
                 job = new SyncJob();
@@ -243,14 +229,12 @@ public class SyncCoordinator {
                         "SYNC_JOB_PERSIST_FAILED", "创建同步任务失败: " + e.getMessage());
             }
 
-            // 4. 提交线程池
+            // 3. 提交线程池
             final Long jid = jobId;
-            final String gKey = globalLockKey;
-            final String gUuid = globalLockUuid;
-            final String mKey = moduleLockKey;
-            final String mUuid = moduleLockUuid;
+            final String lKey = lockKey;
+            final String lUuid = lockUuid;
             try {
-                manualSyncExecutor.execute(() -> executeJob(jid, module, mKey, mUuid, gKey, gUuid));
+                manualSyncExecutor.execute(() -> executeJob(jid, module, lKey, lUuid));
             } catch (Exception e) {
                 safelyDeleteQueuedJob(jobId);
                 throw new SyncJobConflictException(
@@ -267,9 +251,8 @@ public class SyncCoordinator {
             safelyDeleteQueuedJob(jobId);
             throw e;
         } finally {
-            if (!ownershipTransferred) {
-                if (moduleHeld) safeDeleteLock(moduleLockKey, moduleLockUuid);
-                if (globalHeld) safeDeleteLock(globalLockKey, globalLockUuid);
+            if (!ownershipTransferred && lockHeld) {
+                safeDeleteLock(lockKey, lockUuid);
             }
         }
     }
@@ -304,15 +287,13 @@ public class SyncCoordinator {
         }
     }
 
-    private void executeJob(Long jobId, String module, String lockKey, String lockUuid,
-                            String globalLockKey, String globalLockUuid) {
+    private void executeJob(Long jobId, String module, String lockKey, String lockUuid) {
         // 启动锁续期 watchdog（每 60 秒续期一次）
         long ttlMs = ("FULL_SYNC".equals(module) ? 120 : 30) * 60 * 1000;
         long renewIntervalMs = 60_000;
-        jobLockKeys.put(jobId, java.util.List.of(lockKey, globalLockKey));
+        jobLockKeys.put(jobId, java.util.List.of(lockKey));
         lockLostFlags.put(jobId, new AtomicBoolean(false));
         startLockWatchdog(lockKey, lockUuid, ttlMs, renewIntervalMs, jobId);
-        startLockWatchdog(globalLockKey, globalLockUuid, ttlMs, renewIntervalMs, jobId);
 
         try {
             SyncJob job = syncJobRepository.findById(jobId).orElse(null);
@@ -363,9 +344,7 @@ public class SyncCoordinator {
                 jobLockKeys.remove(jobId);
             }
             stopLockWatchdog(lockKey);
-            stopLockWatchdog(globalLockKey);
             safeDeleteLock(lockKey, lockUuid);
-            safeDeleteLock(globalLockKey, globalLockUuid);
         }
     }
 
@@ -476,15 +455,42 @@ public class SyncCoordinator {
         int failedCount = 0;
         StringBuilder errors = new StringBuilder();
 
+        // 创建所有步骤记录
+        java.util.List<com.nbamanager.domain.SyncJobStep> steps = new java.util.ArrayList<>();
+        for (int i = 0; i < totalModules; i++) {
+            com.nbamanager.domain.SyncJobStep step = new com.nbamanager.domain.SyncJobStep();
+            step.setJobId(jobId);
+            step.setModule(modules[i]);
+            step.setStepOrder(i);
+            step.setStatus("QUEUED");
+            steps.add(step);
+        }
+        stepRepository.saveAll(steps);
+
         for (int i = 0; i < totalModules; i++) {
             if (jobStateService.isCancelRequested(jobId)) {
+                // 取消剩余步骤
+                for (int j = i; j < totalModules; j++) {
+                    stepStateService.markCancelled(steps.get(j).getId());
+                }
                 return SyncResult.cancelled("FULL_SYNC");
             }
+
+            com.nbamanager.domain.SyncJobStep step = steps.get(i);
+            stepStateService.markRunning(step.getId());
+            jobStateService.updateProgress(jobId, 5 + (i * 90 / totalModules), modules[i]);
 
             int startProgress = 5 + (i * 90 / totalModules);
             int endProgress = 5 + ((i + 1) * 90 / totalModules);
             SyncResult result = executeModule(modules[i], jobId, startProgress, endProgress);
+
+            // 保存步骤结果
+            stepStateService.complete(step.getId(), result);
+
             if ("CANCELLED".equals(result.status()) || jobStateService.isCancelRequested(jobId)) {
+                for (int j = i + 1; j < totalModules; j++) {
+                    stepStateService.markCancelled(steps.get(j).getId());
+                }
                 return SyncResult.cancelled("FULL_SYNC");
             }
             if ("SUCCESS".equals(result.status())) {
@@ -494,7 +500,6 @@ public class SyncCoordinator {
                 if (errors.length() > 0) errors.append("; ");
                 errors.append(modules[i]).append(": ").append(result.errorMessage());
             }
-            jobStateService.updateProgress(jobId, endProgress);
         }
 
         LocalDateTime now = LocalDateTime.now();

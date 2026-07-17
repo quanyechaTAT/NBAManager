@@ -57,9 +57,9 @@ public class SyncDefinitionRegistry {
         definitions.put("HISTORICAL", new SyncDefinition("HISTORICAL", historicalSyncWorker, 8,
                 List.of(SyncSchedulePolicy.cron("0 0 4 * * ?", ZONE))));
 
-        // TRANSLATION: every 10 minutes
+        // TRANSLATION: every hour at minute 10
         definitions.put("TRANSLATION", new SyncDefinition("TRANSLATION", translationSyncWorker, 9,
-                List.of(SyncSchedulePolicy.fixed(Duration.ofMinutes(10)))));
+                List.of(SyncSchedulePolicy.cron("0 10 * * * *", ZONE))));
     }
 
     public SyncDefinition require(String module) {

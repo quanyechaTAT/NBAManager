@@ -4,6 +4,8 @@ import com.nbamanager.domain.SyncJob;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -35,4 +37,14 @@ public interface SyncJobRepository extends JpaRepository<SyncJob, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT j FROM SyncJob j WHERE j.id = :id")
     Optional<SyncJob> findByIdForUpdate(@Param("id") Long id);
+
+    @Query("SELECT j FROM SyncJob j WHERE "
+            + "(:module IS NULL OR j.module = :module) AND "
+            + "(:triggerType IS NULL OR j.triggerType = :triggerType) AND "
+            + "(:status IS NULL OR j.status = :status)")
+    Page<SyncJob> search(
+            @Param("module") String module,
+            @Param("triggerType") String triggerType,
+            @Param("status") String status,
+            Pageable pageable);
 }

@@ -47,15 +47,28 @@ public class SyncCatchupService {
 
         try {
             ZonedDateTime now = event.loggedInAt();
+            boolean anyMissed = false;
+
             // Check if full sync is due
             for (SyncDefinition definition : registry.scheduledDefinitions()) {
                 Optional<SyncJob> latest = repository.findTopByModuleAndStatusOrderByFinishedAtDesc(
                         definition.module(), "SUCCESS");
                 boolean due = latest.isEmpty() || definition.isDue(toZoned(latest.get().getFinishedAt()), now);
                 if (due) {
+                    anyMissed = true;
                     log.info("检测到遗漏调度: module={}, 用户={}", definition.module(), event.username());
-                    coordinator.submit(SyncCommand.loginCatchup(definition.module(), event.username()));
+                    try {
+                        coordinator.submit(SyncCommand.loginCatchup(definition.module(), event.username()));
+                    } catch (SyncJobConflictException e) {
+                        log.debug("补偿提交被跳过: module={}, reason={}", definition.module(), e.getMessage());
+                    }
                 }
+            }
+
+            // If any module is missed but couldn't be submitted, mark for retry
+            if (anyMissed) {
+                catchupPending.set(true);
+                pendingRequestedBy.set(event.username());
             }
         } finally {
             lockService.release("nba:sync:catchup", token);

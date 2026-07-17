@@ -23,6 +23,8 @@ class SyncCoordinatorConflictTest {
 
     @Mock private SyncJobRepository syncJobRepository;
     @Mock private SyncJobStateService jobStateService;
+    @Mock private SyncJobStepStateService stepStateService;
+    @Mock private com.nbamanager.repository.SyncJobStepRepository stepRepository;
     @Mock private ThreadPoolTaskExecutor manualSyncExecutor;
     @Mock private SyncLockService syncLockService;
 
@@ -42,7 +44,8 @@ class SyncCoordinatorConflictTest {
     @BeforeEach
     void setUp() {
         coordinator = new SyncCoordinator(
-                syncJobRepository, jobStateService, manualSyncExecutor, syncLockService,
+                syncJobRepository, jobStateService, stepStateService, stepRepository,
+                manualSyncExecutor, syncLockService,
                 teamSyncWorker, playerSyncWorker, matchSyncWorker,
                 todayGamesSyncWorker, newsSyncWorker, draftSyncWorker,
                 playoffSyncWorker, historicalSyncWorker, translationSyncWorker,
@@ -51,12 +54,12 @@ class SyncCoordinatorConflictTest {
     }
 
     @Test
-    void globalLockHeld_throwsConflict() {
+    void moduleLockHeld_throwsConflict() {
         when(syncLockService.tryAcquire(anyString(), anyString(), any())).thenReturn(false);
 
         assertThatThrownBy(() -> coordinator.submitManual("TEAMS", "admin"))
                 .isInstanceOf(SyncJobConflictException.class)
-                .hasMessageContaining("锁被占用");
+                .hasMessageContaining("已有任务");
 
         verify(syncJobRepository, never()).save(any());
     }
@@ -72,16 +75,6 @@ class SyncCoordinatorConflictTest {
     }
 
     @Test
-    void moduleLockHeld_throwsConflict() {
-        when(syncLockService.tryAcquire(eq("nba:sync:lock:MANUAL"), anyString(), any())).thenReturn(true);
-        when(syncLockService.tryAcquire(eq("nba:sync:lock:TEAMS"), anyString(), any())).thenReturn(false);
-
-        assertThatThrownBy(() -> coordinator.submitManual("TEAMS", "admin"))
-                .isInstanceOf(SyncJobConflictException.class)
-                .hasMessageContaining("已有任务");
-    }
-
-    @Test
     void saveFails_throwsServiceUnavailable() {
         when(syncLockService.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
         when(syncJobRepository.save(any(SyncJob.class))).thenThrow(new RuntimeException("DB error"));
@@ -90,8 +83,8 @@ class SyncCoordinatorConflictTest {
                 .isInstanceOf(SyncJobConflictException.class)
                 .hasMessageContaining("创建同步任务失败");
 
-        // 两锁释放
-        verify(syncLockService, times(2)).release(anyString(), anyString());
+        // 锁释放
+        verify(syncLockService).release(anyString(), anyString());
     }
 
     @Test
@@ -108,8 +101,8 @@ class SyncCoordinatorConflictTest {
                 .isInstanceOf(SyncJobConflictException.class)
                 .hasMessageContaining("队列已满");
 
-        // 两锁释放 + 任务删除
-        verify(syncLockService, times(2)).release(anyString(), anyString());
+        // 锁释放 + 任务删除
+        verify(syncLockService).release(anyString(), anyString());
         verify(syncJobRepository).deleteById(1L);
     }
 
