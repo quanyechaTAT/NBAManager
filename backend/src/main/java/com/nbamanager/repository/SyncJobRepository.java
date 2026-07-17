@@ -1,0 +1,36 @@
+package com.nbamanager.repository;
+
+import com.nbamanager.domain.SyncJob;
+import jakarta.persistence.LockModeType;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
+
+public interface SyncJobRepository extends JpaRepository<SyncJob, Long> {
+
+    Optional<SyncJob> findTopByModuleOrderByCreatedAtDesc(String module);
+
+    List<SyncJob> findTop20ByOrderByCreatedAtDesc();
+
+    List<SyncJob> findByStatusIn(List<String> statuses);
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE SyncJob j SET j.status = 'INTERRUPTED', j.finishedAt = CURRENT_TIMESTAMP, "
+           + "j.errorCode = 'INTERRUPTED', j.errorMessage = 'Task heartbeat expired' "
+           + "WHERE j.status IN ('QUEUED','RUNNING','CANCELLING') "
+           + "AND COALESCE(j.heartbeatAt, j.startedAt, j.createdAt) < :cutoff")
+    int markStaleRunningAsInterrupted(@Param("cutoff") java.time.LocalDateTime cutoff);
+
+    @Query("SELECT j FROM SyncJob j WHERE j.module = :module AND j.status IN ('QUEUED','RUNNING','CANCELLING') ORDER BY j.createdAt DESC")
+    Optional<SyncJob> findActiveByModule(@Param("module") String module);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT j FROM SyncJob j WHERE j.id = :id")
+    Optional<SyncJob> findByIdForUpdate(@Param("id") Long id);
+}
