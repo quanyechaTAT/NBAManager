@@ -70,7 +70,7 @@ export function getTeamColor(teamName: string): TeamColors {
 
   // 默认颜色
   return {
-    primary: '#E85D26',
+    primary: '#0891B2',
     secondary: '#8B5CF6'
   }
 }
@@ -82,6 +82,59 @@ export function getTeamColor(teamName: string): TeamColors {
  */
 export function getTeamPrimaryColor(teamName: string): string {
   return getTeamColor(teamName).primary
+}
+
+/** 球队代码 / 中文队名 → 颜色（由英文全称映射派生，支持中文队名查询） */
+const CODE_COLORS: Record<string, TeamColors> = (() => {
+  const NAME_TO_CODE: Record<string, string> = {
+    'Boston Celtics': 'bos', 'Brooklyn Nets': 'bkn', 'New York Knicks': 'nyk',
+    'Philadelphia 76ers': 'phi', 'Toronto Raptors': 'tor',
+    'Chicago Bulls': 'chi', 'Cleveland Cavaliers': 'cle', 'Detroit Pistons': 'det',
+    'Indiana Pacers': 'ind', 'Milwaukee Bucks': 'mil',
+    'Atlanta Hawks': 'atl', 'Charlotte Hornets': 'cha', 'Miami Heat': 'mia',
+    'Orlando Magic': 'orl', 'Washington Wizards': 'was',
+    'Denver Nuggets': 'den', 'Minnesota Timberwolves': 'min', 'Oklahoma City Thunder': 'okc',
+    'Portland Trail Blazers': 'por', 'Utah Jazz': 'utah',
+    'Golden State Warriors': 'gs', 'Los Angeles Clippers': 'lac', 'Los Angeles Lakers': 'lal',
+    'Phoenix Suns': 'phx', 'Sacramento Kings': 'sac',
+    'Dallas Mavericks': 'dal', 'Memphis Grizzlies': 'mem', 'New Orleans Pelicans': 'no',
+    'Houston Rockets': 'hou', 'San Antonio Spurs': 'sas',
+  }
+  const CHINESE_TO_CODE: Record<string, string> = {
+    '凯尔特人': 'bos', '篮网': 'bkn', '尼克斯': 'nyk',
+    '76人': 'phi', '猛龙': 'tor',
+    '公牛': 'chi', '骑士': 'cle', '活塞': 'det', '步行者': 'ind', '雄鹿': 'mil',
+    '老鹰': 'atl', '黄蜂': 'cha', '热火': 'mia', '魔术': 'orl', '奇才': 'was',
+    '掘金': 'den', '森林狼': 'min', '雷霆': 'okc', '开拓者': 'por', '爵士': 'utah',
+    '勇士': 'gs', '快船': 'lac', '湖人': 'lal', '太阳': 'phx', '国王': 'sac',
+    '独行侠': 'dal', '灰熊': 'mem', '鹈鹕': 'no', '火箭': 'hou', '马刺': 'sas',
+  }
+  const map: Record<string, TeamColors> = {}
+  for (const [full, colors] of Object.entries(teamColorMap)) {
+    const code = NAME_TO_CODE[full]
+    if (code) map[code] = colors
+  }
+  for (const [cn, code] of Object.entries(CHINESE_TO_CODE)) {
+    if (map[code]) map[cn] = map[code]
+  }
+  return map
+})()
+
+/**
+ * 按任意名称（中文队名 / 英文全称 / 简称）获取球队品牌色
+ * @returns 颜色对象，未知球队返回 undefined
+ */
+export function getTeamBrandColor(name: string): TeamColors | undefined {
+  if (!name) return undefined
+  if (CODE_COLORS[name]) return CODE_COLORS[name]
+  const colors = teamColorMap[name]
+  if (colors) return colors
+  // 英文简称模糊匹配
+  const lower = name.toLowerCase()
+  for (const [key, value] of Object.entries(teamColorMap)) {
+    if (key.toLowerCase().includes(lower)) return value
+  }
+  return undefined
 }
 
 /**

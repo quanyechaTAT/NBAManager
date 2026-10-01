@@ -49,17 +49,35 @@ TEAM_ALIASES = {
 }
 
 PLAYER_ALIASES = {
-    "詹姆斯": "勒布朗-詹姆斯",
-    "勒布朗": "勒布朗-詹姆斯",
-    "杜兰特": "凯文-杜兰特",
-    "库里": "斯蒂芬-库里",
-    "东契奇": "卢卡-东契奇",
-    "字母哥": "扬尼斯-阿德托昆博",
-    "约基奇": "尼古拉-约基奇",
-    "恩比德": "乔尔-恩比德",
-    "塔图姆": "杰森-塔图姆",
-    "布克": "德文-布克",
-    "文班亚马": "维克托-文班亚马",
+    "詹姆斯·哈登": "詹姆斯·哈登",
+    "哈登": "詹姆斯·哈登",
+    "詹姆斯": "勒布朗·詹姆斯",
+    "勒布朗": "勒布朗·詹姆斯",
+    "杜兰特": "凯文·杜兰特",
+    "库里": "斯蒂芬·库里",
+    "东契奇": "卢卡·东契奇",
+    "字母哥": "扬尼斯·阿德托昆博",
+    "约基奇": "尼古拉·约基奇",
+    "恩比德": "乔尔·恩比德",
+    "塔图姆": "杰森·塔图姆",
+    "布克": "德文·布克",
+    "文班亚马": "维克托·文班亚马",
+    "亚历山大": "谢伊·吉尔杰斯·亚历山大",
+    "SGA": "谢伊·吉尔杰斯·亚历山大",
+    "哈利伯顿": "泰瑞斯·哈利伯顿",
+    "莫兰特": "贾·莫兰特",
+    "特雷杨": "特雷·杨",
+    "锡安": "锡安·威廉姆森",
+    "浓眉": "安东尼·戴维斯",
+    "戴维斯": "安东尼·戴维斯",
+    "利拉德": "达米安·利拉德",
+    "巴特勒": "吉米·巴特勒",
+    "伦纳德": "科怀·伦纳德",
+    "乔治": "保罗·乔治",
+    "穆雷": "贾马尔·穆雷",
+    "米切尔": "多诺万·米切尔",
+    "布伦森": "杰伦·布伦森",
+    "爱德华兹": "安东尼·爱德华兹",
     # 历史/退役球员（不在当前数据库中）
     "迈克尔·乔丹": "__OUT_OF_SCOPE__",
     "乔丹": "__OUT_OF_SCOPE__",
@@ -76,11 +94,20 @@ PLAYER_ALIASES = {
     "姚明": "__OUT_OF_SCOPE__",
 }
 
-TEAM_KEYWORDS = re.compile(r"战绩|排名|胜率|胜负|球队|东部|西部")
-PLAYER_KEYWORDS = re.compile(r"场均|球员|数据|表现")
+TEAM_KEYWORDS = re.compile(
+    r"战绩|排名|胜率|胜负|球队|东部|西部|最近|近期|近[一二两三四五六七八九十\d]+场|"
+    r"状态|表现|打得|打的|怎么样|如何|势头|连胜|连败|赛程"
+)
+PLAYER_KEYWORDS = re.compile(
+    r"场均|球员|数据|表现|得分|篮板|助攻|抢断|盖帽|失误|"
+    r"命中率|投篮|三分|罚球|出场|上场时间|效率|使用率"
+)
 MATCH_KEYWORDS = re.compile(r"比赛|比分|赛程|总决赛|季后赛|对阵|主场|客场")
 NEWS_KEYWORDS = re.compile(r"新闻|资讯|交易|伤病|报道")
-RANKING_KEYWORDS = re.compile(r"最高|排行|排名|前十|top|Top|TOP|第一|最多|得分王|篮板王|助攻王|抢断王|盖帽王|效率王")
+RANKING_KEYWORDS = re.compile(
+    r"最高|排行|排名|榜|前[一二两三四五六七八九十\d]+|top|Top|TOP|第一|最多|"
+    r"得分王|篮板王|助攻王|抢断王|盖帽王|效率王"
+)
 
 
 @dataclass(frozen=True)
@@ -131,9 +158,21 @@ class QueryClassifier:
         return found
 
     def _find_players(self, query: str) -> list[str]:
+        matches: list[tuple[int, str]] = []
+        occupied: list[tuple[int, int]] = []
+        for alias, player in sorted(PLAYER_ALIASES.items(), key=lambda item: len(item[0]), reverse=True):
+            start = query.find(alias)
+            while start >= 0:
+                end = start + len(alias)
+                overlaps = any(start < used_end and end > used_start for used_start, used_end in occupied)
+                if not overlaps:
+                    occupied.append((start, end))
+                    matches.append((start, player))
+                    break
+                start = query.find(alias, start + 1)
         found = []
-        for alias, player in PLAYER_ALIASES.items():
-            if alias in query and player not in found:
+        for _start, player in sorted(matches, key=lambda item: item[0]):
+            if player not in found:
                 found.append(player)
         return found
 
@@ -155,7 +194,7 @@ class QueryClassifier:
         """检测问题是否超出 NBA 数据库范围"""
         out_of_scope = re.compile(
             r"薪资帽|工资帽|规则|历史纪录|最伟大|goat|名人堂|"
-            r"nba2k|游戏|篮球鞋|球鞋|教练|裁判|总裁|老板|"
+            r"nba2k|游戏|篮球鞋|球鞋|裁判|总裁|老板|"
             r"市值|收视率|转播合同|中国男篮|足球|天气"
         )
         return bool(out_of_scope.search(query.lower()))

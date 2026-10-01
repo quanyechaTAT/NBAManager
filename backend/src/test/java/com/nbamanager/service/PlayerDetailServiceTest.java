@@ -1,5 +1,6 @@
 package com.nbamanager.service;
 
+import com.nbamanager.config.PythonTimeoutProperties;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
@@ -11,6 +12,7 @@ import com.nbamanager.repository.MatchRecordRepository;
 import com.nbamanager.repository.PlayerCareerStatsRepository;
 import com.nbamanager.repository.PlayerGameLogRepository;
 import com.nbamanager.repository.PlayerRepository;
+import com.nbamanager.repository.PlayerSeasonStatsRepository;
 import com.nbamanager.repository.TeamRepository;
 import java.time.LocalDate;
 import java.util.List;
@@ -39,6 +41,15 @@ class PlayerDetailServiceTest {
 
     @Mock
     private MatchRecordRepository matchRecordRepository;
+
+    @Mock
+    private PlayerSeasonStatsRepository playerSeasonStatsRepository;
+
+    @Mock
+    private PythonScriptRunner pythonScriptRunner;
+
+    @Mock
+    private PythonTimeoutProperties pythonTimeoutProperties;
 
     @Test
     void getGameLogMergesScoresFromMatchingGameRecord() {
@@ -91,7 +102,10 @@ class PlayerDetailServiceTest {
                 playerGameLogRepository,
                 playerCareerStatsRepository,
                 teamRepository,
-                matchRecordRepository);
+                matchRecordRepository,
+                playerSeasonStatsRepository,
+                pythonScriptRunner,
+                pythonTimeoutProperties);
 
         var result = service.getGameLog(7L, null, pageable);
 

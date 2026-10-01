@@ -13,7 +13,7 @@
 
     <groupId>com.nbamanager</groupId>
     <artifactId>nba-manager-backend</artifactId>
-    <version>1.0.0</version>
+    <version>4.0.0</version>
     <name>nba-manager-backend</name>
     <description>NBA 演示数据管理 API</description>
 
@@ -48,6 +48,14 @@
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
             <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>

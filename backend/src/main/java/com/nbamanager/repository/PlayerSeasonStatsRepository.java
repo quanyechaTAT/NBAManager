@@ -63,4 +63,35 @@ public interface PlayerSeasonStatsRepository extends JpaRepository<PlayerSeasonS
 
     /** 统计指定赛季球员数量 */
     long countBySeason(String season);
+
+    /** 联盟均值/极值聚合投影（接口别名须与 JPQL 别名一致） */
+    interface LeagueStatAggregate {
+        java.math.BigDecimal getAvgPoints();
+        java.math.BigDecimal getAvgRebounds();
+        java.math.BigDecimal getAvgAssists();
+        java.math.BigDecimal getAvgSteals();
+        java.math.BigDecimal getAvgBlocks();
+        java.math.BigDecimal getAvgFieldGoalPct();
+        java.math.BigDecimal getAvgThreePointPct();
+        java.math.BigDecimal getMaxPoints();
+        java.math.BigDecimal getMaxRebounds();
+        java.math.BigDecimal getMaxAssists();
+        java.math.BigDecimal getMaxSteals();
+        java.math.BigDecimal getMaxBlocks();
+        java.math.BigDecimal getMaxFieldGoalPct();
+        java.math.BigDecimal getMaxThreePointPct();
+        Long getPlayerCount();
+    }
+
+    /** 指定赛季联盟平均与极值（出场 >= 10 场，剔除边缘样本） */
+    @Query("SELECT AVG(p.pointsPerGame) AS avgPoints, AVG(p.reboundsPerGame) AS avgRebounds, " +
+           "AVG(p.assistsPerGame) AS avgAssists, AVG(p.stealsPerGame) AS avgSteals, " +
+           "AVG(p.blocksPerGame) AS avgBlocks, AVG(p.fieldGoalPct) AS avgFieldGoalPct, " +
+           "AVG(p.threePointPct) AS avgThreePointPct, " +
+           "MAX(p.pointsPerGame) AS maxPoints, MAX(p.reboundsPerGame) AS maxRebounds, " +
+           "MAX(p.assistsPerGame) AS maxAssists, MAX(p.stealsPerGame) AS maxSteals, " +
+           "MAX(p.blocksPerGame) AS maxBlocks, MAX(p.fieldGoalPct) AS maxFieldGoalPct, " +
+           "MAX(p.threePointPct) AS maxThreePointPct, COUNT(p) AS playerCount " +
+           "FROM PlayerSeasonStats p WHERE p.season = :season AND p.gamesPlayed >= 10")
+    LeagueStatAggregate findLeagueAggregate(@Param("season") String season);
 }

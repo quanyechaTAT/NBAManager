@@ -1,11 +1,14 @@
 package com.nbamanager.service.provider;
 
+import com.nbamanager.config.PythonTimeoutProperties;
 import com.nbamanager.config.EnvFileReader;
 import com.nbamanager.domain.provider.PlayByPlayEvent;
 import com.nbamanager.domain.provider.PlayByPlayFetchOptions;
 import com.nbamanager.domain.provider.PlayByPlayFetchResult;
 import com.nbamanager.domain.provider.PlayByPlayProvider;
 import com.nbamanager.domain.provider.ProviderType;
+import com.nbamanager.domain.provider.ReplayProviderOutcome;
+import com.nbamanager.service.PythonScriptRunner;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
@@ -13,13 +16,23 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.json.JSONException;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 @Component
+@Order(100)
 @Slf4j
+@RequiredArgsConstructor
 public class NbaPlayByPlayProvider implements PlayByPlayProvider {
+
+    private static final String NBA_GAME_ID_PATTERN = "^00\\d{8}$";
+
+    private final PythonScriptRunner pythonScriptRunner;
+    private final PythonTimeoutProperties pythonTimeoutProperties;
 
     @Override
     public ProviderType type() {
@@ -28,116 +41,79 @@ public class NbaPlayByPlayProvider implements PlayByPlayProvider {
 
     @Override
     public boolean supports(String gameId) {
-        return gameId != null && !gameId.isBlank();
+        return gameId != null && gameId.matches(NBA_GAME_ID_PATTERN);
     }
 
     @Override
     public PlayByPlayFetchResult fetch(String gameId, PlayByPlayFetchOptions options) {
         long startTime = System.currentTimeMillis();
         try {
-            String scriptPath = findScriptPath();
+            if (!supports(gameId)) {
+                return PlayByPlayFetchResult.failure(
+                        type(),
+                        "UNSUPPORTED_GAME_ID",
+                        "NBA provider requires a 10-digit game ID beginning with 00",
+                        false,
+                        null,
+                        System.currentTimeMillis() - startTime
+                );
+            }
+
             log.info("NbaPlayByPlayProvider: calling Python script for gameId={}", gameId);
-
-            ProcessBuilder pb = new ProcessBuilder("python", scriptPath, "playbyplay", gameId);
-            pb.redirectErrorStream(false);
-            pb.directory(new File(scriptPath).getParentFile());
-            pb.environment().put("PYTHONIOENCODING", "utf-8");
-            // 不传递代理配置，避免代理阻断 NBA API 请求
-            // Python 脚本内部已对 NBA API 调用做了代理绕过
-
-            // Translation API configuration
-            String mimoApiKey = EnvFileReader.get("MIMO_API_KEY");
-            String mimoBaseUrl = EnvFileReader.get("MIMO_BASE_URL");
-            if (mimoApiKey != null && !mimoApiKey.isEmpty()) {
-                pb.environment().put("MIMO_API_KEY", mimoApiKey);
-            }
-            if (mimoBaseUrl != null && !mimoBaseUrl.isEmpty()) {
-                pb.environment().put("MIMO_BASE_URL", mimoBaseUrl);
-            }
-
-            Process process = pb.start();
-
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-            }
-
-            StringBuilder errorOutput = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    errorOutput.append(line).append("\n");
-                }
-            }
-
-            // Wait for process, max 60 seconds
-            boolean finished = process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
-            if (!finished) {
-                log.error("NbaPlayByPlayProvider: Python script timed out for gameId={}", gameId);
-                process.destroyForcibly();
+            PythonScriptRunner.PythonResult result = pythonScriptRunner.run(
+                    "nba_data_fetcher.py", new String[]{"playbyplay", gameId},
+                    pythonTimeoutProperties.getDetailSeconds());
+            if (!result.success()) {
+                log.error("NbaPlayByPlayProvider: Python script failed, exitCode={}, timedOut={}, error={}",
+                        result.exitCode(), result.timedOut(), result.stderr());
                 long elapsed = System.currentTimeMillis() - startTime;
-                return PlayByPlayFetchResult.failure(type(), "Python script timed out", elapsed);
+                return PlayByPlayFetchResult.failure(
+                        type(),
+                        result.timedOut() ? "PROVIDER_TIMEOUT" : "PROVIDER_PROCESS_ERROR",
+                        result.timedOut() ? "Python script timed out"
+                                : "Python script failed with exit code " + result.exitCode(),
+                        true,
+                        null,
+                        elapsed
+                );
             }
 
-            int exitCode = process.exitValue();
-            if (exitCode != 0) {
-                log.error("NbaPlayByPlayProvider: Python script failed, exitCode={}, error={}",
-                        exitCode, errorOutput.toString());
-                long elapsed = System.currentTimeMillis() - startTime;
-                return PlayByPlayFetchResult.failure(type(),
-                        "Python script failed with exit code " + exitCode, elapsed);
-            }
-
-            String jsonStr = output.toString().trim();
+            String jsonStr = result.stdout().trim();
             if (jsonStr.isEmpty()) {
                 log.error("NbaPlayByPlayProvider: Python script returned empty output");
                 long elapsed = System.currentTimeMillis() - startTime;
-                return PlayByPlayFetchResult.failure(type(), "Empty output from Python script", elapsed);
+                return PlayByPlayFetchResult.failure(
+                        type(), "EMPTY_PROCESS_OUTPUT", "Empty output from Python script",
+                        true, null, elapsed);
             }
 
-            // Parse the JSON output - expect a JSONArray directly or wrapped in an object
-            JSONArray eventsArray;
-            try {
-                // Try parsing as a JSONArray directly
-                eventsArray = new JSONArray(jsonStr);
-            } catch (org.json.JSONException e1) {
-                try {
-                    // Try parsing as JSONObject with an "events" or "playByPlay" key
-                    JSONObject root = new JSONObject(jsonStr);
-                    if (root.has("events") && !root.isNull("events")) {
-                        eventsArray = root.getJSONArray("events");
-                    } else if (root.has("playByPlay") && !root.isNull("playByPlay")) {
-                        eventsArray = root.getJSONArray("playByPlay");
-                    } else if (root.has("play_by_play") && !root.isNull("play_by_play")) {
-                        eventsArray = root.getJSONArray("play_by_play");
-                    } else {
-                        long elapsed = System.currentTimeMillis() - startTime;
-                        return PlayByPlayFetchResult.failure(type(),
-                                "Unexpected JSON structure: no 'events' or 'playByPlay' key", elapsed);
-                    }
-                } catch (org.json.JSONException e2) {
-                    long elapsed = System.currentTimeMillis() - startTime;
-                    return PlayByPlayFetchResult.failure(type(),
-                            "Failed to parse Python output as JSON: " + e2.getMessage(), elapsed);
-                }
-            }
-
-            List<PlayByPlayEvent> events = parseEvents(eventsArray, gameId);
+            PlayByPlayFetchResult.ProviderPayload payload =
+                    PlayByPlayFetchResult.parseProviderPayload(jsonStr, type());
             long elapsed = System.currentTimeMillis() - startTime;
+            if (payload.outcome() != ReplayProviderOutcome.SUCCESS) {
+                log.warn("NbaPlayByPlayProvider: provider outcome={} for gameId={}, errorCode={}",
+                        payload.outcome(), gameId, payload.errorCode());
+                return PlayByPlayFetchResult.failure(type(), payload, jsonStr, elapsed);
+            }
+
+            List<PlayByPlayEvent> events = parseEvents(payload.events(), gameId);
             log.info("NbaPlayByPlayProvider: fetched {} events for gameId={} in {}ms",
                     events.size(), gameId, elapsed);
 
-            return PlayByPlayFetchResult.success(type(), events, jsonStr, elapsed);
+            return PlayByPlayFetchResult.success(
+                    type(), events, jsonStr, payload.quality(), payload.providerSource(), elapsed);
 
+        } catch (IllegalArgumentException | JSONException e) {
+            log.error("NbaPlayByPlayProvider: invalid provider contract for gameId={}: {}",
+                    gameId, e.getMessage());
+            long elapsed = System.currentTimeMillis() - startTime;
+            return PlayByPlayFetchResult.failure(
+                    type(), "INVALID_PROVIDER_CONTRACT", e.getMessage(), false, null, elapsed);
         } catch (Exception e) {
             log.error("NbaPlayByPlayProvider: error fetching play-by-play for gameId={}", gameId, e);
             long elapsed = System.currentTimeMillis() - startTime;
-            return PlayByPlayFetchResult.failure(type(), "Error: " + e.getMessage(), elapsed);
+            return PlayByPlayFetchResult.failure(
+                    type(), "PROVIDER_RUNTIME_ERROR", "Error: " + e.getMessage(), true, null, elapsed);
         }
     }
 

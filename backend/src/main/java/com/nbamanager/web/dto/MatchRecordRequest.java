@@ -11,5 +11,6 @@ public record MatchRecordRequest(
         @NotNull Integer awayScore,
         @NotNull LocalDate matchDate,
         @NotBlank String season,
-        @NotBlank String status
+        @NotBlank String status,
+        String gameType
 ) {}

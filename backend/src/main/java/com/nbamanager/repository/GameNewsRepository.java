@@ -3,16 +3,25 @@ package com.nbamanager.repository;
 import com.nbamanager.domain.GameNews;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public interface GameNewsRepository extends JpaRepository<GameNews, Long> {
+
+    @Modifying
+    @Query("UPDATE GameNews g SET g.favoriteCount = COALESCE(g.favoriteCount, 0) + :delta WHERE g.id = :id")
+    int bumpFavoriteCount(@Param("id") Long id, @Param("delta") int delta);
+
 
     /** 按标题或主客队搜索 */
     @Query("SELECT g FROM GameNews g WHERE "
@@ -23,6 +32,10 @@ public interface GameNewsRepository extends JpaRepository<GameNews, Long> {
     @Query("SELECT g FROM GameNews g WHERE g.gameStartTime >= :start AND g.gameStartTime < :end "
             + "AND g.category IN ('game', 'summer_game') ORDER BY g.gameStartTime ASC")
     List<GameNews> findTodayGames(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+    @Query("SELECT COUNT(g) FROM GameNews g WHERE g.gameStartTime >= :start AND g.gameStartTime < :end "
+            + "AND g.category IN ('game', 'summer_game')")
+    long countTodayGames(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
     /** 统计总数 */
     long count();
@@ -47,4 +60,25 @@ public interface GameNewsRepository extends JpaRepository<GameNews, Long> {
 
     /** 按nbaGameId查找新闻 */
     List<GameNews> findByNbaGameId(String nbaGameId);
+
+    List<GameNews> findBySourceUrlIn(Collection<String> sourceUrls);
+
+    List<GameNews> findByTitleIn(Collection<String> titles);
+
+    List<GameNews> findByTitleEnIn(Collection<String> titles);
+
+    List<GameNews> findByNbaGameIdIn(Collection<String> nbaGameIds);
+
+    @Query("SELECT g.id FROM GameNews g ORDER BY g.createTime ASC, g.id ASC")
+    List<Long> findOldestIds(Pageable pageable);
+
+    @Query("SELECT g.sourceUrl FROM GameNews g WHERE g.sourceUrl IS NOT NULL AND g.sourceUrl <> ''")
+    List<String> findAllSourceUrls();
+
+    @Query("SELECT CASE WHEN g.titleEn IS NOT NULL AND g.titleEn <> '' THEN g.titleEn ELSE g.title END FROM GameNews g")
+    List<String> findAllKnownTitles();
+
+    /** 获取最大 ID（不加载整张表） */
+    @org.springframework.data.jpa.repository.Query("SELECT MAX(n.id) FROM GameNews n")
+    Long findMaxId();
 }

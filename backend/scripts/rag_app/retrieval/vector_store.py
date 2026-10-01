@@ -28,11 +28,20 @@ class ChromaVectorStore:
         import chromadb
 
         self.settings.ensure_runtime_dirs()
-        self._client = chromadb.PersistentClient(path=self.settings.chroma_path)
-        self._collection = self._client.get_or_create_collection(
-            name=self.settings.collection_name,
-            metadata={"hnsw:space": "cosine"},
-        )
+        try:
+            self._client = chromadb.PersistentClient(path=self.settings.chroma_path)
+            self._collection = self._client.get_or_create_collection(
+                name=self.settings.collection_name,
+                metadata={"hnsw:space": "cosine"},
+            )
+        except KeyError:
+            # chromadb 进程级系统缓存偶发竞态（KeyError: <chroma_path>），
+            # 重建客户端实例后重试一次；仍失败则向上抛由引擎降级
+            self._client = chromadb.PersistentClient(path=self.settings.chroma_path)
+            self._collection = self._client.get_or_create_collection(
+                name=self.settings.collection_name,
+                metadata={"hnsw:space": "cosine"},
+            )
         print(f"Chroma collection loaded: {self.settings.collection_name}, count={self.count()}", file=sys.stderr)
         return self._collection
 

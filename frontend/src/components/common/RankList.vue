@@ -11,7 +11,7 @@
 
     <!-- 空态 -->
     <div v-if="!loading && items.length === 0" class="rank-list-panel__empty">
-      <span class="rank-list-panel__empty-icon">📊</span>
+      <span class="rank-list-panel__empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="1em" height="1em"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 16l4-6 4 3 5-7"/></svg></span>
       <span class="rank-list-panel__empty-text">暂无排行数据</span>
     </div>
 
@@ -133,8 +133,20 @@ function handleItemClick(item: RankItem) {
 .rank-list-panel {
   background: var(--bg-card);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+
+.rank-list-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: var(--accent-edge, linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.7), transparent));
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .rank-list-panel__header {
@@ -190,12 +202,18 @@ function handleItemClick(item: RankItem) {
 .rank-list-panel__row {
   display: flex;
   align-items: center;
-  padding: 7px 20px;
-  transition: background var(--duration-fast) var(--ease-smooth);
+  padding: 8px 20px;
+  transition:
+    background var(--duration-fast) var(--ease-smooth),
+    transform var(--duration-nav, 0.18s) var(--ease-out-quart, ease);
 }
 
 .rank-list-panel__row:hover {
   background: var(--bg-hover);
+}
+
+.rank-list-panel__row--clickable:hover {
+  transform: translateX(2px);
 }
 
 .rank-list-panel__row--head {

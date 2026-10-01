@@ -165,7 +165,7 @@ function handleSend() {
   border: none;
   border-radius: var(--radius-md);
   background: var(--chat-accent, var(--accent));
-  color: #fff;
+  color: var(--accent-contrast, #04202A);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;

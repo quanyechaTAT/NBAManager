@@ -20,6 +20,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserDetailsServiceImpl userDetailsService;
+    private final UserIdentityCache userIdentityCache;
 
     @Override
     protected void doFilterInternal(
@@ -36,8 +37,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             String username = jwtService.extractUsername(token);
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-                if (jwtService.isTokenValid(token, username)) {
+                UserDetails userDetails = userIdentityCache.get(username);
+                if (userDetails == null) {
+                    userDetails = userDetailsService.loadUserByUsername(username);
+                    userIdentityCache.put(username, userDetails);
+                }
+                String expectedMarker = JwtService.pwdMarkerOf(userDetails.getPassword());
+                if (jwtService.isTokenValid(token, username, expectedMarker)) {
                     UsernamePasswordAuthenticationToken auth =
                             new UsernamePasswordAuthenticationToken(
                                     userDetails, null, userDetails.getAuthorities());

@@ -34,3 +34,8 @@ export function deleteNotification(id: number) {
 export function clearReadNotifications() {
   return request.delete('/notifications/clear-read')
 }
+
+/** 由评论 id 反查所属帖子 id（COMMENT_LIKE 通知的 relatedId 现为 commentId）。 */
+export function fetchPostIdByCommentId(commentId: number | string) {
+  return request.get<{ postId: number }>(`/comments/${commentId}/post-id`)
+}

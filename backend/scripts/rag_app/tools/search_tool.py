@@ -102,11 +102,34 @@ class SearchProvider(ABC):
 # ESPN Scoreboard Provider
 # ══════════════════════════════════════════════════════════════
 
+def _build_proxy_opener() -> urllib.request.OpenerDirector:
+    """Build a proxy-aware opener using HTTP_PROXY/HTTPS_PROXY or NBA_PROXY_HOST/PORT env vars."""
+    import os
+    proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY") or ""
+    if not proxy_url:
+        host = os.environ.get("NBA_PROXY_HOST", "").strip()
+        port = os.environ.get("NBA_PROXY_PORT", "").strip()
+        if host and port:
+            proxy_url = f"http://{host}:{port}"
+    if proxy_url:
+        handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+        return urllib.request.build_opener(handler)
+    return urllib.request.build_opener()
+
+
 class EspnScoreboardProvider(SearchProvider):
     name = "espn_scoreboard"
 
-    def __init__(self, timeout: int = 10):
+    # scoreboard 是与 query 无关的全局数据：TTL 微缓存 + single-flight，
+    # 并发突发（压测 20 并发曾把上游抓取排队成 63s 首字节）只放行一次真实抓取
+    CACHE_TTL_SECONDS = 30
+
+    def __init__(self, timeout: int = 30):
         self.timeout = timeout
+        self._opener = _build_proxy_opener()
+        self._cache_lock = threading.Lock()
+        self._cache_ts = 0.0
+        self._cache_data = None
 
     def is_available(self) -> bool:
         return True
@@ -118,13 +141,37 @@ class EspnScoreboardProvider(SearchProvider):
         except Exception:
             return False
 
+    def _fetch_scoreboard_cached(self):
+        now = _time.time()
+        with self._cache_lock:
+            if self._cache_data is not None and now - self._cache_ts < self.CACHE_TTL_SECONDS:
+                return self._cache_data
+            # single-flight：持锁抓取（其余线程在此等待，抓取完成后直接读缓存）
+            data = self._fetch_scoreboard()
+            if data is not None:
+                self._cache_data = data
+                self._cache_ts = now
+            return data
+
     def search(self, query: str, limit: int = 5, context: dict | None = None) -> list[SearchResult]:
-        data = self._fetch_scoreboard()
+        data = self._fetch_scoreboard_cached()
         if not data:
             return []
         fetched_at = datetime.now(timezone.utc).isoformat()
         results = []
-        for event in data.get("events", [])[:limit]:
+        events = data.get("events", [])
+        target_date = self._query_date(query)
+        if target_date is not None:
+            filtered = [event for event in events if self._event_local_date(event) == target_date]
+            if filtered:
+                events = filtered
+            else:
+                # 日期明确的查询（今天/明天/具体日期）：绝不能用其他日期的赛事充数——
+                # 休赛期 scoreboard 常混入夏季联赛旧比分与未来季前赛，直接输出会误导用户。
+                # 改为返回一条"无比赛+近期赛程预告"结果，由引擎生成诚实回答。
+                note = self._upcoming_schedule_note(events, target_date, query)
+                return [note] if note else []
+        for event in events[:limit]:
             competition = (event.get("competitions") or [{}])[0]
             competitors = competition.get("competitors") or []
             home = next((c for c in competitors if c.get("homeAway") == "home"), {})
@@ -148,6 +195,83 @@ class EspnScoreboardProvider(SearchProvider):
             ))
         return results
 
+    def _upcoming_schedule_note(self, events: list, target_date, query: str):
+        """目标日期无比赛时，生成"无比赛 + 近期赛程预告"的说明型结果。
+
+        title 刻意不含 " vs "，避免被引擎的比分解析当作比赛列表。
+        """
+        now = datetime.now(timezone.utc)
+        upcoming = []
+        for event in sorted(events, key=lambda e: str(e.get("date") or "")):
+            value = str(event.get("date") or "")
+            try:
+                event_dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if event_dt <= now:
+                continue
+            competition = (event.get("competitions") or [{}])[0]
+            competitors = competition.get("competitors") or []
+            home = next((c for c in competitors if c.get("homeAway") == "home"), {})
+            away = next((c for c in competitors if c.get("homeAway") == "away"), {})
+            home_name = (home.get("team") or {}).get("displayName", "")
+            away_name = (away.get("team") or {}).get("displayName", "")
+            if not home_name or not away_name:
+                continue
+            local = event_dt.astimezone(timezone(timedelta(hours=8)))
+            upcoming.append(f"{local.month}月{local.day}日 {away_name} 对阵 {home_name}")
+            if len(upcoming) >= 2:
+                break
+        date_text = f"{target_date.month}月{target_date.day}日"
+        snippet = f"{date_text}没有安排 NBA 比赛（休赛期或当日无赛事）。"
+        if upcoming:
+            snippet += "近期赛程：" + "；".join(upcoming)
+        return SearchResult(
+            title="NBA 近期赛程说明",
+            url="https://www.espn.com/nba/schedule",
+            snippet=snippet,
+            provider=self.name,
+            source_domain="espn.com",
+            published_at=now.isoformat(),
+            fetched_at=now.isoformat(),
+            query=query,
+        )
+
+    @staticmethod
+    def _query_date(query: str):
+        explicit = re.search(r"(20\d{2})[-/]([01]?\d)[-/]([0-3]?\d)", query)
+        if explicit:
+            try:
+                return datetime(
+                    int(explicit.group(1)), int(explicit.group(2)), int(explicit.group(3))
+                ).date()
+            except ValueError:
+                return None
+
+        china_tz = timezone(timedelta(hours=8))
+        today = datetime.now(china_tz).date()
+        lower = query.lower()
+        if "明天" in query or "tomorrow" in lower:
+            return today + timedelta(days=1)
+        if "昨天" in query or "yesterday" in lower:
+            return today - timedelta(days=1)
+        if "今天" in query or "今日" in query or "today" in lower:
+            return today
+        return None
+
+    @staticmethod
+    def _event_local_date(event: dict):
+        value = str(event.get("date") or "").strip()
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone(timedelta(hours=8))).date()
+        except ValueError:
+            return None
+
     def _fetch_scoreboard(self) -> dict | None:
         """合并 NBA 常规赛/季后赛 + 夏季联赛数据"""
         urls = [
@@ -158,8 +282,8 @@ class EspnScoreboardProvider(SearchProvider):
         seen_ids = set()
         for url in urls:
             try:
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                req = urllib.request.Request(url, headers={"User-Agent": "NBAManager/1.0 (+https://github.com/nbamanager)"})
+                with self._opener.open(req, timeout=self.timeout) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     for event in data.get("events", []):
                         eid = event.get("id", "")
@@ -180,8 +304,16 @@ class EspnScoreboardProvider(SearchProvider):
 class EspnNewsProvider(SearchProvider):
     name = "espn_news"
 
-    def __init__(self, timeout: int = 10):
+    # scoreboard 是与 query 无关的全局数据：TTL 微缓存 + single-flight，
+    # 并发突发（压测 20 并发曾把上游抓取排队成 63s 首字节）只放行一次真实抓取
+    CACHE_TTL_SECONDS = 30
+
+    def __init__(self, timeout: int = 30):
         self.timeout = timeout
+        self._opener = _build_proxy_opener()
+        self._cache_lock = threading.Lock()
+        self._cache_ts = 0.0
+        self._cache_data = None
 
     def is_available(self) -> bool:
         return True
@@ -215,8 +347,8 @@ class EspnNewsProvider(SearchProvider):
     def _fetch_news(self) -> dict | None:
         url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/news"
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            req = urllib.request.Request(url, headers={"User-Agent": "NBAManager/1.0 (+https://github.com/nbamanager)"})
+            with self._opener.open(req, timeout=self.timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except Exception:
             return None
@@ -229,8 +361,16 @@ class EspnNewsProvider(SearchProvider):
 class GoogleNewsRssProvider(SearchProvider):
     name = "google_news_rss"
 
-    def __init__(self, timeout: int = 10):
+    # scoreboard 是与 query 无关的全局数据：TTL 微缓存 + single-flight，
+    # 并发突发（压测 20 并发曾把上游抓取排队成 63s 首字节）只放行一次真实抓取
+    CACHE_TTL_SECONDS = 30
+
+    def __init__(self, timeout: int = 30):
         self.timeout = timeout
+        self._opener = _build_proxy_opener()
+        self._cache_lock = threading.Lock()
+        self._cache_ts = 0.0
+        self._cache_data = None
 
     def is_available(self) -> bool:
         return True
@@ -248,7 +388,7 @@ class GoogleNewsRssProvider(SearchProvider):
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 "Accept": "application/rss+xml,application/xml;q=0.9,*/*;q=0.8",
             })
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with self._opener.open(req, timeout=self.timeout) as resp:
                 xml_data = resp.read().decode("utf-8", errors="ignore")
             root = ET.fromstring(xml_data)
             for item in root.findall(".//item")[:limit]:
@@ -365,7 +505,7 @@ class SearXNGProvider(SearchProvider):
             return False
         try:
             url = f"{self.base_url}/healthz"
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "NBAManager/1.0 (+https://github.com/nbamanager)"})
             with urllib.request.urlopen(req, timeout=5) as resp:
                 return resp.status == 200
         except Exception:
@@ -378,7 +518,7 @@ class SearXNGProvider(SearchProvider):
         encoded_query = quote_plus(query)
         url = f"{self.base_url}/search?q={encoded_query}&format=json&categories=news&pageno=1"
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "NBAManager/1.0 (+https://github.com/nbamanager)"})
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             results = []
@@ -472,6 +612,8 @@ class SearchService:
         for p in self.providers:
             if provider_filter and p.name not in provider_filter:
                 continue
+            if is_game and p.name != "espn_scoreboard":
+                continue
             # Scoreboard 只参与比赛类查询
             if p.name == "espn_scoreboard" and not is_game:
                 continue
@@ -505,6 +647,12 @@ class SearchService:
                 has_failure = True
             execution.provider_results.append(pr)
 
+            # ESPN 记分牌已经直接回答比赛/比分问题，无需继续请求新闻源。
+            if is_game and provider.name == "espn_scoreboard" and filtered:
+                break
+            if len(all_results) >= limit:
+                break
+
         # 去重并限制数量
         final = self._filter_results(all_results, query)[:limit]
         if final:
@@ -523,10 +671,28 @@ class SearchService:
         seen_urls = set()
         seen_titles = set()
         query_lower = query.lower()
-        query_keywords = set()
-        for word in re.split(r'\s+', query_lower):
-            if len(word) >= 2:
-                query_keywords.add(word)
+        query_keywords = {
+            word for word in re.findall(r"[a-z][a-z0-9-]+", query_lower)
+            if len(word) >= 2
+        }
+        intent_keywords = {
+            "交易": {"trade"},
+            "伤病": {"injury"},
+            "受伤": {"injury"},
+            "复出": {"return", "injury"},
+            "签约": {"sign", "signed", "signing"},
+            "自由市场": {"free agency", "free", "agency"},
+            "自由球员": {"free agent", "free", "agent"},
+            "选秀": {"draft"},
+        }
+        for chinese, translated in intent_keywords.items():
+            if chinese in query:
+                query_keywords.update(translated)
+        entity_names = {**SearchQueryRewriter.TEAM_EN, **SearchQueryRewriter.PLAYER_EN}
+        for chinese, english in entity_names.items():
+            if chinese in query:
+                query_keywords.add(chinese.lower())
+                query_keywords.update(part.lower() for part in english.split() if len(part) >= 3)
         nba_generic = {"nba", "basketball", "篮球", "比赛", "news", "latest", "最新", "scores", "score", "today", "今日", "今天"}
         specific_keywords = query_keywords - nba_generic
 
@@ -544,8 +710,8 @@ class SearchService:
             if title_key in seen_titles:
                 continue
 
-            # 官方 Provider 跳过关键词过滤：ESPN 是 NBA 官方来源，结果总是相关
-            trusted_providers = {"espn_scoreboard", "espn_news"}
+            # 记分牌是结构化 NBA 比赛源；新闻源仍需检查查询相关性。
+            trusted_providers = {"espn_scoreboard"}
             if r.provider not in trusted_providers:
                 # 第三方 Provider：检查关键词相关性
                 if specific_keywords:
@@ -623,14 +789,6 @@ class SearchQueryRewriter:
         today_str = today.strftime("%Y-%m-%d")
 
         # 改写规则
-        if "最新" in query or "最近" in query or "今日" in query or "今天" in query:
-            if players_en:
-                candidates.append(f"{players_en[0]} latest news NBA {today_str}")
-            elif teams_en:
-                candidates.append(f"{teams_en[0]} latest news NBA {today_str}")
-            else:
-                candidates.append(f"NBA latest news {today_str}")
-
         if "交易" in query or "trade" in q_lower:
             if players_en:
                 candidates.append(f"{players_en[0]} trade latest NBA")
@@ -653,6 +811,14 @@ class SearchQueryRewriter:
 
         if "自由市场" in query or "自由球员" in query:
             candidates.append(f"NBA free agency latest {today_str}")
+
+        if "最新" in query or "最近" in query or "今日" in query or "今天" in query:
+            if players_en:
+                candidates.append(f"{players_en[0]} latest news NBA {today_str}")
+            elif teams_en:
+                candidates.append(f"{teams_en[0]} latest news NBA {today_str}")
+            else:
+                candidates.append(f"NBA latest news {today_str}")
 
         # 去重
         seen = set()
@@ -794,7 +960,14 @@ class BaiduSearchTool:
 # 辅助函数
 # ══════════════════════════════════════════════════════════════
 
-def format_search_results(results: list, limit: int = 5) -> str:
+def format_search_results(
+    results: list,
+    limit: int = 5,
+    max_total_chars: int = 700,
+    max_title_chars: int = 120,
+    max_snippet_chars: int = 320,
+    max_url_chars: int = 180,
+) -> str:
     lines = []
     for index, result in enumerate(results[:limit], start=1):
         if isinstance(result, dict):
@@ -805,9 +978,22 @@ def format_search_results(results: list, limit: int = 5) -> str:
             title = result.title
             content = result.snippet
             url = result.url
+        title = _truncate_text(title, max_title_chars)
+        content = _truncate_text(content, max_snippet_chars)
+        url = _truncate_text(url, max_url_chars)
         snippet = f"：{content}" if content else ""
         lines.append(f"{index}. {title}{snippet}\n来源：{url}")
-    return "\n".join(lines)
+    formatted = "\n".join(lines)
+    return _truncate_text(formatted, max_total_chars)
+
+
+def _truncate_text(value: object, max_chars: int) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) <= max_chars:
+        return text
+    if max_chars <= 3:
+        return text[:max_chars]
+    return text[:max_chars - 3].rstrip() + "..."
 
 
 def _dedupe(results: Iterable[SearchResult]) -> Iterable[SearchResult]:

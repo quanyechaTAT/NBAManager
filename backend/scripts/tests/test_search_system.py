@@ -46,7 +46,7 @@ class TestEspnScoreboard:
         ]}
 
         with patch.object(provider, '_fetch_scoreboard', return_value=merged_data):
-            results = provider.search("today NBA games", 10)
+            results = provider.search("NBA games 2026-07-13", 10)
             assert len(results) == 2
             ids = {r.url.split('/')[-1] for r in results}
             assert "100" in ids
@@ -62,6 +62,28 @@ class TestEspnScoreboard:
         with patch.object(provider, '_fetch_scoreboard', return_value=data):
             results = provider.search("NBA Summer League scores 2026-07-13", 10)
             assert len(results) == 1  # 标题 "Celtics vs Lakers" 不含 "Summer League"，但不应被过滤
+
+    def test_explicit_date_filters_out_stale_events_before_limit(self):
+        provider = EspnScoreboardProvider(timeout=5)
+        data = {"events": [
+            {"id": "old", "date": "2026-06-14T00:30Z", "competitions": [{"competitors": [
+                {"homeAway": "home", "team": {"displayName": "Spurs"}, "score": "90"},
+                {"homeAway": "away", "team": {"displayName": "Knicks"}, "score": "94"},
+            ], "status": {"type": {"description": "Final"}}}]},
+            {"id": "current-1", "date": "2026-07-19T20:30Z", "competitions": [{"competitors": [
+                {"homeAway": "home", "team": {"displayName": "Thunder"}, "score": "90"},
+                {"homeAway": "away", "team": {"displayName": "Nets"}, "score": "108"},
+            ], "status": {"type": {"description": "Final"}}}]},
+            {"id": "current-2", "date": "2026-07-20T01:00Z", "competitions": [{"competitors": [
+                {"homeAway": "home", "team": {"displayName": "Grizzlies"}, "score": "90"},
+                {"homeAway": "away", "team": {"displayName": "Warriors"}, "score": "94"},
+            ], "status": {"type": {"description": "Final"}}}]},
+        ]}
+
+        with patch.object(provider, '_fetch_scoreboard', return_value=data):
+            results = provider.search("今天 NBA 比赛 2026-07-20", 2)
+
+        assert [result.url.rsplit('/', 1)[-1] for result in results] == ["current-1", "current-2"]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -128,6 +150,24 @@ class TestSearchService:
         results, execution = service.search("NBA trade latest", 5)
         # NFL 结果应被过滤（不含 "NBA" 或 "trade" 关键词）
         assert len(results) == 0
+
+    def test_chinese_trade_query_matches_english_espn_article(self):
+        service = SearchService(self._make_settings())
+        trade_result = SearchResult(
+            title="NBA trade latest",
+            url="https://espn.com/nba/trade",
+            snippet="A trade update from the NBA",
+            provider="espn_news",
+        )
+        news = MagicMock(spec=EspnNewsProvider)
+        news.name = "espn_news"
+        news.is_available.return_value = True
+        news.search.return_value = [trade_result]
+        service.providers = [news]
+
+        results, _execution = service.search("最新NBA交易新闻", 5)
+
+        assert results == [trade_result]
 
     def test_per_provider_tracking(self):
         """每个 Provider 应有独立的状态追踪"""
@@ -240,6 +280,23 @@ class TestQueryClassifier:
         result = c.classify("谁是本赛季得分王")
         assert result.query_type.value == "ranking"
 
+    def test_score_leaderboard_query_triggers_ranking(self):
+        """得分榜/助攻榜这类榜单说法也应触发排名查询"""
+        c = QueryClassifier()
+        assert c.classify("本赛季得分榜前五是谁？").query_type.value == "ranking"
+        assert c.classify("本赛季助攻榜前十是谁？").query_type.value == "ranking"
+
+    def test_full_player_name_wins_over_overlapping_short_alias(self):
+        result = QueryClassifier().classify("詹姆斯·哈登本赛季场均得分是多少？")
+
+        assert result.players == ["詹姆斯·哈登"]
+        assert result.query_type.value == "player"
+
+    def test_multiple_players_preserve_mention_order(self):
+        result = QueryClassifier().classify("对比库里和詹姆斯·哈登的场均得分")
+
+        assert result.players == ["斯蒂芬·库里", "詹姆斯·哈登"]
+
 
 # ══════════════════════════════════════════════════════════════
 # SearchQueryRewriter 测试
@@ -253,6 +310,12 @@ class TestSearchQueryRewriter:
         assert len(candidates) >= 2
         assert any("Kawhi" in c or "Leonard" in c for c in candidates)
         assert any("trade" in c.lower() for c in candidates)
+
+    def test_specific_trade_rewrite_precedes_generic_latest_rewrite(self):
+        candidates = SearchQueryRewriter().rewrite("伦纳德最新交易进展")
+
+        assert "trade" in candidates[1].lower()
+        assert "Kawhi" in candidates[1] or "Leonard" in candidates[1]
 
     def test_summer_league_rewrite(self):
         """夏联查询应生成英文候选"""
@@ -387,3 +450,68 @@ class TestProviderRouting:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestScoreboardNoGameDay:
+    """日期明确但当日无比赛：不得拿其他日期赛事充数，需返回赛程说明"""
+
+    def _provider_with_events(self, events):
+        from rag_app.tools.search_tool import EspnScoreboardProvider
+
+        provider = EspnScoreboardProvider.__new__(EspnScoreboardProvider)
+        provider.timeout = 5
+        provider._opener = None
+        import threading as _threading
+        provider._cache_lock = _threading.Lock()
+        provider._cache_ts = 0.0
+        provider._cache_data = None
+
+        def _fake_fetch():
+            return {"events": events}
+
+        provider._fetch_scoreboard = _fake_fetch
+        return provider
+
+    @staticmethod
+    def _event(event_id, date, away, away_score, home, home_score, status):
+        return {
+            "id": event_id,
+            "date": date,
+            "competitions": [{
+                "competitors": [
+                    {"homeAway": "away", "score": str(away_score), "team": {"displayName": away}},
+                    {"homeAway": "home", "score": str(home_score), "team": {"displayName": home}},
+                ],
+                "status": {"type": {"description": status}},
+            }],
+        }
+
+    def test_explicit_date_no_match_returns_schedule_note(self):
+        provider = self._provider_with_events([
+            # 夏季联赛旧比分（7月）与未来季前赛（10月），都不是今天
+            self._event("1", "2026-07-19T02:00:00Z", "Brooklyn Nets", 108, "Oklahoma City Thunder", 90, "Final"),
+            self._event("2", "2026-10-03T15:00:00Z", "Miami Heat", 0, "Toronto Raptors", 0, "Scheduled"),
+        ])
+        results = provider.search("分析今天所有比赛的胜负关键因素和看点")
+        assert len(results) == 1
+        assert results[0].title == "NBA 近期赛程说明"
+        assert "没有安排 NBA 比赛" in results[0].snippet
+        assert "近期赛程" in results[0].snippet
+        assert "10月3日" in results[0].snippet  # UTC 15:00 = 北京时间 23:00，同为 10月3日
+
+    def test_matching_date_keeps_only_today_games(self):
+        provider = self._provider_with_events([
+            self._event("1", "2026-07-19T02:00:00Z", "Brooklyn Nets", 108, "Oklahoma City Thunder", 90, "Final"),
+            self._event("2", "2026-10-03T23:00:00Z", "Miami Heat", 0, "Toronto Raptors", 0, "Scheduled"),
+        ])
+        # 构造一场"今天"的比赛（本地时区今天）
+        from datetime import datetime, timezone, timedelta
+        # 以北京时区"今天中午"换算回 UTC 存储，保证 _event_local_date 判定的北京日期恒等于"今天"
+        # （此前用 UTC 当日 12:00 构造，北京时间午夜后运行会错位成"昨天/明天"导致测试随机失败）
+        now_bj = datetime.now(timezone(timedelta(hours=8)))
+        event_utc = now_bj.replace(hour=12, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+        today_evt = self._event("3", event_utc.strftime("%Y-%m-%dT%H:%M:%SZ"), "Boston Celtics", 112, "LA Lakers", 108, "Final")
+        provider2 = self._provider_with_events([self._event("1", "2026-07-19T02:00:00Z", "Brooklyn Nets", 108, "Oklahoma City Thunder", 90, "Final"), today_evt])
+        results = provider2.search("今天NBA比赛结果")
+        assert len(results) == 1
+        assert "Celtics" in results[0].title and "Lakers" in results[0].title

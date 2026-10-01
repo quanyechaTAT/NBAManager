@@ -8,7 +8,7 @@
         </svg>
         AI 赛事分析
       </span>
-      <span class="mimo-label">MIMO AI</span>
+      <span class="deepseek-label">DeepSeek AI</span>
     </div>
 
     <!-- Body: summary content -->
@@ -217,7 +217,7 @@ const momentumTendency = computed(() => {
   color: var(--gi-text, #F8FAFC);
 }
 
-.mimo-label {
+.deepseek-label {
   font-size: 11px;
   font-weight: 600;
   color: var(--gi-purple, #8B5CF6);

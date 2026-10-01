@@ -6,6 +6,7 @@ public record PostDto(
         Long id,
         Long userId,
         String username,
+        String avatarUrl,
         String title,
         String content,
         String category,

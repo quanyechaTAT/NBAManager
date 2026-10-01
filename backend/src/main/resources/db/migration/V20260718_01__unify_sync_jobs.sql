@@ -1,5 +1,18 @@
--- Add stage column to sync_jobs for unified sync tracking
-ALTER TABLE sync_jobs ADD COLUMN stage VARCHAR(32) NULL AFTER progress;
+-- Add stage column to sync_jobs for unified sync tracking.
+-- Idempotent: on existing deployments JPA ddl-auto may have already added the column
+-- (MySQL has no ADD COLUMN IF NOT EXISTS, so guard via INFORMATION_SCHEMA + PREPARE).
+SET @stage_missing = (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'sync_jobs'
+      AND COLUMN_NAME = 'stage'
+);
+SET @ddl = IF(@stage_missing = 0,
+    'ALTER TABLE sync_jobs ADD COLUMN stage VARCHAR(32) NULL AFTER progress',
+    'SELECT 1');
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- Create sync_job_steps table for full sync module steps
 CREATE TABLE IF NOT EXISTS sync_job_steps (

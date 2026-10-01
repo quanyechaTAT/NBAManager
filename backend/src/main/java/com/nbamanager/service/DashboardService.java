@@ -52,7 +52,13 @@ public class DashboardService {
     @Transactional(readOnly = true)
     public Page<PlayerDto> getTopScorers(int page, int size) {
         List<Player> all = playerRepository.findAllWithTeamSortedByPpg();
-        int start = page * size;
+        // 用 long 计算 offset，避免 page/size 较大时 int 溢出成负数
+        long offset = (long) page * size;
+        if (offset > Integer.MAX_VALUE) {
+            return new org.springframework.data.domain.PageImpl<>(
+                    List.of(), PageRequest.of(0, size), all.size());
+        }
+        int start = (int) offset;
         int end = Math.min(start + size, all.size());
         List<PlayerDto> content = start < all.size()
                 ? all.subList(start, end).stream().map(this::toDto).collect(Collectors.toList())

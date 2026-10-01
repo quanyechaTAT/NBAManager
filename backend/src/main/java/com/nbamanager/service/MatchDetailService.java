@@ -1,5 +1,6 @@
 package com.nbamanager.service;
 
+import com.nbamanager.config.PythonTimeoutProperties;
 import com.nbamanager.domain.GameBoxScore;
 import com.nbamanager.domain.GameNews;
 import com.nbamanager.domain.MatchRecord;
@@ -13,10 +14,6 @@ import com.nbamanager.web.dto.BoxScoreDto;
 import com.nbamanager.web.dto.BoxScorePlayerDto;
 import com.nbamanager.web.dto.PlayByPlayDto;
 import com.nbamanager.web.dto.QuarterScoreDto;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -44,10 +41,12 @@ public class MatchDetailService {
     private final GameIdMappingService gameIdMappingService;
     private final MatchRecordRepository matchRecordRepository;
     private final GameNewsRepository gameNewsRepository;
+    private final PythonScriptRunner pythonScriptRunner;
     private final PlayerRepository playerRepository;
+    private final PythonTimeoutProperties pythonTimeoutProperties;
 
     @Cacheable(value = "boxScore", key = "#gameId", unless = "#result.homeTeam.isEmpty()")
-    @Transactional
+    @Transactional(readOnly = true)
     public BoxScoreDto getBoxScore(String gameId) {
         // 转换gameId（ESPN格式 -> NBA格式）
         String nbaGameId = gameIdMappingService.getNbaGameId(gameId);
@@ -56,18 +55,10 @@ public class MatchDetailService {
         List<GameBoxScore> records = gameBoxScoreRepository.findByGameId(nbaGameId);
 
         if (records.isEmpty()) {
-            fetchFromPython(resolveBoxScoreAction(nbaGameId), nbaGameId);
-            records = gameBoxScoreRepository.findByGameId(nbaGameId);
-        }
-
-        if (records.isEmpty()) {
             // 即使没有boxscore记录，也尝试获取比分
             ScorePair scores = resolveScores(nbaGameId, "", "");
             return new BoxScoreDto(nbaGameId, "", "", List.of(), List.of(), List.of(), scores.home, scores.away);
         }
-
-        // 翻译未翻译的球员名
-        translatePlayerNames(records);
 
         // 使用 isHome 字段分组主客队
         List<GameBoxScore> homeRecords = records.stream()
@@ -197,41 +188,15 @@ public class MatchDetailService {
      * 调用Python脚本批量翻译球员名
      */
     private Map<String, String> translateNamesViaPython(List<String> names) throws Exception {
-        String scriptPath = findScriptPath().replace("nba_data_fetcher.py", "translate_names.py");
-        File scriptFile = new File(scriptPath);
-        if (!scriptFile.exists()) {
-            log.warn("翻译脚本不存在: {}", scriptPath);
+
+        PythonScriptRunner.PythonResult pyResult = pythonScriptRunner.run(
+                "translate_names.py", names.toArray(new String[0]),
+                pythonTimeoutProperties.getTranslationSeconds());
+        if (!pyResult.success()) {
+            log.warn("翻译脚本执行失败, exitCode={}", pyResult.exitCode());
             return Map.of();
         }
-
-        List<String> cmd = new ArrayList<>();
-        cmd.add("python");
-        cmd.add(scriptPath);
-        cmd.addAll(names);
-
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-        pb.redirectErrorStream(false);
-        pb.directory(scriptFile.getParentFile());
-        pb.environment().put("PYTHONIOENCODING", "utf-8");
-
-        Process process = pb.start();
-
-        StringBuilder output = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                output.append(line);
-            }
-        }
-
-        int exitCode = process.waitFor();
-        if (exitCode != 0) {
-            log.warn("翻译脚本执行失败, exitCode={}", exitCode);
-            return Map.of();
-        }
-
-        String jsonStr = output.toString().trim();
+        String jsonStr = pyResult.stdout().trim();
         if (jsonStr.isEmpty() || jsonStr.equals("{}")) {
             return Map.of();
         }
@@ -246,7 +211,7 @@ public class MatchDetailService {
     }
 
     @Cacheable(value = "playByPlay", key = "#gameId + ':' + #period", unless = "#result.isEmpty()")
-    @Transactional
+    @Transactional(readOnly = true)
     public List<PlayByPlayDto> getPlayByPlay(String gameId, Integer period) {
         String resolvedGameId = gameIdMappingService.getNbaGameId(gameId);
         List<PlayByPlay> records;
@@ -256,53 +221,22 @@ public class MatchDetailService {
             records = playByPlayRepository.findByGameIdOrderByEventOrderAsc(resolvedGameId);
         }
 
-        if (records.isEmpty()) {
-            fetchFromPython(resolvePlayByPlayAction(resolvedGameId), resolvedGameId);
-            if (period != null) {
-                records = playByPlayRepository.findByGameIdAndPeriodOrderByEventOrderAsc(resolvedGameId, period);
-            } else {
-                records = playByPlayRepository.findByGameIdOrderByEventOrderAsc(resolvedGameId);
-            }
-        }
-
         return records.stream().map(this::toPlayByPlayDto).collect(Collectors.toList());
     }
 
     @Cacheable(value = "quarterScores", key = "#gameId", unless = "#result.isEmpty()")
-    @Transactional
+    @Transactional(readOnly = true)
     public List<QuarterScoreDto> getQuarterScores(String gameId) {
         // 转换gameId（ESPN格式 -> NBA格式）
         String nbaGameId = gameIdMappingService.getNbaGameId(gameId);
         log.info("获取逐节比分: 原始gameId={}, 转换后gameId={}", gameId, nbaGameId);
 
-        // 先从数据库获取Play-by-Play数据
-        if (isEspnSummerGameId(nbaGameId)) {
-            return fetchQuarterScoresFromScoreboard(nbaGameId, resolveMatchDate(nbaGameId));
-        }
-
+        // Public GET endpoints must be pure reads. Replay preparation is the only path
+        // allowed to call providers/Python and persist fresh facts.
         List<PlayByPlay> allEvents = playByPlayRepository.findByGameIdOrderByEventOrderAsc(nbaGameId);
-
-        // 如果数据库没有数据，调用Python脚本获取
-        if (allEvents.isEmpty()) {
-            fetchFromPython(resolvePlayByPlayAction(nbaGameId), nbaGameId);
-            allEvents = playByPlayRepository.findByGameIdOrderByEventOrderAsc(nbaGameId);
-        }
-
-        // 从Play-by-Play数据计算逐节比分（取每节最后一个有有效累计比分的事件）
         List<QuarterScoreDto> result = computeQuarterScoresFromPlayByPlay(allEvents);
 
-        // 验证Play-by-Play结果是否有效
-        if (!isQuarterScoresValid(result, nbaGameId)) {
-            log.info("Play-by-Play逐节比分无效，尝试从ScoreboardV3获取: gameId={}", nbaGameId);
-            // 尝试从MatchRecord获取日期，传递给Python脚本
-            String matchDate = resolveMatchDate(nbaGameId);
-            List<QuarterScoreDto> scoreboardResult = fetchQuarterScoresFromScoreboard(nbaGameId, matchDate);
-            if (!scoreboardResult.isEmpty()) {
-                result = scoreboardResult;
-            }
-        }
-
-        return result;
+        return isQuarterScoresAllZero(result) ? List.of() : result;
     }
 
     /**
@@ -355,6 +289,11 @@ public class MatchDetailService {
         return true;
     }
 
+    private boolean isQuarterScoresAllZero(List<QuarterScoreDto> scores) {
+        return !scores.isEmpty()
+                && scores.stream().allMatch(s -> s.homeScore() == 0 && s.awayScore() == 0);
+    }
+
     /**
      * 解析比赛日期（从MatchRecord获取）
      */
@@ -376,52 +315,22 @@ public class MatchDetailService {
      */
     private List<QuarterScoreDto> fetchQuarterScoresFromScoreboard(String gameId, String matchDate) {
         try {
-            String scriptPath = findScriptPath();
-            List<String> cmd = new ArrayList<>();
-            cmd.add("python");
-            cmd.add(scriptPath);
-            cmd.add("quarters");
-            cmd.add(gameId);
-            // 传递日期参数给Python脚本
+            List<String> args = new ArrayList<>();
+            args.add("quarters");
+            args.add(gameId);
             if (matchDate != null && !matchDate.isBlank()) {
-                cmd.add(matchDate);
+                args.add(matchDate);
             }
 
-            ProcessBuilder pb = new ProcessBuilder(cmd);
-            pb.redirectErrorStream(false);
-            pb.directory(new File(scriptPath).getParentFile());
-            pb.environment().put("PYTHONIOENCODING", "utf-8");
-            // 代理配置（可选）
-            String proxyHost = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_HOST");
-            String proxyPort = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_PORT");
-            if (proxyHost != null && !proxyHost.isEmpty()) {
-                pb.environment().put("NBA_PROXY_HOST", proxyHost);
-            }
-            if (proxyPort != null && !proxyPort.isEmpty()) {
-                pb.environment().put("NBA_PROXY_PORT", proxyPort);
+            PythonScriptRunner.PythonResult pyResult = pythonScriptRunner.run(
+                    "nba_data_fetcher.py", args.toArray(new String[0]),
+                    pythonTimeoutProperties.getDetailSeconds());
+            if (!pyResult.success()) {
+                log.warn("节比分脚本执行失败, exitCode={}", pyResult.exitCode());
+                return List.of();
             }
 
-            String mimoApiKey = com.nbamanager.config.EnvFileReader.get("MIMO_API_KEY");
-            String mimoBaseUrl = com.nbamanager.config.EnvFileReader.get("MIMO_BASE_URL");
-            if (mimoApiKey != null && !mimoApiKey.isEmpty()) {
-                pb.environment().put("MIMO_API_KEY", mimoApiKey);
-            }
-            if (mimoBaseUrl != null && !mimoBaseUrl.isEmpty()) {
-                pb.environment().put("MIMO_BASE_URL", mimoBaseUrl);
-            }
-
-            Process process = pb.start();
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-            }
-            process.waitFor();
-
-            String jsonStr = output.toString().trim();
+            String jsonStr = pyResult.stdout().trim();
             if (jsonStr.isEmpty()) return List.of();
 
             org.json.JSONObject root = new org.json.JSONObject(jsonStr);
@@ -448,67 +357,17 @@ public class MatchDetailService {
      */
     private void fetchFromPython(String dataType, String gameId) {
         try {
-            String scriptPath = findScriptPath();
             log.info("调用Python脚本获取{}数据, gameId={}", dataType, gameId);
 
-            ProcessBuilder pb = new ProcessBuilder("python", scriptPath, dataType, gameId);
-            pb.redirectErrorStream(false);
-            pb.directory(new File(scriptPath).getParentFile());
-            pb.environment().put("PYTHONIOENCODING", "utf-8");
-            // 代理配置（可选）
-            String proxyHost = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_HOST");
-            String proxyPort = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_PORT");
-            if (proxyHost != null && !proxyHost.isEmpty()) {
-                pb.environment().put("NBA_PROXY_HOST", proxyHost);
-            }
-            if (proxyPort != null && !proxyPort.isEmpty()) {
-                pb.environment().put("NBA_PROXY_PORT", proxyPort);
-            }
-
-            // 传递翻译API配置
-            String mimoApiKey = com.nbamanager.config.EnvFileReader.get("MIMO_API_KEY");
-            String mimoBaseUrl = com.nbamanager.config.EnvFileReader.get("MIMO_BASE_URL");
-            if (mimoApiKey != null && !mimoApiKey.isEmpty()) {
-                pb.environment().put("MIMO_API_KEY", mimoApiKey);
-            }
-            if (mimoBaseUrl != null && !mimoBaseUrl.isEmpty()) {
-                pb.environment().put("MIMO_BASE_URL", mimoBaseUrl);
-            }
-
-            Process process = pb.start();
-
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-            }
-
-            StringBuilder errorOutput = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    errorOutput.append(line).append("\n");
-                }
-            }
-
-            // 等待进程完成，最多60秒
-            boolean finished = process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
-            if (!finished) {
-                log.error("Python脚本执行超时, dataType={}, gameId={}", dataType, gameId);
-                process.destroyForcibly();
-                return;
-            }
-            int exitCode = process.exitValue();
-            if (exitCode != 0) {
-                log.error("Python脚本执行失败, exitCode={}, error={}", exitCode, errorOutput.toString());
+            PythonScriptRunner.PythonResult pyResult = pythonScriptRunner.run(
+                    "nba_data_fetcher.py", new String[]{dataType, gameId},
+                    pythonTimeoutProperties.getDetailSeconds());
+            if (!pyResult.success()) {
+                log.error("Python脚本执行失败, exitCode={}, error={}", pyResult.exitCode(), pyResult.stderr().substring(0, Math.min(200, pyResult.stderr().length())));
                 return;
             }
 
-            String jsonStr = output.toString().trim();
+            String jsonStr = pyResult.stdout().trim();
             if (jsonStr.isEmpty()) {
                 log.error("Python脚本输出为空");
                 return;
@@ -529,8 +388,6 @@ public class MatchDetailService {
                 if (playersArray != null) {
                     saveBoxScore(playersArray, gameId);
                 }
-            } else if (("playbyplay".equals(dataType) || "espn_summer_playbyplay".equals(dataType)) && data.has("playByPlay") && !data.isNull("playByPlay")) {
-                savePlayByPlay(data.getJSONArray("playByPlay"), gameId);
             }
 
             log.info("{}数据获取成功, gameId={}", dataType, gameId);
@@ -575,66 +432,12 @@ public class MatchDetailService {
         log.info("保存boxscore数据: {}条记录, gameId={}", records.size(), gameId);
     }
 
-    private void savePlayByPlay(JSONArray playByPlayArray, String gameId) {
-        List<PlayByPlay> records = new ArrayList<>();
-        for (int i = 0; i < playByPlayArray.length(); i++) {
-            JSONObject obj = playByPlayArray.getJSONObject(i);
-            PlayByPlay pbp = new PlayByPlay();
-            pbp.setGameId(gameId);
-            pbp.setPeriod(obj.getInt("period"));
-            pbp.setGameClock(obj.getString("gameClock"));
-            pbp.setDescription(obj.optString("description", ""));
-            pbp.setHomeScore(obj.optInt("homeScore", 0));
-            pbp.setAwayScore(obj.optInt("awayScore", 0));
-            pbp.setEventType(obj.optString("eventType", ""));
-            pbp.setPlayerId(obj.has("playerId") && !obj.isNull("playerId") ? obj.getLong("playerId") : null);
-            pbp.setPlayerName(obj.optString("playerName", ""));
-            pbp.setTeamId(obj.has("teamId") && !obj.isNull("teamId") ? obj.getLong("teamId") : null);
-            pbp.setTeamName(obj.optString("teamName", ""));
-            pbp.setSource(obj.optString("source", isEspnSummerGameId(gameId) ? "ESPN_NBA_SUMMER" : "NBA_PLAY_BY_PLAY"));
-            pbp.setActionType(obj.optString("actionType", obj.optString("eventType", "")));
-            pbp.setEventOrder(obj.optInt("eventOrder", i + 1));
-            pbp.setScoreMargin(pbp.getHomeScore() - pbp.getAwayScore());
-            pbp.setIsScoringPlay(obj.optBoolean("isScoringPlay", pbp.getHomeScore() > 0 || pbp.getAwayScore() > 0));
-            pbp.setIsHighlightCandidate(obj.optBoolean("isHighlightCandidate", false));
-            pbp.setCreatedAt(java.time.LocalDateTime.now());
-            pbp.setUpdatedAt(java.time.LocalDateTime.now());
-            records.add(pbp);
-        }
-        playByPlayRepository.saveAll(records);
-        log.info("保存play-by-play数据: {}条记录, gameId={}", records.size(), gameId);
-    }
-
     private boolean isEspnSummerGameId(String gameId) {
         return gameId != null && gameId.startsWith("401");
     }
 
     private String resolveBoxScoreAction(String gameId) {
         return isEspnSummerGameId(gameId) ? "espn_summer_boxscore" : "boxscore";
-    }
-
-    private String resolvePlayByPlayAction(String gameId) {
-        return isEspnSummerGameId(gameId) ? "espn_summer_playbyplay" : "playbyplay";
-    }
-
-    private String findScriptPath() {
-        String[] possiblePaths = {
-                "backend/scripts/nba_data_fetcher.py",
-                "scripts/nba_data_fetcher.py",
-                "../scripts/nba_data_fetcher.py",
-                "nba_data_fetcher.py"
-        };
-
-        File baseDir = new File(System.getProperty("user.dir"));
-
-        for (String path : possiblePaths) {
-            File file = new File(baseDir, path);
-            if (file.exists()) {
-                return file.getAbsolutePath();
-            }
-        }
-
-        return new File(baseDir, "backend/scripts/nba_data_fetcher.py").getAbsolutePath();
     }
 
     /**

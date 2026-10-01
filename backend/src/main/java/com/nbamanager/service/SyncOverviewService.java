@@ -7,11 +7,15 @@ import com.nbamanager.repository.PlayerRepository;
 import com.nbamanager.repository.PlayerSeasonStatsRepository;
 import com.nbamanager.repository.PlayoffMatchupRepository;
 import com.nbamanager.repository.TeamRepository;
+import com.nbamanager.repository.SyncJobStepRepository;
 import com.nbamanager.web.dto.SyncModuleOverview;
 import com.nbamanager.web.dto.SyncOverviewResponse;
+import com.nbamanager.web.dto.SyncJobStepResponse;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +32,7 @@ public class SyncOverviewService {
     private final PlayoffMatchupRepository playoffMatchupRepository;
     private final PlayerSeasonStatsRepository playerSeasonStatsRepository;
     private final com.nbamanager.repository.SyncJobRepository syncJobRepository;
+    private final SyncJobStepRepository syncJobStepRepository;
     private final SeasonManagementService seasonManagementService;
 
     @Transactional(readOnly = true)
@@ -35,32 +40,34 @@ public class SyncOverviewService {
         String currentSeason = seasonManagementService.getCurrentSeason();
         LocalDateTime todayStart = LocalDate.now().atStartOfDay();
         LocalDateTime tomorrowStart = todayStart.plusDays(1);
+        Map<String, SyncJobStepResponse> activeFullSteps =
+                syncJobRepository.findActiveByModule("FULL_SYNC")
+                        .map(job -> syncJobStepRepository.findByJobIdOrderByStepOrder(job.getId()).stream()
+                                .collect(Collectors.toMap(
+                                        com.nbamanager.domain.SyncJobStep::getModule,
+                                        SyncJobStepResponse::from,
+                                        (first, ignored) -> first)))
+                        .orElseGet(Map::of);
 
         return new SyncOverviewResponse(currentSeason, List.of(
-                module("TEAMS", teamRepository.count()),
-                module("PLAYERS", playerRepository.count()),
-                module("MATCHES", matchRecordRepository.count()),
+                module("TEAMS", teamRepository.count(), activeFullSteps),
+                module("PLAYERS", playerRepository.count(), activeFullSteps),
+                module("MATCHES", matchRecordRepository.count(), activeFullSteps),
                 module(
                         "TODAY_GAMES",
-                        gameNewsRepository.countTodayGames(todayStart, tomorrowStart)),
-                module("NEWS", gameNewsRepository.count()),
-                module("DRAFT", draftPickRepository.count()),
+                        gameNewsRepository.countTodayGames(todayStart, tomorrowStart), activeFullSteps),
+                module("NEWS", gameNewsRepository.count(), activeFullSteps),
+                module("DRAFT", draftPickRepository.count(), activeFullSteps),
                 module(
-                        "PLAYOFF", playoffMatchupRepository.countBySeason(currentSeason)),
-                module("HISTORICAL", playerSeasonStatsRepository.count()),
+                        "PLAYOFF", playoffMatchupRepository.countBySeason(currentSeason), activeFullSteps),
+                module("HISTORICAL", playerSeasonStatsRepository.count(), activeFullSteps),
                 module(
                         "TRANSLATION",
-                        playerRepository.countByTranslationStatus("UNTRANSLATED"))));
+                        playerRepository.countByTranslationStatus("UNTRANSLATED"), activeFullSteps)));
     }
 
-    private SyncModuleOverview module(String key, long count) {
-        com.nbamanager.web.dto.SyncJobStepResponse activeFullStep = null;
-
-        // Check if there's an active full sync with a step for this module
-        syncJobRepository.findActiveByModule("FULL_SYNC").ifPresent(fullSyncJob -> {
-            // This is handled at the overview level, not per-module
-        });
-
+    private SyncModuleOverview module(
+            String key, long count, Map<String, SyncJobStepResponse> activeFullSteps) {
         return new SyncModuleOverview(
                 key,
                 count,
@@ -73,7 +80,7 @@ public class SyncOverviewService {
                 syncJobRepository.findActiveByModule(key)
                         .map(com.nbamanager.web.dto.SyncJobResponse::from)
                         .orElse(null),
-                activeFullStep
+                activeFullSteps.get(key)
         );
     }
 }

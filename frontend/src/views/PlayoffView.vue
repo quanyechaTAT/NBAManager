@@ -1,21 +1,38 @@
 <template>
   <div class="playoff-page">
     <!-- 标题 -->
-    <div class="playoff-title-bar">
-      <h1 class="playoff-title">NBA 季后赛对阵图</h1>
-      <span class="playoff-season">{{ currentSeason }} 赛季</span>
-      <button class="sync-btn" @click="syncData" :disabled="syncing">
-        {{ syncing ? '同步中...' : '同步数据' }}
-      </button>
-    </div>
+    <SportsHeader
+      eyebrow="NBA PLAYOFFS · ROAD TO THE LARRY O'BRIEN TROPHY"
+      title="NBA 季后赛对阵图"
+      :subtitle="`${currentSeason} 赛季东西部十六强巅峰争夺，决战奥布莱恩金杯与季后赛晋级树`"
+    >
+      <template #actions>
+        <button class="sync-btn" @click="syncData" :disabled="syncing">
+          {{ syncing ? '数据同步中...' : '同步季后赛数据' }}
+        </button>
+      </template>
+    </SportsHeader>
 
     <!-- 加载/错误/空 -->
-    <div v-if="loading" class="state-msg">加载中...</div>
-    <div v-else-if="loadError" class="state-msg">
-      加载失败 <button class="retry-btn" @click="load">重试</button>
+    <div v-if="loading" class="state-card">
+      <span class="state-spinner" aria-hidden="true"></span>
+      <p class="state-text">正在加载季后赛对阵…</p>
     </div>
-    <div v-else-if="!bracket" class="state-msg">
-      暂无季后赛数据 <button class="retry-btn" @click="syncData">同步</button>
+    <div v-else-if="loadError" class="state-card">
+      <span class="state-icon state-icon--error" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </span>
+      <h3 class="state-heading">加载失败</h3>
+      <p class="state-text">暂时无法获取季后赛数据，请检查网络后重试</p>
+      <button class="state-btn" @click="load">重新加载</button>
+    </div>
+    <div v-else-if="!bracket" class="state-card">
+      <span class="state-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+      </span>
+      <h3 class="state-heading">暂无季后赛数据</h3>
+      <p class="state-text">{{ currentSeason }} 赛季的对阵图尚未同步，同步后即可查看完整晋级路径</p>
+      <button class="state-btn" @click="syncData" :disabled="syncing">{{ syncing ? '同步中…' : '立即同步' }}</button>
     </div>
 
     <!-- 对阵图 -->
@@ -118,7 +135,7 @@
               <span class="fb-name">{{ f.t2 }}</span>
               <div class="fb-logo"><img v-if="getLogo(f.t2)" :src="getLogo(f.t2)" alt="" /><span v-else class="sc-fb">{{ f.t2?.charAt(0) }}</span></div>
             </div>
-            <div v-if="f.winner && f.winner !== '待定'" class="fb-trophy">🏆 {{ f.winner }}</div>
+            <div v-if="f.winner && f.winner !== '待定'" class="fb-trophy"><span style="display:inline-flex;margin-right:4px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></span>{{ f.winner }}</div>
           </div>
         </div>
 
@@ -205,7 +222,7 @@
         <div class="mob-conf">
           <h2 class="conf-title">东部联盟</h2>
           <div class="mob-rounds">
-            <div v-for="r in [1,2,3]" :key="'me'+r" class="mob-round">
+            <div v-for="r in mobileEastRounds" :key="'me'+r" class="mob-round">
               <span class="round-tag">{{ rLabel(r) }}</span>
               <div class="mob-series">
                 <div v-for="m in eastRounds[r]" :key="m.id" class="series-card">
@@ -245,13 +262,13 @@
               <span class="fb-name">{{ f.t2 }}</span>
               <div class="fb-logo"><img v-if="getLogo(f.t2)" :src="getLogo(f.t2)" alt="" /><span v-else class="sc-fb">{{ f.t2?.charAt(0) }}</span></div>
             </div>
-            <div v-if="f.winner && f.winner !== '待定'" class="fb-trophy">🏆 {{ f.winner }}</div>
+            <div v-if="f.winner && f.winner !== '待定'" class="fb-trophy"><span style="display:inline-flex;margin-right:4px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></span>{{ f.winner }}</div>
           </div>
         </div>
         <div class="mob-conf">
           <h2 class="conf-title">西部联盟</h2>
           <div class="mob-rounds">
-            <div v-for="r in [3,2,1]" :key="'mw'+r" class="mob-round">
+            <div v-for="r in mobileWestRounds" :key="'mw'+r" class="mob-round">
               <span class="round-tag">{{ rLabel(r) }}</span>
               <div class="mob-series">
                 <div v-for="m in westRounds[r]" :key="m.id" class="series-card">
@@ -284,6 +301,7 @@ import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
 import { getTeamLogo } from '@/utils/teamLogos'
 import type { PlayoffBracket, Matchup, RoundData } from '@/types/playoff'
+import SportsHeader from '@/components/common/SportsHeader.vue'
 
 const currentSeason = (() => {
   const d = new Date()
@@ -297,6 +315,8 @@ const syncing = ref(false)
 const bracket = ref<PlayoffBracket | null>(null)
 const loadError = ref(false)
 const bracketWrapper = ref<HTMLElement | null>(null)
+const mobileEastRounds = [1, 2, 3] as const
+const mobileWestRounds = [3, 2, 1] as const
 
 const getLogo = (name: string) => getTeamLogo(name) || undefined
 
@@ -365,20 +385,79 @@ onMounted(load)
 
 <style scoped>
 /* ===== 页面 ===== */
-.playoff-page { max-width: 1680px; margin: 0 auto; padding: 24px 16px 80px; animation: fadeIn 0.3s ease; }
+.playoff-page { max-width: 1680px; margin: 0 auto; padding: 24px 16px 80px; animation: courtside-rise 0.45s var(--ease-out-expo, ease) both; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ===== 标题栏 ===== */
 .playoff-title-bar { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 28px; flex-wrap: wrap; }
-.playoff-title { margin: 0; font-size: 22px; font-weight: 800; color: var(--text-primary); font-family: var(--font-heading); }
+.playoff-title { margin: 0; font-size: 28px; font-weight: 800; color: var(--text-primary); font-family: var(--font-heading); letter-spacing: -0.4px; }
 .playoff-season { font-size: 13px; color: var(--text-muted); font-weight: 600; }
 .sync-btn { padding: 6px 14px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 6px; color: var(--text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
 .sync-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ===== 状态 ===== */
-.state-msg { text-align: center; padding: 60px 0; color: var(--text-muted); font-size: 14px; }
-.retry-btn { margin-left: 8px; padding: 4px 12px; background: var(--accent); border: none; border-radius: 4px; color: #fff; font-size: 12px; cursor: pointer; }
+.state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 420px;
+  margin: 48px auto 64px;
+  padding: 44px 36px 40px;
+  text-align: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+}
+.state-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 10px;
+  border-radius: 50%;
+  background: var(--accent-lighter);
+  color: var(--accent);
+}
+.state-icon--error {
+  background: var(--danger-glow);
+  color: var(--danger);
+}
+.state-spinner {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 12px;
+  border: 3px solid var(--border-light);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: stateSpin 0.9s linear infinite;
+}
+@keyframes stateSpin { to { transform: rotate(360deg); } }
+.state-heading {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.state-text { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--text-muted); }
+.state-btn {
+  margin-top: 16px;
+  padding: 9px 26px;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--accent-contrast, #04202A);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--duration-nav, 0.18s) var(--ease-smooth);
+}
+.state-btn:hover:not(:disabled) { background: var(--accent-light); }
+.state-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* ===== 桌面端：横向轴对称布局 ===== */
 .bracket-wrapper { width: 100%; overflow-x: auto; padding: 18px 0 22px; overscroll-behavior-inline: contain; scrollbar-color: var(--border-medium) transparent; scrollbar-gutter: stable; }

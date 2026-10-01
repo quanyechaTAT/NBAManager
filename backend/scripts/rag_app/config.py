@@ -59,12 +59,12 @@ class RAGSettings:
     reranker_device: str = ""
     reranker_enabled: bool = True
 
-    llm_base_url: str = "https://token-plan-cn.xiaomimimo.com/v1"
+    llm_base_url: str = "https://api.deepseek.com"
     llm_api_key: str = ""
-    llm_model: str = "mimo-v2.5-pro"
-    llm_temperature: float = 0.2
-    llm_max_tokens: int = 900
-    llm_timeout_seconds: int = 60
+    llm_model: str = "deepseek-v4-flash"
+    llm_temperature: float = 0.9
+    llm_max_tokens: int = 10240
+    llm_timeout_seconds: int = 90
 
     memory_window: int = 5
 
@@ -111,8 +111,8 @@ class RAGSettings:
             reranker_model=os.environ.get("RAG_RERANKER_MODEL", cls.reranker_model),
             reranker_device=os.environ.get("RAG_RERANKER_DEVICE", ""),
             reranker_enabled=_bool_env("RAG_RERANKER_ENABLED", True),
-            llm_base_url=os.environ.get("MIMO_BASE_URL", cls.llm_base_url),
-            llm_api_key=os.environ.get("MIMO_API_KEY", ""),
+            llm_base_url=os.environ.get("DEEPSEEK_API_BASE", cls.llm_base_url),
+            llm_api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
             llm_model=os.environ.get("RAG_LLM_MODEL", cls.llm_model),
             llm_temperature=float(os.environ.get("RAG_LLM_TEMPERATURE", cls.llm_temperature)),
             llm_max_tokens=int(os.environ.get("RAG_LLM_MAX_TOKENS", cls.llm_max_tokens)),
@@ -129,7 +129,7 @@ class RAGSettings:
             web_search_timeout_seconds=int(os.environ.get("RAG_WEB_SEARCH_TIMEOUT_SECONDS", "8")),
             web_search_top_k=int(os.environ.get("RAG_WEB_SEARCH_TOP_K", "5")),
             search_enabled=_bool_env("RAG_SEARCH_ENABLED", True),
-            search_timeout_seconds=int(os.environ.get("RAG_SEARCH_TIMEOUT_SECONDS", "8")),
+            search_timeout_seconds=int(os.environ.get("RAG_SEARCH_TIMEOUT_SECONDS", "3")),
             search_top_k=int(os.environ.get("RAG_SEARCH_TOP_K", "5")),
             search_cache_ttl_seconds=int(os.environ.get("RAG_SEARCH_CACHE_TTL_SECONDS", "600")),
             search_providers=os.environ.get("RAG_SEARCH_PROVIDERS", "espn_scoreboard,espn_news,google_news_rss,baidusearch"),

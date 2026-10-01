@@ -33,7 +33,8 @@ class CommentServiceTest {
     @BeforeEach
     void setUp() {
         service = new CommentService(commentRepository, commentLikeRepository, postRepository,
-                userAccountRepository, notificationService);
+                userAccountRepository, notificationService,
+                new com.nbamanager.service.support.FakeTransactionManager());
         comment = new Comment();
         comment.setId(10L);
         comment.setUserId(7L);

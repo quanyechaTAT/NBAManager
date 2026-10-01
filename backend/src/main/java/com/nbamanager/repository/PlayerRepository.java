@@ -9,6 +9,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface PlayerRepository extends JpaRepository<Player, Long> {
 
+    long countByTranslationStatus(String translationStatus);
+
     Player findByNbaPlayerId(Long nbaPlayerId);
 
     Player findByNameAndTeamId(String name, Long teamId);

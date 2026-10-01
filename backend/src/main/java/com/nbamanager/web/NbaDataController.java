@@ -3,6 +3,7 @@ package com.nbamanager.web;
 import com.nbamanager.service.NbaDataService;
 import com.nbamanager.service.PlayoffService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,7 +29,14 @@ public class NbaDataController {
         return ResponseEntity.ok(bracket);
     }
 
-    /** 同步季后赛数据（从API获取并导入数据库） */
+    /**
+     * 同步季后赛数据（从外部 API 获取并导入数据库）。
+     *
+     * 仅限 ADMIN（安全报告 §十三 H7）：该端点触发 python 子进程 + 外部 API 拉取 +
+     * 数据库批量写入，属运维操作；AdminController 系列同步端点均已限 ADMIN，
+     * 此前唯独本端点漏网（SecurityConfig 仅路由级 authenticated）。
+     */
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/playoff/sync")
     public ResponseEntity<Map<String, Object>> syncPlayoffData(
             @RequestParam(required = false) String season) {

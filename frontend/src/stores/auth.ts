@@ -46,7 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
   function hydrate() {
     token.value = getToken()
     profile.value = getProfile()
-    avatarUrl.value = getAvatarForUser(profile.value?.username)
+    avatarUrl.value = profile.value?.avatarUrl || getAvatarForUser(profile.value?.username)
   }
 
   function setAvatar(url: string) {

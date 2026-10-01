@@ -2,7 +2,7 @@ package com.nbamanager.service;
 
 import com.nbamanager.domain.Player;
 import com.nbamanager.repository.PlayerRepository;
-import com.nbamanager.service.mimo.MimoClient;
+import com.nbamanager.service.deepseek.DeepSeekClient;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,11 +28,11 @@ public class PlayByPlayTranslationService {
     private static final Pattern TIMEOUT_PATTERN =
             Pattern.compile("(?i)^timeout\\s+(.+)$");
 
-    private final MimoClient mimoClient;
+    private final DeepSeekClient deepSeekClient;
     private final PlayerRepository playerRepository;
     private final Map<String, String> cache = new ConcurrentHashMap<>();
     private Map<String, String> playerNameMap = new ConcurrentHashMap<>();
-    private volatile int consecutiveMimoFailures = 0;
+    private volatile int consecutiveDeepSeekFailures = 0;
     private static final int MAX_CONSECUTIVE_FAILURES = 1;
 
     @PostConstruct
@@ -107,29 +107,29 @@ public class PlayByPlayTranslationService {
             int end = Math.min(start + MAX_BATCH_SIZE, pendingTexts.size());
             List<String> batch = pendingTexts.subList(start, end);
 
-            // 如果 Mimo 连续失败，直接用 fallback
-            if (consecutiveMimoFailures >= MAX_CONSECUTIVE_FAILURES) {
+            // 如果 DeepSeek 连续失败，直接用 fallback
+            if (consecutiveDeepSeekFailures >= MAX_CONSECUTIVE_FAILURES) {
                 batch.forEach(text -> cache.putIfAbsent(text, fallbackTranslate(text)));
                 continue;
             }
 
-            MimoClient.ChatResponse response = mimoClient.chat(buildSystemPrompt(), buildUserPrompt(batch));
+            DeepSeekClient.ChatResponse response = deepSeekClient.chat(buildSystemPrompt(), buildUserPrompt(batch));
             if (!response.success()) {
-                log.warn("Mimo translation failed: {}", response.error());
-                consecutiveMimoFailures++;
+                log.warn("DeepSeek translation failed: {}", response.error());
+                consecutiveDeepSeekFailures++;
                 batch.forEach(text -> cache.putIfAbsent(text, fallbackTranslate(text)));
                 continue;
             }
 
             List<String> translated = parseJsonArray(response.content(), batch.size());
             if (translated == null) {
-                log.warn("Mimo translation returned invalid JSON");
-                consecutiveMimoFailures++;
+                log.warn("DeepSeek translation returned invalid JSON");
+                consecutiveDeepSeekFailures++;
                 batch.forEach(text -> cache.putIfAbsent(text, fallbackTranslate(text)));
                 continue;
             }
 
-            consecutiveMimoFailures = 0;
+            consecutiveDeepSeekFailures = 0;
             for (int i = 0; i < batch.size(); i++) {
                 String translatedText = translated.get(i);
                 if (translatedText == null || translatedText.isBlank()) {

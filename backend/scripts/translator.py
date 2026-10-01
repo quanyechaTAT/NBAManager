@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 翻译服务模块
-使用mimo-v2.5模型进行文本翻译
+使用deepseek-v4-flash模型进行文本翻译
 API KEY从环境变量读取，确保安全
 支持单条翻译、批量翻译、新闻文章翻译
 """
@@ -17,14 +17,14 @@ import urllib.request
 import urllib.error
 
 # 从环境变量读取配置（API KEY不会硬编码在代码中）
-MIMO_API_KEY = os.environ.get('MIMO_API_KEY', '')
-MIMO_BASE_URL = os.environ.get('MIMO_BASE_URL', 'https://token-plan-cn.xiaomimimo.com/v1')
+DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
+DEEPSEEK_API_BASE = os.environ.get('DEEPSEEK_API_BASE', 'https://api.deepseek.com')
 
 # 代理配置
 PROXY_HOST = os.environ.get('NBA_PROXY_HOST', '127.0.0.1')
 PROXY_PORT = os.environ.get('NBA_PROXY_PORT', '7890')
 
-# 是否使用代理（默认不使用，因为mimo API可能不需要代理）
+# 是否使用代理（默认不使用，因为deepseek API可能不需要代理）
 USE_PROXY = os.environ.get('USE_PROXY', 'false').lower() == 'true'
 
 # 是否禁用SSL验证（仅用于测试，生产环境应设置为false）
@@ -59,7 +59,9 @@ def _get_opener():
         })
         opener = urllib.request.build_opener(proxy_handler)
     else:
-        opener = urllib.request.build_opener()
+        # 强制直连：抓取脚本会把 NBA 抓取代理写入进程环境（HTTP_PROXY），
+        # 默认 opener 会读取它导致 DeepSeek 调用被 127.0.0.1:7890 之类拒绝连接
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     if DISABLE_SSL_VERIFY:
         ssl_context = ssl.create_default_context()
@@ -83,7 +85,7 @@ def _rate_limit():
 
 def translate_text(text, source_lang='en', target_lang='zh', max_retries=2):
     """
-    使用mimo-v2.5模型翻译文本
+    使用deepseek-v4-flash模型翻译文本
 
     Args:
         text: 要翻译的文本
@@ -102,20 +104,20 @@ def translate_text(text, source_lang='en', target_lang='zh', max_retries=2):
     if cache_key in _translation_cache:
         return _translation_cache[cache_key]
 
-    if not MIMO_API_KEY:
-        print("警告: MIMO_API_KEY未设置，跳过翻译。请设置环境变量 MIMO_API_KEY", file=sys.stderr)
+    if not DEEPSEEK_API_KEY:
+        print("警告: DEEPSEEK_API_KEY未设置，跳过翻译。请设置环境变量 DEEPSEEK_API_KEY", file=sys.stderr)
         return text
 
     for attempt in range(max_retries + 1):
         try:
             _rate_limit()
 
-            url = f"{MIMO_BASE_URL}/chat/completions"
+            url = f"{DEEPSEEK_API_BASE}/chat/completions"
 
             prompt = f"请将以下{source_lang}文本翻译为{target_lang}：\n\n{text}"
 
             payload = {
-                "model": "mimo-v2.5",
+                "model": "deepseek-v4-flash",
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": prompt}
@@ -128,7 +130,7 @@ def translate_text(text, source_lang='en', target_lang='zh', max_retries=2):
 
             req = urllib.request.Request(url, data=data, headers={
                 'Content-Type': 'application/json',
-                'Authorization': f'Bearer {MIMO_API_KEY}',
+                'Authorization': f'Bearer {DEEPSEEK_API_KEY}',
                 'User-Agent': 'NBAManager/1.0'
             })
 
@@ -191,8 +193,8 @@ def translate_batch(texts, source_lang='en', target_lang='zh'):
     if not to_translate:
         return results
 
-    if not MIMO_API_KEY:
-        print("警告: MIMO_API_KEY未设置，跳过批量翻译", file=sys.stderr)
+    if not DEEPSEEK_API_KEY:
+        print("警告: DEEPSEEK_API_KEY未设置，跳过批量翻译", file=sys.stderr)
         return texts
 
     # 将多个文本合并为一次请求
@@ -210,10 +212,10 @@ def translate_batch(texts, source_lang='en', target_lang='zh'):
     try:
         _rate_limit()
 
-        url = f"{MIMO_BASE_URL}/chat/completions"
+        url = f"{DEEPSEEK_API_BASE}/chat/completions"
 
         payload = {
-            "model": "mimo-v2.5",
+            "model": "deepseek-v4-flash",
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt}
@@ -226,7 +228,7 @@ def translate_batch(texts, source_lang='en', target_lang='zh'):
 
         req = urllib.request.Request(url, data=data, headers={
             'Content-Type': 'application/json',
-            'Authorization': f'Bearer {MIMO_API_KEY}',
+            'Authorization': f'Bearer {DEEPSEEK_API_KEY}',
             'User-Agent': 'NBAManager/1.0'
         })
 
@@ -379,17 +381,17 @@ def translate_trade_details(description, max_retries=2):
     if cache_key in _translation_cache:
         return _translation_cache[cache_key]
 
-    if not MIMO_API_KEY:
+    if not DEEPSEEK_API_KEY:
         return None
 
     for attempt in range(max_retries + 1):
         try:
             _rate_limit()
 
-            url = f"{MIMO_BASE_URL}/chat/completions"
+            url = f"{DEEPSEEK_API_BASE}/chat/completions"
 
             payload = {
-                "model": "mimo-v2.5",
+                "model": "deepseek-v4-flash",
                 "messages": [
                     {"role": "system", "content": TRADE_SYSTEM_PROMPT},
                     {"role": "user", "content": f"请翻译以下交易信息：\n\n{description}"}
@@ -402,7 +404,7 @@ def translate_trade_details(description, max_retries=2):
 
             req = urllib.request.Request(url, data=data, headers={
                 'Content-Type': 'application/json',
-                'Authorization': f'Bearer {MIMO_API_KEY}',
+                'Authorization': f'Bearer {DEEPSEEK_API_KEY}',
                 'User-Agent': 'NBAManager/1.0'
             })
 
@@ -437,8 +439,8 @@ def main():
         print("批量翻译: python translator.py --batch 'text1' 'text2' 'text3'")
         print("")
         print("环境变量配置:")
-        print("  MIMO_API_KEY - API密钥（必需）")
-        print("  MIMO_BASE_URL - API地址（默认: https://token-plan-cn.xiaomimimo.com/v1）")
+        print("  DEEPSEEK_API_KEY - API密钥（必需）")
+        print("  DEEPSEEK_API_BASE - API地址（默认: https://api.deepseek.com）")
         print("  USE_PROXY - 是否使用代理（默认: false）")
         print("  NBA_PROXY_HOST - 代理主机（默认: 127.0.0.1）")
         print("  NBA_PROXY_PORT - 代理端口（默认: 7890）")

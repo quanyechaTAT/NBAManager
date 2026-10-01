@@ -1,0 +1,25 @@
+-- V20260715_01: Create sync_jobs table for persistent sync task tracking
+CREATE TABLE IF NOT EXISTS sync_jobs (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    module          VARCHAR(32)  NOT NULL,
+    trigger_type    VARCHAR(16)  NOT NULL,
+    status          VARCHAR(16)  NOT NULL,
+    progress        INT          NOT NULL DEFAULT 0,
+    requested_by    VARCHAR(64),
+    created_at      DATETIME(6)  NOT NULL,
+    started_at      DATETIME(6),
+    finished_at     DATETIME(6),
+    heartbeat_at    DATETIME(6),
+    data_as_of      DATETIME(6),
+    source          VARCHAR(32),
+    fetched_count   INT          NOT NULL DEFAULT 0,
+    inserted_count  INT          NOT NULL DEFAULT 0,
+    updated_count   INT          NOT NULL DEFAULT 0,
+    skipped_count   INT          NOT NULL DEFAULT 0,
+    error_code      VARCHAR(32),
+    error_message   TEXT,
+    cancel_requested BOOLEAN     NOT NULL DEFAULT FALSE,
+    version         BIGINT       NOT NULL DEFAULT 0,
+    INDEX idx_sync_job_module (module),
+    INDEX idx_sync_job_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

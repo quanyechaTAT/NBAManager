@@ -85,7 +85,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { useGameChat, type LocalChatMessage } from '@/composables/useGameChat'
+import { useGameChat } from '@/composables/useGameChat'
 import GameChatHeader from './GameChatHeader.vue'
 import ChatAnnouncement from './ChatAnnouncement.vue'
 import ChatMessageItem from './ChatMessageItem.vue'
@@ -246,7 +246,7 @@ function goToLogin() {
   min-height: 760px;
   max-height: calc(100vh - 150px);
   background:
-    radial-gradient(ellipse 60% 40% at 10% 0%, rgba(var(--accent-orange-rgb, 232, 93, 38), 0.04), transparent),
+    radial-gradient(ellipse 60% 40% at 10% 0%, rgba(var(--accent-orange-rgb, 8, 145, 178), 0.04), transparent),
     var(--chat-surface);
   border: 1px solid var(--chat-border);
   border-radius: 18px;
@@ -354,7 +354,7 @@ function goToLogin() {
 
 .login-btn:hover {
   background: var(--chat-accent, var(--accent));
-  color: #fff;
+  color: var(--accent-contrast, #04202A);
 }
 
 .chat-sidebar {

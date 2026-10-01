@@ -10,7 +10,7 @@
       </div>
 
       <!-- 球队信息卡片 -->
-      <div class="team-hero" v-loading="teamLoading">
+      <div class="team-hero" v-loading="teamLoading" :style="teamBrandStyle">
         <div class="team-hero-inner">
           <div class="team-hero-left">
             <div class="team-icon">
@@ -44,6 +44,42 @@
         </div>
       </div>
 
+      <!-- 核心球员 -->
+      <template v-if="roster.length > 0">
+        <div class="section-header">
+          <div class="section-header-left">
+            <h2>核心球员</h2>
+            <span class="section-sub">按场均得分排序 · 点击查看详情</span>
+          </div>
+          <div v-if="roster.length > 3" class="roster-controls">
+            <button type="button" aria-label="向前浏览球员" @click="scrollRoster(-1)">‹</button>
+            <button type="button" aria-label="向后浏览球员" @click="scrollRoster(1)">›</button>
+          </div>
+        </div>
+        <div ref="rosterStripRef" class="roster-strip">
+          <router-link
+            v-for="p in roster"
+            :key="p.id"
+            class="roster-chip"
+            :to="{ path: '/players/detail', query: { id: String(p.id) } }"
+          >
+            <span class="roster-avatar">
+              <img
+                v-if="p.nbaPlayerId && !brokenRosterAvatars.has(p.id)"
+                :src="`https://cdn.nba.com/headshots/nba/latest/260x190/${p.nbaPlayerId}.png`"
+                loading="lazy"
+                @error="brokenRosterAvatars.add(p.id)"
+              />
+              <i v-else>{{ p.name?.charAt(0) }}</i>
+            </span>
+            <span class="roster-meta">
+              <strong>{{ p.name }}</strong>
+              <small>{{ p.position }} · {{ p.pointsPerGame?.toFixed(1) ?? '—' }} 分</small>
+            </span>
+          </router-link>
+        </div>
+      </template>
+
       <!-- 对战记录 -->
       <div class="section-header">
         <div class="section-header-left">
@@ -56,9 +92,16 @@
       </div>
 
       <div class="match-card">
-        <el-table :data="matchRecords" stripe v-loading="matchLoading" empty-text="暂无对战记录">
+        <el-table :data="showAllMatches ? allMatchRecords : matchRecords" stripe v-loading="matchLoading" empty-text="暂无对战记录">
           <el-table-column label="日期" width="120">
             <template #default="{ row }">{{ formatDate(row.matchDate) }}</template>
+          </el-table-column>
+          <el-table-column label="类型" width="112" align="center">
+            <template #default="{ row }">
+              <span class="game-type-tag" :class="`game-type-tag--${row.gameType.toLowerCase()}`">
+                {{ getGameTypeLabel(row.gameType) }}
+              </span>
+            </template>
           </el-table-column>
           <el-table-column label="主队" min-width="120">
             <template #default="{ row }">
@@ -67,7 +110,8 @@
           </el-table-column>
           <el-table-column label="比分" width="130" align="center">
             <template #default="{ row }">
-              <div class="score-block">
+              <span v-if="row.status === 'SCHEDULED'" class="match-pending">未开赛</span>
+              <div v-else class="score-block">
                 <span class="match-score" :class="{ 'score-win': row.homeScore > row.awayScore }">{{ row.homeScore }}</span>
                 <span class="match-sep">:</span>
                 <span class="match-score" :class="{ 'score-win': row.awayScore > row.homeScore }">{{ row.awayScore }}</span>
@@ -127,15 +171,25 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchTeams } from '@/api/team'
 import { fetchMatchRecords } from '@/api/matchRecord'
-import type { Team, MatchRecord } from '@/api/types'
+import { fetchPlayers } from '@/api/player'
+import type { Team, MatchRecord, Player } from '@/api/types'
 import { toggleFavorite, fetchFollowedTeamIds } from '@/api/favorite'
 import { useAuthStore } from '@/stores/auth'
 import { getTeamLogo } from '@/utils/teamLogos'
+import { getTeamBrandColor } from '@/utils/teamColors'
 import SyncButton from '@/components/common/SyncButton.vue'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const rosterStripRef = ref<HTMLElement | null>(null)
+
+function scrollRoster(direction: -1 | 1) {
+  const strip = rosterStripRef.value
+  if (!strip) return
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  strip.scrollBy({ left: direction * Math.max(220, strip.clientWidth * 0.75), behavior: reduced ? 'instant' : 'smooth' })
+}
 
 function goBack() {
   const returnTo = route.query.returnTo as string
@@ -153,8 +207,27 @@ const allMatchRecords = ref<MatchRecord[]>([])
 const matchRecords = ref<MatchRecord[]>([])
 const isFollowed = ref(false)
 const matchLoading = ref(false)
+const showAllMatches = ref(false)
 
 const teamLogo = computed(() => teamInfo.value ? getTeamLogo(teamInfo.value.name) : undefined)
+
+/* 球队品牌色：注入 CSS 变量驱动 hero 主题 */
+const teamBrand = computed(() => teamInfo.value ? getTeamBrandColor(teamInfo.value.name) : undefined)
+const teamBrandStyle = computed(() => {
+  const c = teamBrand.value
+  if (!c) return {}
+  return { '--team-color': c.primary, '--team-color-soft': `color-mix(in srgb, ${c.primary} 14%, transparent)` }
+})
+
+const roster = ref<Player[]>([])
+const brokenRosterAvatars = ref<Set<number>>(new Set())
+
+async function loadRoster(teamId: number) {
+  try {
+    const { data } = await fetchPlayers({ teamId, page: 0, size: 8, sort: 'pointsPerGame,desc' })
+    roster.value = (data.content || []).filter((p: Player) => (p.pointsPerGame ?? 0) > 0).slice(0, 6)
+  } catch { /* 名单加载失败时隐藏该区块 */ }
+}
 
 async function loadTeamInfo() {
   if (!teamName.value) return
@@ -162,6 +235,7 @@ async function loadTeamInfo() {
   try {
     const { data } = await fetchTeams({ q: teamName.value, page: 0, size: 1 })
     teamInfo.value = data.content.find((t) => t.name === teamName.value) || null
+    if (teamInfo.value) void loadRoster(teamInfo.value.id)
   } catch {
     ElMessage.error('加载球队信息失败')
   } finally {
@@ -176,7 +250,7 @@ async function loadMatchRecords() {
     const { data } = await fetchMatchRecords(teamName.value)
     allMatchRecords.value = data
       .filter((m: MatchRecord) => !(m.homeScore === 0 && m.awayScore === 0 && m.status === 'FINISHED'))
-    matchRecords.value = allMatchRecords.value.slice(0, 10)
+    matchRecords.value = allMatchRecords.value.slice(0, 5)
   } catch {
     ElMessage.error('加载对战记录失败')
   } finally {
@@ -195,6 +269,7 @@ function winPct(w: number, l: number) {
 }
 
 function getResultType(row: MatchRecord) {
+  if (row.status !== 'FINISHED') return 'info'
   if (row.homeScore === row.awayScore) return 'info'
   if (row.homeTeam === teamName.value) {
     return row.homeScore > row.awayScore ? 'success' : 'danger'
@@ -203,10 +278,22 @@ function getResultType(row: MatchRecord) {
 }
 
 function getResultLabel(row: MatchRecord) {
+  if (row.status === 'SCHEDULED') return '未开赛'
+  if (row.status === 'LIVE') return '进行中'
   if (row.homeScore === row.awayScore) return '平'
   const isHome = row.homeTeam === teamName.value
   const won = isHome ? row.homeScore > row.awayScore : row.awayScore > row.homeScore
   return won ? '胜' : '负'
+}
+
+function getGameTypeLabel(gameType: MatchRecord['gameType']) {
+  const labels: Record<MatchRecord['gameType'], string> = {
+    SUMMER_LEAGUE: '夏季联赛',
+    REGULAR_SEASON: '常规赛',
+    PLAYOFFS: '季后赛',
+    NBA_CUP: '季中杯赛',
+  }
+  return labels[gameType] || '常规赛'
 }
 
 function goToMatchDetail(row: MatchRecord) {
@@ -233,7 +320,7 @@ function goToMatchDetail(row: MatchRecord) {
 
 const headToHeadStats = computed(() => {
   const map = new Map<string, { wins: number; losses: number; totalScore: number; games: number }>()
-  for (const m of allMatchRecords.value) {
+  for (const m of allMatchRecords.value.filter(record => record.status === 'FINISHED')) {
     const isHome = m.homeTeam === teamName.value
     const opponent = isHome ? m.awayTeam : m.homeTeam
     const myScore = isHome ? m.homeScore : m.awayScore
@@ -309,13 +396,17 @@ onMounted(() => {
 
 /* 球队信息卡片 */
 .team-hero {
-  background: var(--bg-card);
+  background:
+    radial-gradient(420px 160px at 12% 0%, var(--team-color-soft, transparent), transparent 70%),
+    var(--bg-card);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
+  border-radius: 18px;
   padding: 24px 28px;
   margin-bottom: 24px;
   position: relative;
   overflow: hidden;
+  animation: courtside-rise 0.5s var(--ease-out-expo, ease) both;
+  box-shadow: var(--shadow-md);
 }
 .team-hero::before {
   content: '';
@@ -324,7 +415,7 @@ onMounted(() => {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-light));
+  background: linear-gradient(90deg, var(--team-color, var(--accent)), transparent 85%);
 }
 .team-hero-inner {
   display: flex;
@@ -353,7 +444,8 @@ onMounted(() => {
   color: var(--text-muted);
   flex-shrink: 0;
   overflow: hidden;
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--team-color, var(--border-light));
+  box-shadow: 0 0 0 1px var(--team-color-soft, transparent);
 }
 .team-logo-img {
   width: 48px;
@@ -387,7 +479,7 @@ onMounted(() => {
   font-family: var(--font-heading);
   line-height: 1.1;
 }
-.hero-stat-num--win { color: var(--accent); }
+.hero-stat-num--win { color: var(--team-color, var(--accent)); }
 .hero-stat-num--loss { color: var(--danger); }
 .hero-stat-label {
   font-size: 12px;
@@ -403,6 +495,20 @@ onMounted(() => {
   height: 36px;
   background: var(--border-light);
 }
+
+/* 查看全部按钮 */
+.show-all-btn {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.show-all-btn:hover { background: var(--accent-lighter); }
 
 /* section header */
 .section-header {
@@ -458,6 +564,128 @@ onMounted(() => {
   color: var(--text-dim);
   font-weight: 300;
 }
+.game-type-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 68px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border-medium);
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+.game-type-tag--summer_league {
+  border-color: color-mix(in srgb, #38bdf8 42%, transparent);
+  background: color-mix(in srgb, #0ea5e9 14%, transparent);
+  color: #38bdf8;
+}
+.game-type-tag--regular_season {
+  border-color: color-mix(in srgb, #94a3b8 36%, transparent);
+  color: var(--text-secondary);
+}
+.game-type-tag--playoffs {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent-light);
+}
+.game-type-tag--nba_cup {
+  border-color: color-mix(in srgb, #fbbf24 42%, transparent);
+  background: color-mix(in srgb, #f59e0b 13%, transparent);
+  color: #fbbf24;
+}
+
+/* 核心球员名单 */
+.roster-strip {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+.roster-controls { display: flex; gap: 8px; }
+.roster-controls button {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 22px;
+  cursor: pointer;
+}
+.roster-controls button:hover { border-color: var(--accent); color: var(--accent); }
+.match-pending { color: var(--text-muted); font-size: 12px; }
+.roster-chip {
+  flex: 0 0 200px;
+}
+.roster-chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  transition:
+    transform var(--duration-lift, 0.22s) var(--ease-out-quart, ease),
+    border-color var(--duration-normal) var(--ease-smooth),
+    box-shadow var(--duration-normal) var(--ease-smooth);
+}
+.roster-chip:hover {
+  transform: translateY(-2px);
+  border-color: var(--team-color, var(--border-medium));
+  box-shadow: var(--shadow-sm);
+}
+.roster-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.roster-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.roster-avatar i {
+  font-style: normal;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.roster-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.roster-meta strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.roster-meta small {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
 
 /* 交锋统计 */
 .h2h-grid {
@@ -500,7 +728,7 @@ onMounted(() => {
 }
 .h2h-bar-win {
   height: 100%;
-  background: var(--accent);
+  background: var(--team-color, var(--accent));
   border-radius: 3px;
   transition: width 0.6s ease;
 }

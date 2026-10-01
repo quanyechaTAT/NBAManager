@@ -5,7 +5,9 @@ import com.nbamanager.service.PostService;
 import com.nbamanager.web.dto.PageResponse;
 import com.nbamanager.web.dto.PostDto;
 import com.nbamanager.web.dto.PostRequest;
+import com.nbamanager.web.dto.TopicDto;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -33,8 +35,16 @@ public class PostController {
     public PageResponse<PostDto> list(
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) String tag,
             @PageableDefault(size = 10, sort = "createTime", direction = Sort.Direction.DESC) Pageable pageable) {
-        return PageResponse.from(postService.list(category, q, pageable));
+        return PageResponse.from(postService.list(category, q, tag, pageable));
+    }
+
+    @GetMapping("/topics")
+    public List<TopicDto> topics(
+            @RequestParam(required = false) String category,
+            @RequestParam(defaultValue = "8") int limit) {
+        return postService.getTopics(category, limit);
     }
 
     @GetMapping("/hot")

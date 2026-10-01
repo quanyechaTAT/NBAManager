@@ -1,6 +1,7 @@
 <template>
   <div class="notification-bell" v-if="auth.token">
     <el-popover
+      ref="popoverRef"
       placement="bottom-end"
       :width="popoverWidth"
       trigger="click"
@@ -122,12 +123,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, h, type DefineComponent } from 'vue'
+import { ref, computed, onMounted, onUnmounted, h, defineComponent, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
-import { fetchNotifications, markAsRead, markAllAsRead, deleteNotification, clearReadNotifications } from '@/api/notification'
+import { fetchNotifications, markAsRead, markAllAsRead, deleteNotification, clearReadNotifications, fetchPostIdByCommentId } from '@/api/notification'
 import { usePushNotification } from '@/composables/usePushNotification'
 import type { Notification } from '@/api/notification'
 
@@ -141,7 +142,7 @@ const loading = ref(false)
 const markAllLoading = ref(false)
 const clearLoading = ref(false)
 const notifications = ref<Notification[]>([])
-const popoverRef = ref<any>(null)
+const popoverRef = ref<{ hide?: () => void } | null>(null)
 
 const unreadCount = computed(() => notifications.value.filter(n => !n.isRead).length)
 const hasUnread = computed(() => unreadCount.value > 0)
@@ -181,14 +182,18 @@ function getTypeMeta(type: string) {
 }
 
 // --- SVG 图标组件 ---
-function createSvgIcon(pathD: string): DefineComponent {
-  return {
+function closePopover() {
+  popoverRef.value?.hide?.()
+}
+
+function createSvgIcon(pathD: string): Component {
+  return defineComponent({
     render() {
       return h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', width: '18', height: '18' }, [
         h('path', { d: pathD })
       ])
     }
-  }
+  })
 }
 
 const iconPost = createSvgIcon('M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z')
@@ -198,7 +203,7 @@ const iconFavorite = createSvgIcon('M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12
 const iconGame = createSvgIcon('M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z M12 6v6l4 2')
 const iconSystem = createSvgIcon('M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 0 1-3.46 0')
 
-const typeIconMap: Record<string, DefineComponent> = {
+const typeIconMap: Record<string, Component> = {
   post: iconPost,
   comment: iconComment,
   like: iconLike,
@@ -242,13 +247,23 @@ async function readNotif(n: Notification) {
       notificationStore.refresh()
     } catch { /* ignore */ }
   }
-  if (n.relatedId) {
-    const postTypes = ['POST_REPLY', 'COMMENT_LIKE', 'POST_LIKE', 'NEW_COMMENT', 'POST_FAVORITE']
-    if (postTypes.includes(n.type)) {
-      router.push({ path: '/community/post', query: { id: String(n.relatedId) } })
-    } else if (n.type === 'GAME_START' || n.type === 'SCORE_UPDATE') {
-      router.push({ path: '/match-detail', query: { gameId: String(n.relatedId) } })
+  if (!n.relatedId) return
+  // COMMENT_LIKE 的 relatedId 是 commentId（安全报告 §十二 V4 的去重键），需先反查 postId
+  if (n.type === 'COMMENT_LIKE') {
+    try {
+      const { data } = await fetchPostIdByCommentId(n.relatedId)
+      router.push({ path: '/community/post', query: { id: String(data.postId) } })
+    } catch {
+      // 评论已被删除：降级到社区列表，避免落进死链
+      router.push('/community')
     }
+    return
+  }
+  const postTypes = ['POST_REPLY', 'POST_LIKE', 'NEW_COMMENT', 'POST_FAVORITE']
+  if (postTypes.includes(n.type)) {
+    router.push({ path: '/community/post', query: { id: String(n.relatedId) } })
+  } else if (n.type === 'GAME_START' || n.type === 'SCORE_UPDATE') {
+    router.push({ path: '/match-detail', query: { gameId: String(n.relatedId) } })
   }
 }
 
@@ -304,20 +319,31 @@ function onBellClick() {
   position: relative;
   cursor: pointer;
   color: var(--text-muted);
-  transition: color 0.2s var(--ease-smooth);
+  transition:
+    color var(--duration-nav, 0.18s) var(--ease-smooth),
+    background var(--duration-nav, 0.18s) var(--ease-smooth),
+    border-color var(--duration-nav, 0.18s) var(--ease-smooth),
+    box-shadow var(--duration-nav, 0.18s) var(--ease-smooth),
+    transform var(--duration-nav, 0.18s) var(--ease-out-quart, ease);
   display: flex;
   align-items: center;
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: var(--radius-md);
-  border: none;
+  border-radius: 999px;
+  border: 1px solid transparent;
   background: transparent;
   padding: 0;
 }
 .bell-icon:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
+  color: var(--accent);
+  background: var(--accent-lighter);
+  border-color: rgba(34, 211, 238, 0.22);
+  box-shadow: 0 6px 18px rgba(34, 211, 238, 0.1);
+  transform: translateY(-1px);
+}
+.bell-icon:active {
+  transform: scale(0.96);
 }
 .bell-icon:focus-visible {
   outline: 2px solid var(--accent);
@@ -343,11 +369,11 @@ function onBellClick() {
   right: -2px;
   min-width: 16px;
   height: 16px;
-  border-radius: 8px;
-  background: var(--danger);
-  color: #fff;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #04202A;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 800;
   font-family: var(--font-heading);
   display: flex;
   align-items: center;
@@ -397,7 +423,7 @@ function onBellClick() {
 .notif-unread-badge {
   font-size: 11px;
   font-weight: 700;
-  color: #fff;
+  color: var(--accent-contrast, #04202A);
   background: var(--accent);
   padding: 1px 6px;
   border-radius: 10px;
@@ -465,10 +491,10 @@ function onBellClick() {
   border-radius: var(--radius-md);
 }
 .notif-unread {
-  background: rgba(232, 93, 38, 0.04);
+  background: rgba(34, 211, 238, 0.04);
 }
 .notif-unread:hover {
-  background: rgba(232, 93, 38, 0.08);
+  background: rgba(34, 211, 238, 0.08);
 }
 
 /* 未读圆点 */
@@ -503,8 +529,8 @@ function onBellClick() {
 }
 .notif-icon-post { background: rgba(139, 92, 246, 0.1); color: #8B5CF6; }
 .notif-icon-comment { background: rgba(34, 197, 94, 0.1); color: #22C55E; }
-.notif-icon-like { background: rgba(249, 115, 22, 0.1); color: #F97316; }
-.notif-icon-favorite { background: rgba(249, 115, 22, 0.1); color: #F97316; }
+.notif-icon-like { background: rgba(34, 211, 238, 0.1); color: #22D3EE; }
+.notif-icon-favorite { background: rgba(34, 211, 238, 0.1); color: #22D3EE; }
 .notif-icon-game { background: rgba(59, 130, 246, 0.1); color: #3B82F6; }
 .notif-icon-system { background: var(--bg-hover); color: var(--text-muted); }
 
@@ -715,10 +741,10 @@ function onBellClick() {
 
 /* === 浅色主题覆盖 === */
 [data-theme="light"] .notif-unread {
-  background: rgba(232, 93, 38, 0.04);
+  background: rgba(34, 211, 238, 0.04);
 }
 [data-theme="light"] .notif-unread:hover {
-  background: rgba(232, 93, 38, 0.08);
+  background: rgba(34, 211, 238, 0.08);
 }
 [data-theme="light"] .notif-icon-box {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);

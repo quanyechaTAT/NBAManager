@@ -43,8 +43,8 @@ defineEmits<{ close: [] }>()
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: rgba(var(--accent-orange-rgb, 232, 93, 38), 0.1);
-  color: var(--accent, #E85D26);
+  background: rgba(var(--accent-orange-rgb, 8, 145, 178), 0.1);
+  color: var(--accent, #0891B2);
   flex-shrink: 0;
 }
 
@@ -60,7 +60,7 @@ defineEmits<{ close: [] }>()
 
 .announcement-label {
   font-weight: 700;
-  color: var(--accent, #E85D26);
+  color: var(--accent, #0891B2);
   white-space: nowrap;
   flex-shrink: 0;
 }

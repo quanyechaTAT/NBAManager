@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 翻译重试服务
- * 定时扫描未翻译的球员记录，调用MIMO API进行翻译
+ * 定时扫描未翻译的球员记录，调用DeepSeek API进行翻译
  */
 @Service
 @Slf4j
@@ -66,41 +66,69 @@ public class TranslationRetryService {
 
             if (untranslatedPlayers.isEmpty()) {
                 log.info("没有需要翻译的球员记录");
-                return;
-            }
+            } else {
+                log.info("找到 {} 条需要翻译的球员记录", untranslatedPlayers.size());
 
-            log.info("找到 {} 条需要翻译的球员记录", untranslatedPlayers.size());
+                // 批量调用Python翻译脚本
+                List<String> englishNames = untranslatedPlayers.stream()
+                        .map(Player::getNameEn)
+                        .toList();
 
-            // 批量调用Python翻译脚本
-            List<String> englishNames = untranslatedPlayers.stream()
-                    .map(Player::getNameEn)
-                    .toList();
+                Map<String, String> translations = callTranslationScript(englishNames, jobId);
+                if (translations != null) {
+                    // 更新球员记录
+                    for (Player player : untranslatedPlayers) {
+                        String cnName = translations.get(player.getNameEn());
+                        if (cnName != null && !cnName.isEmpty() && !cnName.equals(player.getNameEn())) {
+                            player.setName(cnName);
+                            player.setTranslationStatus("API_TRANSLATED");
+                            playerRepository.save(player);
+                            translatedCount++;
+                        } else {
+                            // 翻译失败，标记为需要人工处理
+                            player.setTranslationStatus("FAILED");
+                            playerRepository.save(player);
+                            failedCount++;
+                        }
+                    }
 
-            Map<String, String> translations = callTranslationScript(englishNames, jobId);
-            if (translations == null) return;
-
-            // 更新球员记录
-            for (Player player : untranslatedPlayers) {
-                String cnName = translations.get(player.getNameEn());
-                if (cnName != null && !cnName.isEmpty() && !cnName.equals(player.getNameEn())) {
-                    player.setName(cnName);
-                    player.setTranslationStatus("API_TRANSLATED");
-                    playerRepository.save(player);
-                    translatedCount++;
-                } else {
-                    // 翻译失败，标记为需要人工处理
-                    player.setTranslationStatus("FAILED");
-                    playerRepository.save(player);
-                    failedCount++;
+                    log.info("翻译重试完成: 成功 {}, 失败 {}", translatedCount, failedCount);
                 }
             }
 
-            log.info("翻译重试完成: 成功 {}, 失败 {}", translatedCount, failedCount);
+            // 新闻补翻兜底：抓取时翻译失败的新闻（title 仍为英文原文）由脚本直连库补翻，
+            // 避免上游 LLM 故障导致新闻永久停留在英文（历史上 8/19 批次曾整批漏翻）
+            retryPendingNewsTranslation(jobId);
 
         } catch (Exception e) {
             log.error("翻译重试任务执行失败", e);
         } finally {
             translating.set(false);
+        }
+    }
+
+    /**
+     * 新闻补翻：调用 translate_pending_news.py（脚本自行判断是否有待翻条目，无则秒退）
+     */
+    private void retryPendingNewsTranslation(Long jobId) {
+        try {
+            PythonScriptRunner.PythonResult result = jobId == null
+                    ? pythonScriptRunner.run(
+                            "translate_pending_news.py", new String[]{},
+                            pythonTimeoutProperties.getTranslationSeconds())
+                    : pythonScriptRunner.runForJob(
+                            "translate_pending_news.py", new String[]{},
+                            pythonTimeoutProperties.getTranslationSeconds(), jobId);
+            if (result.success()) {
+                String tail = result.stdout().trim();
+                if (!tail.isEmpty()) {
+                    log.info("新闻补翻完成: {}", tail.lines().filter(l -> l.startsWith("完成") || l.startsWith("待补翻")).findFirst().orElse(tail));
+                }
+            } else if (result.exitCode() != -2) {
+                log.warn("新闻补翻脚本执行失败: {}", result.stderr().trim());
+            }
+        } catch (Exception e) {
+            log.warn("新闻补翻异常: {}", e.getMessage());
         }
     }
 

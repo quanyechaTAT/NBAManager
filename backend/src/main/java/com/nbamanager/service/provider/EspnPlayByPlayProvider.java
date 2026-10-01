@@ -1,12 +1,15 @@
 package com.nbamanager.service.provider;
 
+import com.nbamanager.config.PythonTimeoutProperties;
 import com.nbamanager.config.EnvFileReader;
 import com.nbamanager.domain.provider.PlayByPlayEvent;
 import com.nbamanager.domain.provider.PlayByPlayFetchOptions;
 import com.nbamanager.domain.provider.PlayByPlayFetchResult;
 import com.nbamanager.domain.provider.PlayByPlayProvider;
 import com.nbamanager.domain.provider.ProviderType;
+import com.nbamanager.domain.provider.ReplayProviderOutcome;
 import com.nbamanager.service.GameIdMappingService;
+import com.nbamanager.service.PythonScriptRunner;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
@@ -16,18 +19,26 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
  * Play-by-play provider that fetches from the ESPN API via Python script.
  */
 @Component
+@Order(200)
 @RequiredArgsConstructor
 @Slf4j
 public class EspnPlayByPlayProvider implements PlayByPlayProvider {
 
+    private static final String NBA_GAME_ID_PATTERN = "^00\\d{8}$";
+    private static final String ESPN_GAME_ID_PATTERN = "^401\\d+$";
+
     private final GameIdMappingService gameIdMappingService;
+    private final PythonScriptRunner pythonScriptRunner;
+    private final PythonTimeoutProperties pythonTimeoutProperties;
 
     @Override
     public ProviderType type() {
@@ -36,131 +47,108 @@ public class EspnPlayByPlayProvider implements PlayByPlayProvider {
 
     @Override
     public boolean supports(String gameId) {
-        if (gameId == null || gameId.isBlank()) {
+        if (isEspnGameId(gameId)) {
+            return true;
+        }
+        if (!isNbaGameId(gameId)) {
             return false;
         }
-        String espnGameId = gameIdMappingService.getEspnGameId(gameId);
-        return espnGameId != null && !espnGameId.equals(gameId);
+        try {
+            return isEspnGameId(gameIdMappingService.getEspnGameId(gameId));
+        } catch (RuntimeException exception) {
+            log.warn("EspnPlayByPlayProvider: mapping lookup failed for gameId={}", gameId, exception);
+            return false;
+        }
     }
 
     @Override
     public PlayByPlayFetchResult fetch(String gameId, PlayByPlayFetchOptions options) {
         long startTime = System.currentTimeMillis();
         try {
-            String espnGameId = gameIdMappingService.getEspnGameId(gameId);
-            if (espnGameId == null || espnGameId.equals(gameId)) {
+            String espnGameId;
+            if (isEspnGameId(gameId)) {
+                espnGameId = gameId;
+            } else if (isNbaGameId(gameId)) {
+                espnGameId = gameIdMappingService.getEspnGameId(gameId);
+            } else {
                 long elapsed = System.currentTimeMillis() - startTime;
-                return PlayByPlayFetchResult.failure(type(),
-                        "No ESPN game ID mapping found for gameId: " + gameId, elapsed);
+                return PlayByPlayFetchResult.failure(
+                        type(), "UNSUPPORTED_GAME_ID",
+                        "ESPN provider requires a direct 401... ID or a mapped NBA ID",
+                        false, null, elapsed);
+            }
+            if (!isEspnGameId(espnGameId)) {
+                long elapsed = System.currentTimeMillis() - startTime;
+                return PlayByPlayFetchResult.failure(
+                        type(), "NO_ESPN_MAPPING",
+                        "No ESPN game ID mapping found for gameId: " + gameId,
+                        false, null, elapsed);
             }
 
-            String scriptPath = findScriptPath();
             log.info("EspnPlayByPlayProvider: calling Python script for espnGameId={}", espnGameId);
-
-            ProcessBuilder pb = new ProcessBuilder("python", scriptPath, "espn_playbyplay", espnGameId);
-            pb.redirectErrorStream(false);
-            pb.directory(new File(scriptPath).getParentFile());
-            pb.environment().put("PYTHONIOENCODING", "utf-8");
-
-            // Proxy configuration (optional)
-            String proxyHost = EnvFileReader.get("NBA_PROXY_HOST");
-            String proxyPort = EnvFileReader.get("NBA_PROXY_PORT");
-            if (proxyHost != null && !proxyHost.isEmpty()) {
-                pb.environment().put("NBA_PROXY_HOST", proxyHost);
-            }
-            if (proxyPort != null && !proxyPort.isEmpty()) {
-                pb.environment().put("NBA_PROXY_PORT", proxyPort);
-            }
-
-            // Translation API configuration
-            String mimoApiKey = EnvFileReader.get("MIMO_API_KEY");
-            String mimoBaseUrl = EnvFileReader.get("MIMO_BASE_URL");
-            if (mimoApiKey != null && !mimoApiKey.isEmpty()) {
-                pb.environment().put("MIMO_API_KEY", mimoApiKey);
-            }
-            if (mimoBaseUrl != null && !mimoBaseUrl.isEmpty()) {
-                pb.environment().put("MIMO_BASE_URL", mimoBaseUrl);
-            }
-
-            Process process = pb.start();
-
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-            }
-
-            StringBuilder errorOutput = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    errorOutput.append(line).append("\n");
-                }
-            }
-
-            // Wait for process, max 60 seconds
-            boolean finished = process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
-            if (!finished) {
-                log.error("EspnPlayByPlayProvider: Python script timed out for espnGameId={}", espnGameId);
-                process.destroyForcibly();
+            PythonScriptRunner.PythonResult result = pythonScriptRunner.run(
+                    "nba_data_fetcher.py", new String[]{"espn_playbyplay", espnGameId},
+                    pythonTimeoutProperties.getDetailSeconds());
+            if (!result.success()) {
+                log.error("EspnPlayByPlayProvider: Python script failed, exitCode={}, timedOut={}, error={}",
+                        result.exitCode(), result.timedOut(), result.stderr());
                 long elapsed = System.currentTimeMillis() - startTime;
-                return PlayByPlayFetchResult.failure(type(), "Python script timed out", elapsed);
+                return PlayByPlayFetchResult.failure(
+                        type(),
+                        result.timedOut() ? "PROVIDER_TIMEOUT" : "PROVIDER_PROCESS_ERROR",
+                        result.timedOut() ? "Python script timed out"
+                                : "Python script failed with exit code " + result.exitCode(),
+                        true,
+                        null,
+                        elapsed
+                );
             }
 
-            int exitCode = process.exitValue();
-            if (exitCode != 0) {
-                log.error("EspnPlayByPlayProvider: Python script failed, exitCode={}, error={}",
-                        exitCode, errorOutput.toString());
-                long elapsed = System.currentTimeMillis() - startTime;
-                return PlayByPlayFetchResult.failure(type(),
-                        "Python script failed with exit code " + exitCode, elapsed);
-            }
-
-            String jsonStr = output.toString().trim();
+            String jsonStr = result.stdout().trim();
             if (jsonStr.isEmpty()) {
                 log.error("EspnPlayByPlayProvider: Python script returned empty output");
                 long elapsed = System.currentTimeMillis() - startTime;
-                return PlayByPlayFetchResult.failure(type(), "Empty output from Python script", elapsed);
+                return PlayByPlayFetchResult.failure(
+                        type(), "EMPTY_PROCESS_OUTPUT", "Empty output from Python script",
+                        true, null, elapsed);
             }
 
-            // Parse the JSON output - expect JSONObject with "playByPlay" JSONArray
-            JSONArray eventsArray;
-            try {
-                JSONObject root = new JSONObject(jsonStr);
-                if (root.has("playByPlay") && !root.isNull("playByPlay")) {
-                    eventsArray = root.getJSONArray("playByPlay");
-                } else {
-                    long elapsed = System.currentTimeMillis() - startTime;
-                    return PlayByPlayFetchResult.failure(type(),
-                            "Unexpected JSON structure: no 'playByPlay' key", elapsed);
-                }
-            } catch (org.json.JSONException e) {
-                // Try as a direct JSONArray
-                try {
-                    eventsArray = new JSONArray(jsonStr);
-                } catch (org.json.JSONException e2) {
-                    long elapsed = System.currentTimeMillis() - startTime;
-                    return PlayByPlayFetchResult.failure(type(),
-                            "Failed to parse Python output as JSON: " + e2.getMessage(), elapsed);
-                }
-            }
-
-            List<PlayByPlayEvent> events = parseEvents(eventsArray, gameId);
+            PlayByPlayFetchResult.ProviderPayload payload =
+                    PlayByPlayFetchResult.parseProviderPayload(jsonStr, type());
             long elapsed = System.currentTimeMillis() - startTime;
+            if (payload.outcome() != ReplayProviderOutcome.SUCCESS) {
+                log.warn("EspnPlayByPlayProvider: provider outcome={} for gameId={}, errorCode={}",
+                        payload.outcome(), gameId, payload.errorCode());
+                return PlayByPlayFetchResult.failure(type(), payload, jsonStr, elapsed);
+            }
+
+            List<PlayByPlayEvent> events = parseEvents(payload.events(), gameId);
             log.info("EspnPlayByPlayProvider: fetched {} events for gameId={} in {}ms",
                     events.size(), gameId, elapsed);
 
-            return PlayByPlayFetchResult.success(type(), events, jsonStr, elapsed);
+            return PlayByPlayFetchResult.success(
+                    type(), events, jsonStr, payload.quality(), payload.providerSource(), elapsed);
 
+        } catch (IllegalArgumentException | JSONException e) {
+            log.error("EspnPlayByPlayProvider: invalid provider contract for gameId={}: {}",
+                    gameId, e.getMessage());
+            long elapsed = System.currentTimeMillis() - startTime;
+            return PlayByPlayFetchResult.failure(
+                    type(), "INVALID_PROVIDER_CONTRACT", e.getMessage(), false, null, elapsed);
         } catch (Exception e) {
             log.error("EspnPlayByPlayProvider: error fetching play-by-play for gameId={}", gameId, e);
             long elapsed = System.currentTimeMillis() - startTime;
-            return PlayByPlayFetchResult.failure(type(), "Error: " + e.getMessage(), elapsed);
+            return PlayByPlayFetchResult.failure(
+                    type(), "PROVIDER_RUNTIME_ERROR", "Error: " + e.getMessage(), true, null, elapsed);
         }
+    }
+
+    private static boolean isNbaGameId(String gameId) {
+        return gameId != null && gameId.matches(NBA_GAME_ID_PATTERN);
+    }
+
+    private static boolean isEspnGameId(String gameId) {
+        return gameId != null && gameId.matches(ESPN_GAME_ID_PATTERN);
     }
 
     /**

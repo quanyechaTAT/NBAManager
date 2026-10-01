@@ -2,30 +2,30 @@
   <div class="page" :class="{ 'page--table': viewMode === 'table' }">
     <div class="page-inner">
       <!-- 页面头部 -->
-      <div class="page-header">
-        <div>
-          <h1>球员</h1>
-          <p>NBA 球员数据与排名</p>
-        </div>
-        <div class="header-actions">
-          <div class="view-toggle" v-if="auth.isAdmin">
-            <button class="toggle-btn" :class="{ active: viewMode === 'cards' }" @click="viewMode = 'cards'">
+      <SportsHeader
+        eyebrow="NBA ROSTER & METRICS"
+        title="联盟球星档案库"
+        subtitle="全景透视 30 支球队现役球员名单、赛季场均数据与综合效率值"
+      >
+        <template #actions>
+          <div class="view-toggle" aria-label="球员展示方式">
+            <button class="toggle-btn" type="button" aria-label="卡片视图" :aria-pressed="viewMode === 'cards'" :class="{ active: viewMode === 'cards' }" @click="viewMode = 'cards'; load()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
             </button>
-            <button class="toggle-btn" :class="{ active: viewMode === 'table' }" @click="viewMode = 'table'; load()">
+            <button class="toggle-btn" type="button" aria-label="表格视图" :aria-pressed="viewMode === 'table'" :class="{ active: viewMode === 'table' }" @click="viewMode = 'table'; load()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
             </button>
           </div>
-          <el-button type="success" plain @click="exportExcel" size="small">导出 Excel</el-button>
+          <el-button plain @click="exportExcel" size="small">导出 Excel</el-button>
           <el-button v-if="auth.isAdmin && viewMode === 'table'" type="primary" @click="openCreate">新建球员</el-button>
-        </div>
-      </div>
+        </template>
+      </SportsHeader>
 
       <!-- 搜索筛选 -->
       <div class="filter-bar">
         <div class="filter-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-          <input v-model="keyword" type="text" placeholder="搜索球员姓名..." @keyup.enter="load" />
+          <input v-model="keyword" type="text" placeholder="搜索球员姓名、位置或球队..." @keyup.enter="load" />
         </div>
         <el-select v-model="filterTeamId" clearable placeholder="球队" style="width: 140px" @change="onFilterChange" size="default">
           <el-option v-for="t in teamOptions" :key="t.id" :label="t.name" :value="t.id" />
@@ -42,9 +42,9 @@
       <!-- 卡片视图（默认） -->
       <template v-if="viewMode === 'cards'">
         <div class="player-grid" v-loading="loading">
-          <div v-for="row in rows" :key="row.id" class="player-card" @click="goToPlayerDetail(row)">
+          <div v-for="row in rows" :key="row.id" class="player-card" role="link" tabindex="0" @click="goToPlayerDetail(row)" @keydown.enter="goToPlayerDetail(row)">
             <div class="player-card-avatar">
-              <img v-if="row.nbaPlayerId" :src="`https://cdn.nba.com/headshots/nba/latest/260x190/${row.nbaPlayerId}.png`" :alt="row.name" loading="lazy" @error="onThumbError($event)" />
+              <img v-if="row.nbaPlayerId && !brokenAvatars.has(row.id)" :src="`https://cdn.nba.com/headshots/nba/latest/260x190/${row.nbaPlayerId}.png`" :alt="row.name" loading="lazy" @error="onThumbError(row)" />
               <span v-else class="player-card-avatar-fallback">{{ row.name?.charAt(0) }}</span>
             </div>
             <div class="player-card-info">
@@ -56,15 +56,15 @@
             </div>
             <div class="player-card-stats">
               <div class="player-card-stat">
-                <span class="stat-val">{{ row.pointsPerGame?.toFixed(1) }}</span>
+                <span class="stat-val">{{ row.pointsPerGame?.toFixed(1) ?? '—' }}</span>
                 <span class="stat-lbl">得分</span>
               </div>
               <div class="player-card-stat">
-                <span class="stat-val">{{ row.reboundsPerGame?.toFixed(1) }}</span>
+                <span class="stat-val">{{ row.reboundsPerGame?.toFixed(1) ?? '—' }}</span>
                 <span class="stat-lbl">篮板</span>
               </div>
               <div class="player-card-stat">
-                <span class="stat-val">{{ row.assistsPerGame?.toFixed(1) }}</span>
+                <span class="stat-val">{{ row.assistsPerGame?.toFixed(1) ?? '—' }}</span>
                 <span class="stat-lbl">助攻</span>
               </div>
             </div>
@@ -76,14 +76,16 @@
         </div>
       </template>
 
-      <!-- 表格视图（管理员） -->
-      <template v-if="viewMode === 'table' && auth.isAdmin">
+      <!-- 表格视图：所有用户可读，编辑操作仍仅限管理员。 -->
+      <template v-if="viewMode === 'table'">
         <div class="card table-card">
+          <p class="player-table-hint">左右滑动可查看全部球员数据</p>
           <el-table class="player-table" :data="rows" border stripe v-loading="loading" @sort-change="onSortChange" style="width: 100%;">
             <el-table-column label="姓名" min-width="160">
               <template #default="{ row }">
                 <div class="player-cell" @click="goToPlayerDetail(row)">
-                  <img v-if="row.nbaPlayerId" :src="`https://cdn.nba.com/headshots/nba/latest/260x190/${row.nbaPlayerId}.png`" class="player-thumb" @error="onThumbError($event)" />
+                  <img v-if="row.nbaPlayerId && !brokenAvatars.has(row.id)" :src="`https://cdn.nba.com/headshots/nba/latest/260x190/${row.nbaPlayerId}.png`" class="player-thumb" @error="onThumbError(row)" />
+                  <span v-else class="player-thumb player-thumb-fallback">{{ row.name?.charAt(0) }}</span>
                   <span class="player-name-link">{{ row.name }}</span>
                 </div>
               </template>
@@ -92,31 +94,31 @@
             <el-table-column prop="position" label="位置" min-width="70" align="center" />
             <el-table-column prop="jerseyNumber" label="球衣" min-width="64" align="center" />
             <el-table-column prop="gamesPlayed" label="出场" min-width="68" align="center" sortable="custom" />
-            <el-table-column prop="minutesPerGame" label="时间" min-width="68" align="center" sortable="custom">
+            <el-table-column prop="minutesPerGame" label="时间" width="72" align="right" sortable="custom">
               <template #default="{ row }">{{ row.minutesPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column prop="pointsPerGame" label="得分" min-width="68" align="center" sortable="custom">
+            <el-table-column prop="pointsPerGame" label="得分" width="72" align="right" sortable="custom">
               <template #default="{ row }"><span class="stat-highlight">{{ row.pointsPerGame?.toFixed(1) }}</span></template>
             </el-table-column>
-            <el-table-column prop="reboundsPerGame" label="篮板" min-width="68" align="center" sortable="custom">
+            <el-table-column prop="reboundsPerGame" label="篮板" width="72" align="right" sortable="custom">
               <template #default="{ row }">{{ row.reboundsPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column prop="assistsPerGame" label="助攻" min-width="68" align="center" sortable="custom">
+            <el-table-column prop="assistsPerGame" label="助攻" width="72" align="right" sortable="custom">
               <template #default="{ row }">{{ row.assistsPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column prop="stealsPerGame" label="抢断" min-width="68" align="center" sortable="custom">
+            <el-table-column prop="stealsPerGame" label="抢断" width="72" align="right" sortable="custom">
               <template #default="{ row }">{{ row.stealsPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column prop="blocksPerGame" label="盖帽" min-width="68" align="center" sortable="custom">
+            <el-table-column prop="blocksPerGame" label="盖帽" width="72" align="right" sortable="custom">
               <template #default="{ row }">{{ row.blocksPerGame?.toFixed(1) }}</template>
             </el-table-column>
-            <el-table-column label="投篮命中率" width="126" align="center" sortable="custom">
+            <el-table-column label="投篮命中率" width="110" align="right" sortable="custom">
               <template #default="{ row }">{{ (row.fieldGoalPct * 100).toFixed(1) }}%</template>
             </el-table-column>
-            <el-table-column label="三分命中率" width="126" align="center" sortable="custom">
+            <el-table-column label="三分命中率" width="110" align="right" sortable="custom">
               <template #default="{ row }">{{ (row.threePointPct * 100).toFixed(1) }}%</template>
             </el-table-column>
-            <el-table-column label="罚球命中率" width="126" align="center" sortable="custom">
+            <el-table-column label="罚球命中率" width="110" align="right" sortable="custom">
               <template #default="{ row }">{{ (row.freeThrowPct * 100).toFixed(1) }}%</template>
             </el-table-column>
             <el-table-column prop="efficiency" label="效率值" width="92" align="center" sortable="custom" />
@@ -170,6 +172,7 @@ import { fetchTeams } from '@/api/team'
 import type { Player, Team } from '@/api/types'
 import { getTeamLogo } from '@/utils/teamLogos'
 import AppEmpty from '@/components/common/AppEmpty.vue'
+import SportsHeader from '@/components/common/SportsHeader.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -177,6 +180,7 @@ const viewMode = ref<'cards' | 'table'>('cards')
 const loading = ref(false)
 const saving = ref(false)
 const rows = ref<Player[]>([])
+const brokenAvatars = ref<Set<number>>(new Set())
 const teamOptions = ref<Team[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -228,7 +232,7 @@ function onFilterChange() { page.value = 1; load() }
 function onSortChange({ prop, order }: any) { sortField.value = prop; sortOrder.value = order; load() }
 function resetFilters() { keyword.value = ''; filterTeamId.value = undefined; filterPosition.value = undefined; page.value = 1; load() }
 function goToPlayerDetail(row: Player) { router.push({ path: '/players/detail', query: { id: String(row.id) } }) }
-function onThumbError(e: Event) { (e.target as HTMLImageElement).style.display = 'none' }
+function onThumbError(row: Player) { brokenAvatars.value.add(row.id) }
 
 function openCreate() {
   editingId.value = null
@@ -262,9 +266,26 @@ async function onDelete(row: Player) {
 async function exportExcel() {
   ElMessage.info('正在导出…')
   try {
-    const { data } = await fetchPlayers({ q: keyword.value || undefined, teamId: filterTeamId.value || undefined, position: filterPosition.value || undefined, page: 0, size: 9999 })
+    // 后端分页上限为 100，导出改为逐页拉取，避免 size 超限被 400 拒绝
+    const EXPORT_PAGE_SIZE = 100
+    const allPlayers: Player[] = []
+    let page = 0
+    let totalPages = 1
+    do {
+      const { data } = await fetchPlayers({
+        q: keyword.value || undefined,
+        teamId: filterTeamId.value || undefined,
+        position: filterPosition.value || undefined,
+        page,
+        size: EXPORT_PAGE_SIZE,
+      })
+      allPlayers.push(...(data.content || []))
+      totalPages = data.totalPages || 1
+      page += 1
+    } while (page < totalPages)
+
     const header = ['姓名', '球队', '位置', '得分', '篮板', '助攻', '抢断', '盖帽', '命中率%', '三分%']
-    const rows4Excel = data.content.map((p: Player) => [p.name, p.teamName, p.position, p.pointsPerGame, p.reboundsPerGame, p.assistsPerGame, p.stealsPerGame, p.blocksPerGame, (p.fieldGoalPct * 100).toFixed(1), (p.threePointPct * 100).toFixed(1)])
+    const rows4Excel = allPlayers.map((p: Player) => [p.name, p.teamName, p.position, p.pointsPerGame, p.reboundsPerGame, p.assistsPerGame, p.stealsPerGame, p.blocksPerGame, (p.fieldGoalPct * 100).toFixed(1), (p.threePointPct * 100).toFixed(1)])
     const ws = XLSX.utils.aoa_to_sheet([header, ...rows4Excel])
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '球员数据')
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
@@ -299,7 +320,14 @@ onMounted(async () => { await loadTeams(); await load() })
   align-items: flex-start;
   margin-bottom: 20px;
 }
-.page-header h1 { margin: 0 0 4px; font-size: 24px; font-weight: 700; color: var(--text-primary); font-family: var(--font-heading); }
+.page-header h1 {
+  margin: 0 0 4px;
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  letter-spacing: -0.4px;
+}
 .page-header p { margin: 0; font-size: 14px; color: var(--text-muted); }
 .header-actions { display: flex; align-items: center; gap: 12px; }
 .view-toggle { display: flex; border: 1px solid var(--border-light); border-radius: 6px; overflow: hidden; }
@@ -319,35 +347,42 @@ onMounted(async () => { await loadTeams(); await load() })
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 14px;
+  padding: 8px 14px;
   background: var(--bg-card);
   border: 1px solid var(--border-light);
-  border-radius: 6px;
+  border-radius: 999px;
   flex: 1;
-  max-width: 280px;
-  transition: border-color 0.15s;
+  max-width: 300px;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s var(--ease-out-quart, ease);
 }
-.filter-search:focus-within { border-color: var(--accent); }
+.filter-search:focus-within {
+  border-color: rgba(34, 211, 238, 0.5);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.1);
+  transform: translateY(-1px);
+}
 .filter-search svg { color: var(--text-muted); flex-shrink: 0; }
 .filter-search input { background: none; border: none; outline: none; color: var(--text-primary); font-size: 13px; width: 100%; }
 .filter-search input::placeholder { color: var(--text-dim); }
 
 .filter-bar :deep(.el-select__wrapper) {
   min-height: 40px;
-  background: linear-gradient(180deg, rgba(30, 41, 59, 0.72), rgba(15, 23, 42, 0.88)) !important;
-  border: 1px solid rgba(var(--border-light-rgb), 0.95) !important;
+  background: var(--bg-input) !important;
+  border: 1px solid var(--border-light) !important;
   border-radius: 6px !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  box-shadow: none !important;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
 .filter-bar :deep(.el-select__wrapper:hover) {
-  border-color: rgba(100, 116, 139, 0.52) !important;
-  background: linear-gradient(180deg, rgba(30, 41, 59, 0.86), rgba(15, 23, 42, 0.94)) !important;
+  border-color: var(--border-strong) !important;
+  background: var(--bg-hover) !important;
 }
 
 .filter-bar :deep(.el-select__wrapper.is-focused) {
-  border-color: rgba(59, 130, 246, 0.7) !important;
+  border-color: var(--accent) !important;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
 }
 
@@ -394,7 +429,7 @@ onMounted(async () => { await loadTeams(); await load() })
 
 [data-theme="light"] .filter-bar :deep(.el-select__wrapper.is-focused) {
   border-color: var(--accent) !important;
-  box-shadow: 0 0 0 3px rgba(232, 93, 38, 0.1) !important;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.1) !important;
 }
 
 /* 球员卡片网格 */
@@ -403,6 +438,10 @@ onMounted(async () => { await loadTeams(); await load() })
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
+.player-table-hint { display: none; }
+@media (max-width: 768px) {
+  .player-table-hint { display: block; margin: 0 0 8px; color: var(--text-muted); font-size: 12px; }
+}
 .player-card {
   display: flex;
   align-items: center;
@@ -410,14 +449,21 @@ onMounted(async () => { await loadTeams(); await load() })
   padding: 12px 16px;
   background: var(--bg-card);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
+  border-radius: 14px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition:
+    transform 0.22s var(--ease-out-quart, ease),
+    border-color 0.18s ease,
+    box-shadow 0.22s var(--ease-out-quart, ease);
+  position: relative;
+  overflow: hidden;
 }
 .player-card:hover {
   border-color: var(--border-medium);
   box-shadow: var(--shadow-sm);
+  transform: translateY(-3px);
 }
+.player-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .player-card-avatar {
   width: 48px;
   height: 48px;
@@ -436,7 +482,7 @@ onMounted(async () => { await loadTeams(); await load() })
 .player-card-meta { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
 .player-card-team-logo { width: 14px; height: 14px; object-fit: contain; }
 .player-card-stats { display: flex; gap: 12px; flex-shrink: 0; }
-.player-card-stat { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 36px; }
+.player-card-stat { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; width: 40px; }
 .stat-val { font-size: 14px; font-weight: 700; color: var(--text-primary); font-family: var(--font-heading); font-variant-numeric: tabular-nums; }
 .stat-lbl { font-size: 10px; color: var(--text-muted); }
 
@@ -469,6 +515,7 @@ onMounted(async () => { await loadTeams(); await load() })
 .card :deep(.el-table__body .cell) { white-space: nowrap; }
 .player-cell { display: flex; align-items: center; gap: 10px; cursor: pointer; }
 .player-thumb { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: var(--bg-hover); flex-shrink: 0; }
+.player-thumb-fallback { display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: var(--text-muted); }
 .player-name-link { color: var(--accent); cursor: pointer; font-weight: 500; }
 .player-name-link:hover { color: var(--accent-light); }
 .stat-highlight { font-weight: 700; color: var(--accent); }

@@ -23,16 +23,15 @@ public class PlayByPlaySyncLogService {
         return repository.findFirstByGameIdOrderByStartedAtDesc(gameId);
     }
 
-    public boolean hasSuccessfulSync(String gameId) {
-        return getLatestLog(gameId)
-                .map(log -> "SUCCESS".equals(log.getStatus()))
-                .orElse(false);
+    public PlayByPlaySyncLog startSync(String gameId, String source) {
+        return startSync(gameId, source, null);
     }
 
-    public PlayByPlaySyncLog startSync(String gameId, String source) {
+    public PlayByPlaySyncLog startSync(String gameId, String source, String operationId) {
         PlayByPlaySyncLog syncLog = new PlayByPlaySyncLog();
         syncLog.setGameId(gameId);
         syncLog.setSource(source);
+        syncLog.setOperationId(operationId);
         syncLog.setStatus("PENDING");
         syncLog.setAttemptCount(1);
         syncLog.setStartedAt(LocalDateTime.now());

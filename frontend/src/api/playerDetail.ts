@@ -65,9 +65,33 @@ export interface PlayerCareerStat {
   efficiency: number
 }
 
+/** 联盟平均与极值（用于联盟相对水平对比条） */
+export interface LeagueAverages {
+  avgPoints: number
+  avgRebounds: number
+  avgAssists: number
+  avgSteals: number
+  avgBlocks: number
+  avgFieldGoalPct: number
+  avgThreePointPct: number
+  maxPoints: number
+  maxRebounds: number
+  maxAssists: number
+  maxSteals: number
+  maxBlocks: number
+  maxFieldGoalPct: number
+  maxThreePointPct: number
+  playerCount: number
+}
+
 /** 获取球员详情 */
 export function fetchPlayerDetail(id: number) {
   return request.get<PlayerDetail>(`/players/${id}/detail`)
+}
+
+/** 获取联盟平均数据 */
+export function fetchLeagueAverages(season: string) {
+  return request.get<LeagueAverages>('/players/league-averages', { params: { season } })
 }
 
 /** 获取球员生涯数据 */

@@ -1,5 +1,6 @@
 package com.nbamanager.service;
 
+import com.nbamanager.config.PythonTimeoutProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONArray;
@@ -23,11 +24,17 @@ public class NbaDataService {
 
     private final PlayoffService playoffService;
     private final PlayoffReferenceData playoffReferenceData;
+    private final PythonScriptRunner pythonScriptRunner;
+    private final PythonTimeoutProperties pythonTimeoutProperties;
 
     /**
      * 获取季后赛数据并导入数据库
      */
     public Map<String, Object> fetchAndImportPlayoffData(String season) {
+        return fetchAndImportPlayoffData(season, null);
+    }
+
+    public Map<String, Object> fetchAndImportPlayoffData(String season, Long jobId) {
         Map<String, Object> result = new HashMap<>();
 
         try {
@@ -40,45 +47,22 @@ public class NbaDataService {
                 return result;
             }
 
-            String scriptPath = findScriptPath();
-            if (scriptPath == null) {
-                log.warn("Python脚本未找到");
+            PythonScriptRunner.PythonResult pythonResult = jobId == null
+                    ? pythonScriptRunner.run("nba_data_fetcher.py", new String[]{"playoff", season},
+                            pythonTimeoutProperties.getPlayoffSeconds())
+                    : pythonScriptRunner.runForJob(
+                            "nba_data_fetcher.py", new String[]{"playoff", season},
+                            pythonTimeoutProperties.getPlayoffSeconds(), jobId);
+            if (!pythonResult.success()) {
+                log.warn("季后赛脚本执行失败: exitCode={}, error={}",
+                        pythonResult.exitCode(), pythonResult.stderr());
                 result.put("matchups", new ArrayList<>());
                 result.put("games", new ArrayList<>());
                 return result;
             }
 
-            // 调用Python脚本获取季后赛数据（传递赛季参数）
-            ProcessBuilder pb = new ProcessBuilder("python", scriptPath, "playoff", season);
-            pb.redirectErrorStream(true);
-            pb.directory(new File(scriptPath).getParentFile());
-            pb.environment().put("PYTHONIOENCODING", "utf-8");
-
-            Process process = pb.start();
-
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-            }
-
-            boolean finished = process.waitFor(120, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                log.warn("Python脚本执行超时");
-                result.put("matchups", new ArrayList<>());
-                result.put("games", new ArrayList<>());
-                return result;
-            }
-
-            // 从文件读取JSON
-            File outputFile = new File(new File(scriptPath).getParentFile(), "output.json");
-            if (outputFile.exists()) {
-                String jsonStr = new String(java.nio.file.Files.readAllBytes(outputFile.toPath()), StandardCharsets.UTF_8);
-                if (!jsonStr.isEmpty()) {
+            String jsonStr = pythonResult.stdout().trim();
+            if (!jsonStr.isEmpty()) {
                     JSONObject data = new JSONObject(jsonStr);
                     JSONObject playoff = data.optJSONObject("playoff");
 
@@ -113,7 +97,6 @@ public class NbaDataService {
                         result.put("matchups", matchups);
                         result.put("imported", imported);
                     }
-                }
             }
 
         } catch (Exception e) {
@@ -123,21 +106,4 @@ public class NbaDataService {
         return result;
     }
 
-    private String findScriptPath() {
-        String[] possiblePaths = {
-                "backend/scripts/nba_data_fetcher.py",
-                "scripts/nba_data_fetcher.py",
-                "../scripts/nba_data_fetcher.py",
-                "nba_data_fetcher.py"
-        };
-
-        File baseDir = new File(System.getProperty("user.dir"));
-        for (String path : possiblePaths) {
-            File file = new File(baseDir, path);
-            if (file.exists()) {
-                return file.getAbsolutePath();
-            }
-        }
-        return null;
-    }
 }

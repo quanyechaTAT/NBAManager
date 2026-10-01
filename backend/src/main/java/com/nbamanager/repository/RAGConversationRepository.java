@@ -17,5 +17,9 @@ public interface RAGConversationRepository extends JpaRepository<RAGConversation
 
     List<RAGConversation> findByUserIdOrderByUpdatedAtDesc(Long userId);
 
+    List<RAGConversation> findByUserIdOrderByUpdatedAtAsc(Long userId);
+
+    long countByUserId(Long userId);
+
     boolean existsBySessionId(String sessionId);
 }

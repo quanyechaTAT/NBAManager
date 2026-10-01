@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 交易详情翻译脚本
-使用MIMO Agent总结并翻译NBA交易详情
+使用DeepSeek Agent总结并翻译NBA交易详情
 输入: JSON数组 [{"id": 1, "details": "Acquired G Chris Paul from..."}]
 输出: JSON数组 [{"id": 1, "detailsCn": "球队从...获得球员..."}]
 """
@@ -63,7 +63,7 @@ def translate_trade_details(trades):
         has_english = bool(re.search(r'[a-zA-Z]{3,}', cn_details))
 
         if has_english:
-            # 调用MIMO API进行翻译和总结
+            # 调用DeepSeek API进行翻译和总结
             prompt = f"""你是一个专业的NBA交易分析师。请将以下NBA交易/球员变动信息翻译并总结为中文。
 
 要求：

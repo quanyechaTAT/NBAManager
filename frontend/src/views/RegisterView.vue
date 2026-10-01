@@ -13,21 +13,21 @@
       <div class="particle"></div>
     </div>
 
-    <div class="hero slide-up-enter">
-      <p class="eyebrow">NBA DATA CENTER</p>
-      <h1>NBA 数据分析系统</h1>
-      <p class="desc">集中管理球队与球员基础数据，提供清晰的列表维护、权限控制和可视化看板。</p>
+    <div class="hero reveal-rise">
+      <p class="eyebrow">COURTSIDE INTELLIGENCE</p>
+      <h1>加入<span class="accent-word">场边数据中枢</span></h1>
+      <p class="desc">创建账号后即可追踪今日赛事、深入球员数据，并用 AI 助手快速读懂比赛。</p>
       <div class="features">
-        <span>球队管理</span>
-        <span>球员管理</span>
-        <span>数据看板</span>
+        <span>今日赛事</span>
+        <span>球员洞察</span>
+        <span>AI 助手</span>
       </div>
     </div>
 
-    <el-card class="card slide-up-enter" shadow="always" style="animation-delay: 0.15s;">
+    <el-card class="card reveal-scale" shadow="always" style="animation-delay: 0.08s;">
       <div class="card-head">
-        <h2>注册新账号</h2>
-        <p>创建账号即可开始使用系统</p>
+        <h2>创建 Courtside 账号</h2>
+        <p>几步完成注册，立即开始使用</p>
       </div>
       <el-form :model="form" :rules="rules" ref="formRef" label-position="top" @submit.prevent>
         <el-form-item label="用户名" prop="username">
@@ -151,7 +151,9 @@ async function submit() {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(13, 17, 23, 0.92) 0%, rgba(13, 17, 23, 0.78) 100%);
+  background:
+    radial-gradient(900px 480px at 78% 12%, rgba(34, 211, 238, 0.14), transparent 60%),
+    linear-gradient(135deg, rgba(11, 15, 23, 0.94) 0%, rgba(11, 15, 23, 0.82) 55%, rgba(11, 15, 23, 0.7) 100%);
   z-index: 0;
 }
 .hero {
@@ -173,10 +175,17 @@ h1 {
   margin: 0;
   font-size: 44px;
   line-height: 1.15;
-  font-weight: 700;
+  font-weight: 800;
   font-family: var(--font-heading);
   color: var(--text-primary);
-  letter-spacing: -0.5px;
+  letter-spacing: -1px;
+}
+.accent-word {
+  background: var(--accent-text-gradient, linear-gradient(120deg, #A5F3FC, #22D3EE));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 14px rgba(34, 211, 238, 0.35));
 }
 .desc {
   margin: 20px 0 28px;
@@ -190,29 +199,40 @@ h1 {
   flex-wrap: wrap;
 }
 .features span {
-  padding: 6px 14px;
-  border: 1px solid var(--border-light);
-  border-radius: 6px;
-  background: var(--bg-card);
+  padding: 7px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text-secondary);
   font-size: 13px;
   font-family: var(--font-body);
   font-weight: 500;
   transition: all var(--duration-fast) var(--ease-smooth);
   cursor: default;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 .features span:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-lighter);
+  border-color: rgba(34, 211, 238, 0.5);
+  color: var(--accent-light);
+  background: rgba(34, 211, 238, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 4px 16px -4px rgba(34, 211, 238, 0.4);
+  transform: translateY(-1px);
 }
 .card {
   width: 420px;
   padding: 8px 12px 16px;
-  border: 1px solid var(--border-light) !important;
-  border-radius: var(--radius-xl) !important;
-  background: var(--bg-card) !important;
-  box-shadow: var(--shadow-lg) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 20px !important;
+  background: rgba(15, 23, 42, 0.55) !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+  box-shadow:
+    0 24px 64px -12px rgba(0, 0, 0, 0.55),
+    0 4px 16px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(34, 211, 238, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
   position: relative;
   z-index: 1;
   overflow: hidden;
@@ -223,8 +243,9 @@ h1 {
   top: 0;
   left: 0;
   right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-light), var(--accent));
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-light) 30%, var(--accent) 50%, var(--accent-light) 70%, transparent);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.5);
   z-index: 2;
 }
 .card::after {
@@ -239,6 +260,7 @@ h1 {
   z-index: 0;
 }
 .card-head {
+  display: block; /* 覆盖全局 .card-head 的 flex */
   margin-bottom: 24px;
   text-align: center;
   position: relative;
@@ -293,14 +315,13 @@ h1 {
   letter-spacing: 0.5px;
   background: var(--accent) !important;
   border-color: var(--accent) !important;
-  color: #FFFFFF !important;
+  color: var(--accent-contrast, #04202A) !important;
   transition: all var(--duration-fast) var(--ease-smooth) !important;
   box-shadow: 0 2px 12px var(--accent-glow);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 .login-btn:hover {
-  background: linear-gradient(135deg, #D14E1F 0%, #E85D26 100%) !important;
-  border-color: #D14E1F !important;
+  background: linear-gradient(135deg, #0E7490 0%, #0891B2 100%) !important;
+  border-color: #0E7490 !important;
   box-shadow: 0 6px 24px var(--accent-glow-strong);
   transform: translateY(-2px);
 }
@@ -386,24 +407,43 @@ h1 {
 
 /* 浅色主题覆盖 */
 [data-theme="light"] .wrap::before {
-  background: linear-gradient(135deg, rgba(248, 250, 252, 0.88) 0%, rgba(248, 250, 252, 0.72) 100%);
+  background:
+    radial-gradient(900px 480px at 78% 12%, rgba(34, 211, 238, 0.1), transparent 60%),
+    linear-gradient(105deg, rgba(250, 248, 245, 0.96) 0%, rgba(250, 248, 245, 0.9) 40%, rgba(250, 248, 245, 0.62) 72%, rgba(250, 248, 245, 0.55) 100%);
+}
+
+[data-theme="light"] .card {
+  background: rgba(255, 255, 255, 0.86) !important;
+  border-color: rgba(200, 195, 188, 0.5) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  box-shadow:
+    0 20px 56px rgba(0, 0, 0, 0.12),
+    0 4px 16px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
+}
+
+[data-theme="light"] .features span {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(34, 211, 238, 0.3);
+  color: #155E75;
 }
 
 [data-theme="light"] .card::after {
-  background: linear-gradient(180deg, rgba(232, 93, 38, 0.03) 0%, transparent 100%);
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.03) 0%, transparent 100%);
 }
 
 [data-theme="light"] .login-btn:hover {
-  background: linear-gradient(135deg, #D14E1F 0%, #E85D26 100%) !important;
-  border-color: #D14E1F !important;
-  box-shadow: 0 6px 24px rgba(232, 93, 38, 0.3);
+  background: linear-gradient(135deg, #0E7490 0%, #0891B2 100%) !important;
+  border-color: #0E7490 !important;
+  box-shadow: 0 6px 24px rgba(34, 211, 238, 0.3);
 }
 
 [data-theme="light"] .link-row a:hover {
-  color: #D14E1F;
+  color: #0E7490;
 }
 
 [data-theme="light"] .features span:hover {
-  background: rgba(232, 93, 38, 0.06);
+  background: rgba(34, 211, 238, 0.06);
 }
 </style>

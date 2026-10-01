@@ -3,16 +3,20 @@
 """
 NBA数据获取脚本
 从nba_api获取真实的NBA数据（stats.nba.com + cdn.nba.com）
-支持使用mimo-v2.5模型进行智能翻译
+支持使用deepseek-v4-flash模型进行智能翻译
 """
 
 import json
 import os
 import sys
 import time
+import socket
 import urllib.request
+import urllib.parse
+import xml.etree.ElementTree as ET
 import re
 from html import unescape
+from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta, timezone
 
 # 确保stdout使用UTF-8编码（Windows兼容）
@@ -41,6 +45,25 @@ if os.path.exists(env_path):
                 os.environ.setdefault(key.strip(), value.strip())
 
 # 导入翻译模块
+direct_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _open_news_url(request, timeout=15):
+    """Open a news source through the configured proxy, then retry directly."""
+    if not PROXY_URL:
+        return proxy_opener.open(request, timeout=timeout)
+    try:
+        return proxy_opener.open(request, timeout=timeout)
+    except Exception as proxy_error:
+        print(f"新闻代理请求失败，尝试直连: {proxy_error}", file=sys.stderr)
+        try:
+            return direct_opener.open(request, timeout=timeout)
+        except Exception as direct_error:
+            raise RuntimeError(
+                f"proxy request failed: {proxy_error}; direct request failed: {direct_error}"
+            ) from direct_error
+
+
 try:
     from translator import translate_text, translate_news_article, translate_trade_details
     HAS_TRANSLATOR = True
@@ -65,19 +88,49 @@ def _build_proxy_url(host, port):
         return host
     return f'http://{host}:{port}'
 
+
+def _apply_proxy_environment(proxy_url):
+    for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']:
+        os.environ[key] = proxy_url
+
+def _proxy_reachable(proxy_url):
+    """探测代理端口是否可连：代理软件没开时改走直连，
+    否则 stats.nba.com 等全部抓取会被'拒绝连接'打死（历史同步曾因此整批为空）"""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(proxy_url)
+        host = parsed.hostname or '127.0.0.1'
+        port = parsed.port or 80
+        sock = socket.create_connection((host, port), timeout=1.5)
+        sock.close()
+        return True
+    except Exception:
+        return False
+
+
 if PROXY_HOST and PROXY_PORT:
     PROXY_URL = _build_proxy_url(PROXY_HOST, PROXY_PORT)
-    if PROXY_URL:
+    if PROXY_URL and not _proxy_reachable(PROXY_URL):
+        print(f"警告: 代理 {PROXY_URL} 不可达，改用直连", file=sys.stderr)
+        PROXY_HOST = ''
+        PROXY_PORT = ''
+    if PROXY_HOST and PROXY_PORT:
         proxy_handler = urllib.request.ProxyHandler({
             'https': PROXY_URL,
             'http': PROXY_URL,
         })
         proxy_opener = urllib.request.build_opener(proxy_handler)
         urllib.request.install_opener(proxy_opener)
-        os.environ['HTTP_PROXY'] = PROXY_URL
+        _apply_proxy_environment(PROXY_URL)
         print(f"已配置代理: {PROXY_URL}", file=sys.stderr)
     else:
-        print("代理配置无效，使用直连", file=sys.stderr)
+        # 显式清除所有代理环境变量，防止系统代理干扰
+        for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']:
+            os.environ.pop(key, None)
+        proxy_handler = urllib.request.ProxyHandler({})
+        proxy_opener = urllib.request.build_opener(proxy_handler)
+        urllib.request.install_opener(proxy_opener)
+        print("未配置代理，使用直连", file=sys.stderr)
 else:
     # 显式清除所有代理环境变量，防止系统代理干扰
     for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']:
@@ -663,7 +716,7 @@ def save_dynamic_map():
         print(f"保存动态映射失败: {e}", file=sys.stderr)
 
 def translate_player_name(en_name):
-    """翻译球员名：先查本地映射，再调用MIMO API，最后保存映射"""
+    """翻译球员名：先查本地映射，再调用DeepSeek API，最后保存映射"""
     # 1. 先查静态映射
     if en_name in PLAYER_CN_MAP:
         return PLAYER_CN_MAP[en_name], 'MAPPED'
@@ -672,7 +725,7 @@ def translate_player_name(en_name):
     if en_name in _dynamic_cn_map:
         return _dynamic_cn_map[en_name], 'MAPPED'
 
-    # 3. 调用MIMO API翻译
+    # 3. 调用DeepSeek API翻译
     if HAS_TRANSLATOR:
         try:
             prompt = f"请将以下NBA球员名字翻译为中文，只输出中文名字，不要添加其他内容：\n{en_name}"
@@ -878,6 +931,87 @@ def _normalize_playbyplay_events(events):
         event.pop('rawAwayScore', None)
 
     return events
+
+
+REPLAY_PROVIDER_SCHEMA_VERSION = 'replay-provider/v1'
+REPLAY_PROVIDER_QUALITIES = {'FULL', 'PARTIAL', 'SUMMARY_ONLY', 'UNAVAILABLE'}
+
+
+def _build_playbyplay_payload(
+    events,
+    source,
+    default_quality='FULL',
+    error_code=None,
+    error_message=None,
+    retryable=False,
+):
+    """Build the versioned replay provider contract and legacy event array."""
+    if default_quality not in REPLAY_PROVIDER_QUALITIES - {'UNAVAILABLE'}:
+        raise ValueError(f'Unsupported replay provider quality: {default_quality}')
+    if not source or not isinstance(source, str):
+        raise ValueError('Replay provider source is required')
+
+    safe_events = list(events or [])
+    if error_code is not None or error_message is not None:
+        if not error_code or not error_message:
+            raise ValueError('Provider errors require error_code and error_message')
+        safe_events = []
+        outcome = 'ERROR'
+        quality = 'UNAVAILABLE'
+    elif safe_events:
+        outcome = 'SUCCESS'
+        event_types = {
+            str(event.get('eventType') or event.get('actionType') or '').lower()
+            for event in safe_events
+            if isinstance(event, dict)
+        }
+        quality = (
+            'SUMMARY_ONLY'
+            if event_types and event_types <= {'period_score'}
+            else default_quality
+        )
+        error_code = None
+        error_message = None
+        retryable = False
+    else:
+        outcome = 'EMPTY'
+        quality = 'UNAVAILABLE'
+        error_code = None
+        error_message = None
+        retryable = False
+
+    return {
+        'schemaVersion': REPLAY_PROVIDER_SCHEMA_VERSION,
+        'outcome': outcome,
+        'quality': quality,
+        'source': source,
+        'eventCount': len(safe_events),
+        'events': safe_events,
+        'errorCode': error_code,
+        'errorMessage': error_message,
+        'retryable': bool(retryable),
+        'playByPlay': safe_events,
+    }
+
+
+def _run_playbyplay_action(fetcher, source, default_quality, error_code):
+    """Execute one provider without allowing upstream failures to look empty."""
+    try:
+        return _build_playbyplay_payload(
+            fetcher(), source=source, default_quality=default_quality
+        )
+    except Exception as exception:
+        message = str(exception).strip() or exception.__class__.__name__
+        message = message[:500]
+        print(f'{source} replay provider failed: {message}', file=sys.stderr)
+        return _build_playbyplay_payload(
+            [],
+            source=source,
+            default_quality=default_quality,
+            error_code=error_code,
+            error_message=message,
+            retryable=True,
+        )
 
 
 def _format_minutes(minutes_str):
@@ -1088,7 +1222,7 @@ def fetch_player_stats():
         if usg_pct < 1.0:
             usg_pct = 20.0
 
-        # 球员名翻译（先查映射，再调用MIMO API）
+        # 球员名翻译（先查映射，再调用DeepSeek API）
         en_name = data.get('PLAYER_NAME', '')
         cn_name, translation_status = translate_player_name(en_name)
 
@@ -1176,13 +1310,14 @@ def fetch_player_stats():
 
 
 def fetch_today_games():
-    """从多个来源获取今日比赛（多来源合并，不是 fallback 替代）"""
+    """从多个来源获取今日比赛，返回 (games_list, provider_results)。
+    每个 provider_result: {provider, succeeded, items, error}"""
     _init_team_map()
     print("正在获取今日比赛数据...", file=sys.stderr)
 
-    # 按 gameId 去重，合并所有来源
     seen_game_ids = set()
     result = []
+    provider_results = []
 
     def _add_games(games, source_label):
         added = 0
@@ -1200,8 +1335,9 @@ def fetch_today_games():
         if added:
             print(f"{source_label}获取到 {added} 场比赛", file=sys.stderr)
 
-    # 来源1: NBA Live Scoreboard（常规赛/季后赛）
+    # 来源1: NBA Live Scoreboard
     nba_games = []
+    nba_error = None
     try:
         from nba_api.live.nba.endpoints import scoreboard as live_sb
         sb = live_sb.ScoreBoard(timeout=15)
@@ -1234,63 +1370,95 @@ def fetch_today_games():
                 'league': 'NBA',
             })
     except Exception as e:
+        nba_error = str(e)
         print(f"Live scoreboard失败: {e}", file=sys.stderr)
 
+    provider_results.append({
+        'provider': 'nba_live',
+        'succeeded': nba_error is None,
+        'items': len(nba_games),
+        'error': nba_error
+    })
     _add_games(nba_games, "NBA Live")
 
-    # 来源2: ScoreboardV3（NBA 官方备用）
-    if not nba_games:
+    # 来源2: ScoreboardV3（NBA 官方备用）— 分别记录每个日期的状态
+    v3_games_total = []
+    v3_any_succeeded = False
+    v3_errors = []
+    for days_offset in [0, -1]:
+        check_date = datetime.now() + timedelta(days=days_offset)
+        date_str = check_date.strftime('%m/%d/%Y')
         try:
-            for days_offset in [0, -1]:
-                check_date = datetime.now() + timedelta(days=days_offset)
-                date_str = check_date.strftime('%m/%d/%Y')
-                try:
-                    sb = ScoreboardV3(game_date=date_str, timeout=15)
-                    data = sb.get_dict()
-                    time.sleep(0.5)
-                    v3_games = []
-                    for game in data.get('scoreboard', {}).get('games', []):
-                        home = game.get('homeTeam', {})
-                        away = game.get('awayTeam', {})
-                        home_cn = TEAM_ABBR_MAP.get(home.get('teamTricode', ''), home.get('teamName', ''))
-                        away_cn = TEAM_ABBR_MAP.get(away.get('teamTricode', ''), away.get('teamName', ''))
-                        game_status = game.get('gameStatus', 0)
-                        if game_status == 1:
-                            status = 'SCHEDULED'
-                        elif game_status == 2:
-                            status = 'LIVE'
-                        else:
-                            status = 'FINISHED'
-                        v3_games.append({
-                            'gameId': game.get('gameId', ''),
-                            'homeTeam': home_cn,
-                            'awayTeam': away_cn,
-                            'homeScore': _safe_int(home.get('score')),
-                            'awayScore': _safe_int(away.get('score')),
-                            'status': status,
-                            'startTime': game.get('gameEt', ''),
-                            'period': game.get('period', 0),
-                            'gameClock': game.get('gameClock', ''),
-                            'source': 'NBA_SCOREBOARD_V3',
-                            'category': 'game',
-                            'league': 'NBA',
-                        })
-                    _add_games(v3_games, f"ScoreboardV3({date_str})")
-                except Exception as e:
-                    print(f"ScoreboardV3查询{date_str}失败: {e}", file=sys.stderr)
+            sb = ScoreboardV3(game_date=date_str, timeout=15)
+            data = sb.get_dict()
+            time.sleep(0.5)
+            v3_any_succeeded = True
+            for game in data.get('scoreboard', {}).get('games', []):
+                home = game.get('homeTeam', {})
+                away = game.get('awayTeam', {})
+                home_cn = TEAM_ABBR_MAP.get(home.get('teamTricode', ''), home.get('teamName', ''))
+                away_cn = TEAM_ABBR_MAP.get(away.get('teamTricode', ''), away.get('teamName', ''))
+                game_status = game.get('gameStatus', 0)
+                if game_status == 1:
+                    status = 'SCHEDULED'
+                elif game_status == 2:
+                    status = 'LIVE'
+                else:
+                    status = 'FINISHED'
+                v3_games_total.append({
+                    'gameId': game.get('gameId', ''),
+                    'homeTeam': home_cn,
+                    'awayTeam': away_cn,
+                    'homeScore': _safe_int(home.get('score')),
+                    'awayScore': _safe_int(away.get('score')),
+                    'status': status,
+                    'startTime': game.get('gameEt', ''),
+                    'period': game.get('period', 0),
+                    'gameClock': game.get('gameClock', ''),
+                    'source': 'NBA_SCOREBOARD_V3',
+                    'category': 'game',
+                    'league': 'NBA',
+                })
         except Exception as e:
-            print(f"ScoreboardV3整体失败: {e}", file=sys.stderr)
+            v3_errors.append(f"{date_str}: {e}")
+            print(f"ScoreboardV3查询{date_str}失败: {e}", file=sys.stderr)
 
-    # 来源3: ESPN Summer League（始终采集，不因 NBA 有数据而跳过）
-    summer_games = fetch_espn_summer_today_games()
-    if summer_games:
-        _add_games(summer_games, "ESPN Summer League")
+    provider_results.append({
+        'provider': 'scoreboard_v3',
+        'succeeded': v3_any_succeeded,
+        'items': len(v3_games_total),
+        'error': '; '.join(v3_errors) if v3_errors else None
+    })
+    _add_games(v3_games_total, "ScoreboardV3")
+
+    # 来源3: ESPN Summer League
+    espn_games, espn_succeeded, espn_error = fetch_espn_summer_today_games()
+
+    provider_results.append({
+        'provider': 'espn_summer',
+        'succeeded': espn_succeeded,
+        'items': len(espn_games),
+        'error': espn_error
+    })
+    if espn_games:
+        _add_games(espn_games, "ESPN Summer League")
 
     # 按 startTime 排序
     result.sort(key=lambda g: g.get('startTime', ''))
 
-    print(f"合计获取到 {len(result)} 场比赛", file=sys.stderr)
-    return result
+    # 计算顶层状态
+    any_succeeded = any(p['succeeded'] for p in provider_results)
+    all_failed = all(not p['succeeded'] for p in provider_results)
+
+    if all_failed:
+        source_status = 'failed'
+    elif any_succeeded and len(result) == 0:
+        source_status = 'empty'
+    else:
+        source_status = 'ok'
+
+    print(f"合计获取到 {len(result)} 场比赛, status={source_status}", file=sys.stderr)
+    return result, provider_results, source_status
 
 
 def _espn_team_name_to_cn(team):
@@ -1327,6 +1495,7 @@ def _parse_espn_event_time(iso_value):
 
 def fetch_espn_summer_today_games():
     """从 ESPN NBA Summer League scoreboard 获取今日的真实夏联比赛。
+    返回 (games, succeeded, error)。
 
     由于中美时差，美国晚间比赛在北京时间为次日凌晨，
     因此查询范围包含今天和明天（北京时间）。
@@ -1344,6 +1513,7 @@ def fetch_espn_summer_today_games():
     )
 
     data = None
+    last_error = None
     for attempt in range(3):
         try:
             request = urllib.request.Request(url, headers={
@@ -1352,14 +1522,16 @@ def fetch_espn_summer_today_games():
             })
             with urllib.request.urlopen(request, timeout=30) as response:
                 data = json.loads(response.read().decode('utf-8'))
+            last_error = None
             break
         except Exception as e:
+            last_error = str(e)
             print(f"ESPN Summer League scoreboard第{attempt+1}次尝试失败: {e}", file=sys.stderr)
             if attempt < 2:
                 time.sleep(2)
     if data is None:
         print("ESPN Summer League scoreboard所有尝试均失败", file=sys.stderr)
-        return []
+        return [], False, last_error or "所有请求失败"
 
     games = []
     seen = set()
@@ -1401,7 +1573,7 @@ def fetch_espn_summer_today_games():
         })
 
     games.sort(key=lambda game: game.get('startTime') or '')
-    return games
+    return games, True, None
 
 
 def _is_espn_summer_game_id(game_id):
@@ -1436,6 +1608,8 @@ def _fetch_espn_summer_event(game_id, match_date=None):
             if date_str not in dates:
                 dates.append(date_str)
 
+    successful_requests = 0
+    request_errors = []
     for date_str in dates:
         url = (
             'https://site.api.espn.com/apis/site/v2/sports/basketball/'
@@ -1443,12 +1617,18 @@ def _fetch_espn_summer_event(game_id, match_date=None):
         )
         try:
             data = _espn_json(url)
+            successful_requests += 1
         except Exception as e:
+            request_errors.append(str(e))
             print(f'ESPN Summer League scoreboard lookup failed ({date_str}): {e}', file=sys.stderr)
             continue
         for event in data.get('events', []):
             if str(event.get('id', '')).strip() == game_id:
                 return event
+    if successful_requests == 0 and request_errors:
+        raise RuntimeError(
+            'ESPN Summer League scoreboard unavailable: ' + '; '.join(request_errors[-3:])
+        )
     return None
 
 
@@ -1642,6 +1822,26 @@ def fetch_espn_summer_playbyplay(game_id, match_date=None):
     return _normalize_playbyplay_events(events)
 
 
+def _resolve_game_type(game):
+    """Normalize provider metadata into the match types used by the UI."""
+    descriptors = ' '.join(str(game.get(key, '')) for key in (
+        'gameLabel', 'gameSubtype', 'seriesText', 'gameCode'
+    )).lower()
+    game_id = str(game.get('gameId', '') or '')
+
+    if 'summer' in descriptors:
+        return 'SUMMER_LEAGUE'
+    if 'cup' in descriptors or 'in-season tournament' in descriptors:
+        return 'NBA_CUP'
+    if 'playoff' in descriptors or 'postseason' in descriptors:
+        return 'PLAYOFFS'
+    if game_id.startswith('004'):
+        return 'PLAYOFFS'
+    if game_id.startswith('006'):
+        return 'NBA_CUP'
+    return 'REGULAR_SEASON'
+
+
 def fetch_recent_games():
     """从nba_api获取最近比赛记录（最近30天）"""
     _init_team_map()
@@ -1690,6 +1890,7 @@ def fetch_recent_games():
                 'date': date.strftime('%Y-%m-%d'),
                 'status': status,
                 'gameId': game_id,
+                'gameType': _resolve_game_type(game),
             })
 
     print(f"获取到 {len(games)} 场比赛记录", file=sys.stderr)
@@ -1867,8 +2068,7 @@ def fetch_espn_playoff_games(start_date, end_date):
         url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?seasontype=3&dates={chunk_start_str}-{chunk_end_str}&limit=100"
         try:
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'})
-            no_proxy_opener = urllib.request.build_opener()
-            response = no_proxy_opener.open(req, timeout=30)
+            response = urllib.request.urlopen(req, timeout=30)
             data = json.loads(response.read().decode('utf-8'))
 
             events = data.get('events', [])
@@ -2190,7 +2390,7 @@ def fetch_playbyplay(game_id, start_period=0, end_period=10):
         time.sleep(0.5)
     except Exception as e:
         print(f"获取Play-by-Play失败: {e}", file=sys.stderr)
-        return []
+        raise RuntimeError(f'NBA Play-by-Play request failed: {e}') from e
 
     # V3格式: game.actions (新格式) 或 resultSets → rowSet + headers (旧格式)
     events = []
@@ -2258,7 +2458,7 @@ def fetch_espn_playbyplay(game_id):
             data = json.loads(resp.read().decode("utf-8"))
     except Exception as e:
         print(f"ESPN API 请求失败: {e}", file=sys.stderr)
-        return []
+        raise RuntimeError(f'ESPN Play-by-Play request failed: {e}') from e
 
     plays = data.get("plays", [])
     events = []
@@ -2485,169 +2685,271 @@ def translate_opponent(matchup, is_home):
     return matchup
 
 
-def fetch_nba_news(limit=20):
-    """从ESPN API获取NBA新闻，先用本地映射翻译，再用批量API翻译剩余英文"""
-    print(f"正在从ESPN获取NBA新闻 (limit={limit})...", file=sys.stderr)
+NEWS_PROVIDER_URLS = {
+    'espn_news': 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/news',
+    'espn_rss': 'https://www.espn.com/espn/rss/nba/news',
+    'cbs_rss': 'https://www.cbssports.com/rss/headlines/nba/',
+}
 
-    url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/news?limit={limit}"
 
+def normalize_news_url(url):
+    """规范化来源 URL，移除跟踪参数和尾部斜杠。"""
+    if not url:
+        return ''
     try:
-        req = urllib.request.Request(url, headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
-        })
+        parsed = urllib.parse.urlsplit(url.strip())
+        query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        tracking_keys = {'cid', 'source', 'platform', 'campaign', 'linkid'}
+        query = [
+            (k, v) for k, v in query
+            if not k.lower().startswith('utm_') and k.lower() not in tracking_keys
+        ]
+        path = parsed.path.rstrip('/') or '/'
+        return urllib.parse.urlunsplit((
+            parsed.scheme.lower(), parsed.netloc.lower(), path,
+            urllib.parse.urlencode(query), ''
+        ))
+    except Exception:
+        return url.strip().rstrip('/')
 
-        no_proxy_opener = urllib.request.build_opener()
-        response = no_proxy_opener.open(req, timeout=15)
+
+def _published_timestamp(value):
+    if not value:
+        return 0.0
+    try:
+        normalized = value.replace('Z', '+00:00')
+        return datetime.fromisoformat(normalized).timestamp()
+    except Exception:
+        try:
+            return parsedate_to_datetime(value).timestamp()
+        except Exception:
+            return 0.0
+
+
+def _merge_news_candidates(candidates, limit=40):
+    """按发布时间倒序合并候选，URL 缺失时按标题去重。"""
+    ordered = sorted(candidates, key=lambda item: _published_timestamp(item.get('published', '')), reverse=True)
+    result = []
+    seen = set()
+    for item in ordered:
+        normalized_url = normalize_news_url(item.get('sourceUrl', ''))
+        title_key = re.sub(r'\s+', ' ', item.get('headline', '')).strip().lower()
+        key = ('url', normalized_url) if normalized_url else ('title', title_key)
+        if not key[1] or key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _normalize_news_title(title):
+    return re.sub(r'\s+', ' ', title or '').strip().lower()
+
+
+def _select_translation_candidates(candidates, known_urls=None, known_titles=None):
+    known = {normalize_news_url(url) for url in (known_urls or set()) if url}
+    known_title_keys = {
+        _normalize_news_title(title) for title in (known_titles or set()) if title
+    }
+    selected = []
+    for item in candidates:
+        normalized_url = normalize_news_url(item.get('sourceUrl', ''))
+        normalized_title = _normalize_news_title(item.get('headlineEn') or item.get('headline', ''))
+        if normalized_url and normalized_url in known:
+            continue
+        if not normalized_url and normalized_title in known_title_keys:
+            continue
+        selected.append(item)
+    return selected
+
+
+def _plain_rss_text(value):
+    text = re.sub(r'<[^>]+>', ' ', value or '')
+    return re.sub(r'\s+', ' ', unescape(text)).strip()
+
+
+def _is_cbs_nba_url(url):
+    try:
+        return urllib.parse.urlsplit(url).path.lower().startswith('/nba/')
+    except Exception:
+        return False
+
+
+def fetch_espn_json_news(limit=50):
+    api_limit = min(max(limit * 5, 50), 100)
+    url = f"{NEWS_PROVIDER_URLS['espn_news']}?limit={api_limit}"
+    req = urllib.request.Request(url, headers={
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json',
+    })
+    with _open_news_url(req, timeout=15) as response:
         data = json.loads(response.read().decode('utf-8'))
-    except Exception as e:
-        print(f"获取ESPN新闻失败: {e}", file=sys.stderr)
-        return []
-
-    articles = data.get('articles', [])
-    if not articles:
-        return []
-
-    # ====== 第一步：解析所有文章，提取信息，用本地映射翻译 ======
-    parsed_articles = []
-    headlines_to_translate = []
-    descriptions_to_translate = []
-    contents_to_translate = []
-    translate_indices = []  # 需要API翻译的文章索引
-
-    for idx, article in enumerate(articles):
-        headline = article.get('headline', '')
-        description = article.get('description', '')
-        published = article.get('published', '')
-        source_url = article.get('links', {}).get('web', {}).get('href', '')
-
-        # 获取图片
+    articles = [a for a in data.get('articles', []) if a.get('type', '') in ('Story', 'HeadlineNews')]
+    candidates = []
+    for article in articles[:limit]:
         images = article.get('images', [])
-        image_url = images[0].get('url', '') if images else ''
+        candidates.append({
+            'headline': (article.get('headline') or '').strip(),
+            'description': (article.get('description') or '').strip(),
+            'published': article.get('published', ''),
+            'sourceUrl': article.get('links', {}).get('web', {}).get('href', ''),
+            'imageUrl': images[0].get('url', '') if images else '',
+            'provider': 'espn_news',
+        })
+    return candidates, {'provider': 'espn_news', 'succeeded': True, 'items': len(candidates), 'error': None}
 
-        # 尝试从URL中提取gameId
-        nba_game_id = ''
-        if 'gameId=' in source_url:
-            import re
-            game_match = re.search(r'gameId=(\d+)', source_url)
-            if game_match:
-                nba_game_id = game_match.group(1)
-        elif '/events/' in source_url:
-            import re
-            event_match = re.search(r'/events/(\d+)', source_url)
-            if event_match:
-                nba_game_id = event_match.group(1)
 
-        # 从标题和描述中提取球队名
-        home_team = ''
-        away_team = ''
-        content = description or headline
-
-        for en_name, cn_name in TEAM_NAME_MAP.items():
-            if en_name.lower() in headline.lower() or en_name.lower() in description.lower():
-                if not home_team:
-                    home_team = cn_name
-                elif not away_team and cn_name != home_team:
-                    away_team = cn_name
-
-        if not home_team:
-            for short_name, cn_name in TEAM_SHORT_MAP.items():
-                if short_name.lower() in headline.lower():
-                    home_team = cn_name
-                    break
-
-        # 保存原始英文标题用于分类判断
-        original_headline = headline
-
-        # 确定新闻分类（基于原始英文标题）
-        category = 'general'
-        original_lower = original_headline.lower()
-        if any(word in original_lower for word in ['trade', 'sign', 'deal', 'contract']):
-            category = 'trade'
-        elif any(word in original_lower for word in ['injury', 'hurt', 'out', 'doubtful']):
-            category = 'injury'
-        elif any(word in original_lower for word in ['draft', 'pick', 'rookie']):
-            category = 'draft'
-        elif any(word in original_lower for word in ['score', 'win', 'loss', 'beat', 'game', 'finals', 'recap']):
-            # 只有当有实际比赛数据时才分类为game
-            # 检查是否有nba_game_id或者标题中包含具体比分
-            import re
-            has_score = bool(re.search(r'\d+\s*[-:]\s*\d+', headline))
-            if nba_game_id or has_score:
-                category = 'game'
-            else:
-                category = 'general'
-
-        parsed = {
-            'headline': headline,
-            'headlineEn': headline,  # 保存英文原版
+def _fetch_rss_news(url, provider, limit=50):
+    req = urllib.request.Request(url, headers={
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/rss+xml, application/xml, text/xml',
+    })
+    with _open_news_url(req, timeout=15) as response:
+        root = ET.fromstring(response.read())
+    candidates = []
+    media_ns = 'http://search.yahoo.com/mrss/'
+    for item in root.findall('.//item')[:limit]:
+        title = _plain_rss_text(item.findtext('title'))
+        description = _plain_rss_text(item.findtext('description'))
+        source_url = (item.findtext('link') or '').strip()
+        if provider == 'cbs_rss' and not _is_cbs_nba_url(source_url):
+            continue
+        image_url = ''
+        media = item.find(f'{{{media_ns}}}content') or item.find(f'{{{media_ns}}}thumbnail')
+        if media is not None:
+            image_url = media.attrib.get('url', '')
+        enclosure = item.find('enclosure')
+        if not image_url and enclosure is not None and enclosure.attrib.get('type', '').startswith('image/'):
+            image_url = enclosure.attrib.get('url', '')
+        candidates.append({
+            'headline': title,
             'description': description,
-            'content': content,
-            'contentEn': content,  # 保存英文原版
-            'imageUrl': image_url,
+            'published': (item.findtext('pubDate') or '').strip(),
             'sourceUrl': source_url,
-            'published': published,
-            'category': category,
-            'homeTeam': home_team,
-            'awayTeam': away_team,
-            'nbaGameId': nba_game_id,
-        }
-        parsed_articles.append(parsed)
+            'imageUrl': image_url,
+            'provider': provider,
+        })
+    return candidates, {'provider': provider, 'succeeded': True, 'items': len(candidates), 'error': None}
 
-        # 收集需要API翻译的字段（新闻内容始终发送API翻译，确保完整翻译）
-        if HAS_TRANSLATOR:
-            translate_indices.append(idx)
-            headlines_to_translate.append(headline)
-            contents_to_translate.append(content)
-            descriptions_to_translate.append(description)
 
-    # ====== 第二步：批量API翻译 ======
+def fetch_espn_rss_news(limit=50):
+    return _fetch_rss_news(NEWS_PROVIDER_URLS['espn_rss'], 'espn_rss', limit)
+
+
+def fetch_cbs_rss_news(limit=50):
+    return _fetch_rss_news(NEWS_PROVIDER_URLS['cbs_rss'], 'cbs_rss', limit)
+
+
+def _prepare_news_candidate(article):
+    headline = (article.get('headline') or '').strip()
+    description = (article.get('description') or '').strip()
+    source_url = article.get('sourceUrl', '')
+    content = description or headline
+    nba_game_id = ''
+    game_match = re.search(r'(?:gameId=|/events/)(\d+)', source_url)
+    if game_match:
+        nba_game_id = game_match.group(1)
+
+    teams = []
+    haystack = f'{headline} {description}'.lower()
+    for en_name, cn_name in TEAM_NAME_MAP.items():
+        if en_name.lower() in haystack and cn_name not in teams:
+            teams.append(cn_name)
+    if not teams:
+        for short_name, cn_name in TEAM_SHORT_MAP.items():
+            if short_name.lower() in headline.lower():
+                teams.append(cn_name)
+                break
+
+    lower = headline.lower()
+    category = 'general'
+    if any(word in lower for word in ['trade', 'sign', 'deal', 'contract']):
+        category = 'trade'
+    elif any(word in lower for word in ['injury', 'hurt', 'out', 'doubtful']):
+        category = 'injury'
+    elif any(word in lower for word in ['draft', 'pick', 'rookie']):
+        category = 'draft'
+    elif nba_game_id or re.search(r'\d+\s*[-:]\s*\d+', headline):
+        category = 'game'
+
+    return {
+        'headline': headline,
+        'headlineEn': headline,
+        'description': description,
+        'content': content,
+        'contentEn': content,
+        'imageUrl': article.get('imageUrl', ''),
+        'sourceUrl': source_url,
+        'published': article.get('published', ''),
+        'category': category,
+        'homeTeam': teams[0] if teams else '',
+        'awayTeam': teams[1] if len(teams) > 1 else '',
+        'nbaGameId': nba_game_id,
+        'provider': article.get('provider', ''),
+    }
+
+
+def fetch_nba_news(limit=40, known_urls=None, known_titles=None):
+    """聚合 NBA 新闻 Provider，返回 (news_list, provider_results, source_status)。"""
+    print(f"正在聚合NBA新闻 (limit={limit})...", file=sys.stderr)
+    provider_results = []
+    raw_candidates = []
+    providers = [fetch_espn_json_news, fetch_espn_rss_news, fetch_cbs_rss_news]
+    provider_names = ['espn_news', 'espn_rss', 'cbs_rss']
+    for provider, provider_name in zip(providers, provider_names):
+        try:
+            candidates, result = provider(max(limit, 40))
+            raw_candidates.extend(candidates)
+            provider_results.append(result)
+        except Exception as e:
+            print(f"获取 {provider_name} 失败: {e}", file=sys.stderr)
+            provider_results.append({
+                'provider': provider_name, 'succeeded': False, 'items': 0, 'error': str(e)
+            })
+
+    if all(not item['succeeded'] for item in provider_results):
+        return [], provider_results, 'failed'
+
+    partial = any(not item['succeeded'] for item in provider_results)
+
+    merged = _merge_news_candidates(raw_candidates, limit=max(len(raw_candidates), limit))
+    if not merged:
+        return [], provider_results, 'partial' if partial else 'empty'
+    parsed_articles = [_prepare_news_candidate(item) for item in merged]
+    parsed_articles = _select_translation_candidates(
+        parsed_articles, known_urls, known_titles
+    )[:limit]
+    if not parsed_articles:
+        return [], provider_results, 'partial' if partial else 'empty'
+    translate_indices = list(range(len(parsed_articles)))
+
     if HAS_TRANSLATOR and translate_indices:
-        print(f"需要API翻译的文章: {len(translate_indices)} 条", file=sys.stderr)
-
+        print(f"需要API翻译的新增文章: {len(translate_indices)} 条", file=sys.stderr)
         try:
             from translator import translate_batch
-
-            # 批量翻译标题
-            if headlines_to_translate:
-                translated_headlines = translate_batch(headlines_to_translate)
-                for i, idx in enumerate(translate_indices):
-                    parsed_articles[idx]['headline'] = translated_headlines[i]
-
-            # 批量翻译内容
-            if contents_to_translate:
-                translated_contents = translate_batch(contents_to_translate)
-                for i, idx in enumerate(translate_indices):
-                    parsed_articles[idx]['content'] = translated_contents[i]
-
-            # 批量翻译描述
-            if descriptions_to_translate:
-                # 过滤空描述
-                valid_descs = [(i, d) for i, d in enumerate(descriptions_to_translate) if d and d.strip()]
-                if valid_descs:
-                    desc_indices = [vd[0] for vd in valid_descs]
-                    desc_texts = [vd[1] for vd in valid_descs]
-                    translated_descs = translate_batch(desc_texts)
-                    for i, desc_idx in enumerate(desc_indices):
-                        orig_idx = translate_indices[desc_idx]
-                        parsed_articles[orig_idx]['description'] = translated_descs[i]
-
-            print(f"批量翻译完成", file=sys.stderr)
-
+            headlines = [parsed_articles[i]['headline'] for i in translate_indices]
+            contents = [parsed_articles[i]['content'] for i in translate_indices]
+            descriptions = [parsed_articles[i]['description'] for i in translate_indices]
+            for pos, value in enumerate(translate_batch(headlines)):
+                if pos < len(translate_indices):
+                    parsed_articles[translate_indices[pos]]['headline'] = value
+            for pos, value in enumerate(translate_batch(contents)):
+                if pos < len(translate_indices):
+                    parsed_articles[translate_indices[pos]]['content'] = value
+            valid_descriptions = [(pos, text) for pos, text in enumerate(descriptions) if text.strip()]
+            if valid_descriptions:
+                translated = translate_batch([text for _, text in valid_descriptions])
+                for translated_pos, value in enumerate(translated):
+                    if translated_pos < len(valid_descriptions):
+                        source_pos = valid_descriptions[translated_pos][0]
+                        parsed_articles[translate_indices[source_pos]]['description'] = value
         except Exception as e:
-            print(f"批量翻译失败，回退到逐条翻译: {e}", file=sys.stderr)
-            # 回退到逐条翻译
-            for idx in translate_indices:
-                parsed = parsed_articles[idx]
-                if needs_translation(parsed['headline']):
-                    parsed['headline'] = translate_text_safe(parsed['headline'])
-                if needs_translation(parsed['content']):
-                    parsed['content'] = translate_text_safe(parsed['content'])
-                if parsed['description'] and needs_translation(parsed['description']):
-                    parsed['description'] = translate_text_safe(parsed['description'])
+            print(f"批量翻译失败，保留英文原文: {e}", file=sys.stderr)
 
-    print(f"获取到 {len(parsed_articles)} 条新闻", file=sys.stderr)
-    return parsed_articles
+    print(f"聚合到 {len(parsed_articles)} 条新闻", file=sys.stderr)
+    return parsed_articles, provider_results, 'partial' if partial else 'ok'
 
 
 def normalize_draft_pick(raw, source):
@@ -3210,8 +3512,7 @@ def fetch_transactions():
                 'Accept': 'application/json',
             })
 
-            no_proxy_opener = urllib.request.build_opener()
-            response = no_proxy_opener.open(req, timeout=15)
+            response = urllib.request.urlopen(req, timeout=15)
             data = json.loads(response.read().decode('utf-8'))
         except Exception as e:
             print(f"获取ESPN交易数据失败 (page {page}): {e}", file=sys.stderr)
@@ -3301,7 +3602,7 @@ def fetch_transactions():
                 # 排除常见的非球员名词汇
                 if match.lower() in ('the', 'a', 'an', 'for', 'from', 'and', 'with', 'to', 'in', 'of', 'exchange', 'consideration'):
                     continue
-                # 使用翻译函数（先查映射，再调用MIMO API）
+                # 使用翻译函数（先查映射，再调用DeepSeek API）
                 cn_player, _ = translate_player_name(match)
                 if cn_player not in players_involved:
                     players_involved.append(cn_player)
@@ -3349,7 +3650,7 @@ def fetch_transactions():
             teams_part = '、'.join(teams_display)
             details = f"多方交易（{teams_part}）" + (f"，涉及{players_str}" if players_str else '')
 
-        # 如果MIMO翻译更详细，使用MIMO翻译
+        # 如果DeepSeek翻译更详细，使用DeepSeek翻译
         if cn_description != description and len(cn_description) > len(details):
             details = cn_description
 
@@ -3407,11 +3708,30 @@ def main():
         result['playoff'] = fetch_playoff_bracket(season)
 
     if action == 'today':
-        result['todayGames'] = fetch_today_games()
+        games, providers, status = fetch_today_games()
+        result['todayGames'] = games
+        result['todayGamesSourceStatus'] = status
+        result['todayGamesProviderResults'] = providers
 
     if action == 'news':
-        limit = int(sys.argv[2]) if len(sys.argv) > 2 else 20
-        result['news'] = fetch_nba_news(limit)
+        limit = int(sys.argv[2]) if len(sys.argv) > 2 else 40
+        known_urls = set()
+        known_titles = set()
+        if len(sys.argv) > 3 and os.path.isfile(sys.argv[3]):
+            try:
+                with open(sys.argv[3], 'r', encoding='utf-8') as known_file:
+                    known_data = json.load(known_file)
+                    if isinstance(known_data, dict):
+                        known_urls = set(known_data.get('urls', []))
+                        known_titles = set(known_data.get('titles', []))
+                    elif isinstance(known_data, list):
+                        known_urls = set(known_data)
+            except Exception as e:
+                print(f"读取已知新闻 URL 失败: {e}", file=sys.stderr)
+        news, providers, status = fetch_nba_news(limit, known_urls, known_titles)
+        result['news'] = news
+        result['newsSourceStatus'] = status
+        result['newsProviderResults'] = providers
 
     if action == 'boxscore' and len(sys.argv) > 2:
         game_id = sys.argv[2]
@@ -3423,12 +3743,27 @@ def main():
     if action == 'playbyplay' and len(sys.argv) > 2:
         game_id = sys.argv[2]
         if _is_espn_summer_game_id(game_id):
-            result['playByPlay'] = fetch_espn_summer_playbyplay(game_id)
+            result.update(_run_playbyplay_action(
+                lambda: fetch_espn_summer_playbyplay(game_id),
+                source='ESPN_SCOREBOARD_SUMMARY',
+                default_quality='SUMMARY_ONLY',
+                error_code='ESPN_SUMMER_API_ERROR',
+            ))
         else:
-            result['playByPlay'] = fetch_playbyplay(game_id)
+            result.update(_run_playbyplay_action(
+                lambda: fetch_playbyplay(game_id),
+                source='NBA_PLAY_BY_PLAY',
+                default_quality='FULL',
+                error_code='NBA_API_ERROR',
+            ))
 
     if action == 'espn_playbyplay' and len(sys.argv) > 2:
-        result['playByPlay'] = fetch_espn_playbyplay(sys.argv[2])
+        result.update(_run_playbyplay_action(
+            lambda: fetch_espn_playbyplay(sys.argv[2]),
+            source='ESPN_PLAY_BY_PLAY',
+            default_quality='FULL',
+            error_code='ESPN_API_ERROR',
+        ))
 
     if action == 'espn_summer_boxscore' and len(sys.argv) > 2:
         match_date = sys.argv[3] if len(sys.argv) > 3 else None
@@ -3436,7 +3771,12 @@ def main():
 
     if action == 'espn_summer_playbyplay' and len(sys.argv) > 2:
         match_date = sys.argv[3] if len(sys.argv) > 3 else None
-        result['playByPlay'] = fetch_espn_summer_playbyplay(sys.argv[2], match_date)
+        result.update(_run_playbyplay_action(
+            lambda: fetch_espn_summer_playbyplay(sys.argv[2], match_date),
+            source='ESPN_SCOREBOARD_SUMMARY',
+            default_quality='SUMMARY_ONLY',
+            error_code='ESPN_SUMMER_API_ERROR',
+        ))
 
     if action == 'quarters' and len(sys.argv) > 2:
         game_id = sys.argv[2]

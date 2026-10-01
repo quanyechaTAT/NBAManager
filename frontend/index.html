@@ -3,11 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Courtside · 现代 NBA 智能数据与赛事分析中枢。集成实时赛况、球员高阶技术统计、投篮热图、季后赛对阵与 AI 战术复盘智囊。" />
+    <meta name="keywords" content="NBA, Courtside, 篮球数据, 实时比分, 球员高阶数据, 战术复盘, 投篮热图, 选秀数据库, 季后赛对阵" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>NBA 数据演示系统</title>
+    <title>Courtside · NBA 智能数据与赛事分析中枢</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('nba_theme');
+          if (t !== 'light' && t !== 'dark') {
+            t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          }
+          document.documentElement.setAttribute('data-theme', t);
+          document.documentElement.style.backgroundColor = t === 'light' ? '#F5F6F8' : '#0B0F17';
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+          document.documentElement.style.backgroundColor = '#0B0F17';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

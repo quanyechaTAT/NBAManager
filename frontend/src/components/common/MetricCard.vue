@@ -89,15 +89,10 @@ function handleClick() {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-xl);
   padding: 20px;
-  transition: all var(--duration-normal) var(--ease-smooth);
+  transition: border-color var(--duration-normal) var(--ease-smooth), box-shadow var(--duration-normal) var(--ease-smooth);
   position: relative;
-  overflow: hidden;
 }
 
-.metric-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
   left: 0;
   right: 0;
   height: 2px;
@@ -112,9 +107,6 @@ function handleClick() {
   transform: translateY(-2px);
 }
 
-.metric-card:hover::before {
-  opacity: 1;
-}
 
 .metric-card--clickable {
   cursor: pointer;

@@ -140,6 +140,86 @@ class SyncCoordinatorConflictTest {
     }
 
     @Test
+    void differentModulesCanRunConcurrently() {
+        SyncJob teamsJob = new SyncJob();
+        teamsJob.setId(11L);
+        teamsJob.setModule("TEAMS");
+        teamsJob.setStatus("RUNNING");
+        when(syncJobRepository.findActiveByModule("NEWS")).thenReturn(Optional.empty());
+        when(syncJobRepository.findActiveByModule("FULL_SYNC")).thenReturn(Optional.empty());
+        when(syncLockService.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
+        when(syncJobRepository.save(any(SyncJob.class))).thenAnswer(inv -> {
+            SyncJob job = inv.getArgument(0);
+            job.setId(42L);
+            return job;
+        });
+        SyncJob persisted = new SyncJob();
+        persisted.setId(42L);
+        persisted.setModule("NEWS");
+        persisted.setStatus("QUEUED");
+        when(syncJobRepository.findById(42L)).thenReturn(Optional.of(persisted));
+
+        SyncSubmission result = coordinator.submit(SyncCommand.manual("NEWS", "admin"));
+
+        assertThat(result.reused()).isFalse();
+        assertThat(result.job().getModule()).isEqualTo("NEWS");
+    }
+
+    @Test
+    void moduleSubmissionIsBlockedByActiveFullSync() {
+        SyncJob fullSync = new SyncJob();
+        fullSync.setId(9L);
+        fullSync.setModule("FULL_SYNC");
+        fullSync.setStatus("RUNNING");
+        when(syncJobRepository.findActiveByModule("NEWS")).thenReturn(Optional.empty());
+        when(syncJobRepository.findActiveByModule("FULL_SYNC")).thenReturn(Optional.of(fullSync));
+        when(syncLockService.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
+
+        assertThatThrownBy(() -> coordinator.submit(SyncCommand.manual("NEWS", "admin")))
+                .isInstanceOf(SyncJobConflictException.class)
+                .hasMessageContaining("FULL_SYNC");
+
+        verify(syncJobRepository, never()).save(any());
+    }
+
+    @Test
+    void fullSyncSubmissionUsesSubmitGate() {
+        when(syncJobRepository.findByStatusIn(any())).thenReturn(java.util.List.of());
+        when(syncLockService.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
+        when(syncJobRepository.save(any(SyncJob.class))).thenAnswer(inv -> {
+            SyncJob job = inv.getArgument(0);
+            job.setId(42L);
+            return job;
+        });
+        SyncJob persisted = new SyncJob();
+        persisted.setId(42L);
+        persisted.setModule("FULL_SYNC");
+        persisted.setStatus("QUEUED");
+        when(syncJobRepository.findById(42L)).thenReturn(Optional.of(persisted));
+
+        coordinator.submitFullSync("MANUAL", "admin");
+
+        verify(syncLockService).tryAcquire(
+                eq("nba:sync:submit"), anyString(), eq(java.time.Duration.ofSeconds(15)));
+    }
+
+    @Test
+    void fullSyncSubmissionReusesActiveFullSync() {
+        SyncJob active = new SyncJob();
+        active.setId(77L);
+        active.setModule("FULL_SYNC");
+        active.setTriggerType("SCHEDULED");
+        active.setStatus("RUNNING");
+        when(syncJobRepository.findActiveByModule("FULL_SYNC")).thenReturn(Optional.of(active));
+
+        SyncSubmission result = coordinator.submitFullSync("MANUAL", "admin");
+
+        assertThat(result.reused()).isTrue();
+        assertThat(result.job().getId()).isEqualTo(77L);
+        verify(syncLockService, never()).tryAcquire(anyString(), anyString(), any());
+    }
+
+    @Test
     void fullSyncReturnsConflictingModules() {
         SyncJob newsJob = new SyncJob();
         newsJob.setId(11L);
@@ -154,6 +234,7 @@ class SyncCoordinatorConflictTest {
         draftJob.setStatus("QUEUED");
 
         when(syncJobRepository.findByStatusIn(any())).thenReturn(java.util.List.of(newsJob, draftJob));
+        when(syncLockService.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
 
         assertThatThrownBy(() -> coordinator.submitFullSync("MANUAL", "admin"))
                 .isInstanceOf(SyncJobConflictException.class)

@@ -1,16 +1,35 @@
 package com.nbamanager.service;
 
-import com.nbamanager.domain.*;
-import com.nbamanager.domain.provider.PlayByPlayEvent;
-import com.nbamanager.repository.*;
-import com.nbamanager.service.mimo.*;
-import com.nbamanager.web.dto.*;
+import com.nbamanager.domain.AiGameSummary;
+import com.nbamanager.domain.AiReplayExplanation;
+import com.nbamanager.domain.GameBoxScore;
+import com.nbamanager.domain.GameHighlight;
+import com.nbamanager.domain.GameMomentumSnapshot;
+import com.nbamanager.domain.GameTurningPoint;
+import com.nbamanager.domain.PlayByPlay;
+import com.nbamanager.repository.AiGameSummaryRepository;
+import com.nbamanager.repository.AiReplayExplanationRepository;
+import com.nbamanager.repository.GameBoxScoreRepository;
+import com.nbamanager.repository.GameHighlightRepository;
+import com.nbamanager.repository.GameMomentumSnapshotRepository;
+import com.nbamanager.repository.GameTurningPointRepository;
+import com.nbamanager.repository.PlayByPlayRepository;
+import com.nbamanager.service.deepseek.AiGroundingValidator;
+import com.nbamanager.service.deepseek.DeepSeekClient;
+import com.nbamanager.service.deepseek.ReplayPrompts;
+import com.nbamanager.web.dto.EventExplainDto;
+import com.nbamanager.web.dto.GameSummaryDto;
+import com.nbamanager.web.dto.HighlightDto;
+import com.nbamanager.web.dto.MomentumDto;
+import com.nbamanager.web.dto.TimelineEventDto;
+import com.nbamanager.web.dto.TurningPointDto;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,22 +42,20 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class AiReplayService {
 
+    public static final String PROMPT_VERSION = "replay-ai-v2";
+
     private final PlayByPlayRepository playByPlayRepository;
     private final GameMomentumSnapshotRepository momentumRepository;
     private final GameTurningPointRepository turningPointRepository;
     private final GameHighlightRepository highlightRepository;
-    private final PlayByPlayCollectorService collectorService;
     private final AiReplayExplanationRepository explanationRepository;
     private final AiGameSummaryRepository summaryRepository;
     private final GameBoxScoreRepository boxScoreRepository;
-    private final MimoClient mimoClient;
+    private final DeepSeekClient deepSeekClient;
     private final AiGroundingValidator groundingValidator;
     private final PlayByPlayTranslationService translationService;
-    private final MomentumComputeService momentumComputeService;
-    private final TurningPointDetectService turningPointDetectService;
 
     public List<TimelineEventDto> getTimeline(String gameId, Integer period) {
-        ensureData(gameId);
         List<PlayByPlay> events;
         if (period != null) {
             events = playByPlayRepository.findByGameIdAndPeriodOrderByEventOrderAsc(gameId, period);
@@ -49,165 +66,178 @@ public class AiReplayService {
     }
 
     public List<MomentumDto> getMomentum(String gameId) {
-        ensureData(gameId);
         return momentumRepository.findByGameIdOrderByEventOrderAsc(gameId)
                 .stream().map(this::toMomentumDto).collect(Collectors.toList());
     }
 
     public List<HighlightDto> getHighlights(String gameId) {
-        ensureData(gameId);
         return toHighlightDtos(highlightRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId));
     }
 
     public List<TurningPointDto> getTurningPoints(String gameId) {
-        ensureData(gameId);
         return toTurningPointDtos(turningPointRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId));
     }
 
     public GameSummaryDto getSummary(String gameId) {
-        // 1. Check cache
-        var cached = summaryRepository.findByGameIdAndSummaryType(gameId, "FULL");
-        if (cached.isPresent()) {
-            AiGameSummary s = cached.get();
-            return new GameSummaryDto(gameId, "FULL", sanitizeAiText(s.getContent()),
-                    s.getCitedEventIdsJson(), s.getCitedStatKeysJson(),
-                    s.getModelProvider(), s.getModelName());
+        return generateSummary(gameId);
+    }
+
+    public GameSummaryDto generateSummary(String gameId) {
+        List<PlayByPlay> events = playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId);
+        if (events.isEmpty()) {
+            return new GameSummaryDto(gameId, "FULL", null, null, null, null, null);
         }
 
-        // 2. Collect facts
-        ensureData(gameId);
-        String factsJson = buildGameFactsJson(gameId);
+        List<TimelineEventDto> timeline = toTimelineDtos(events);
+        String factsJson = buildGameFactsJson(gameId, timeline);
+        String factsHash = sha256(factsJson);
+        String modelName = deepSeekClient.configuredModel();
 
-        // 3. Call Mimo
-        MimoClient.ChatResponse resp = mimoClient.chat(ReplayPrompts.SYSTEM_PROMPT,
+        var cached = summaryRepository
+                .findFirstByGameIdAndSummaryTypeAndFactsHashAndPromptVersionAndModelNameOrderByCreatedAtDesc(
+                        gameId, "FULL", factsHash, PROMPT_VERSION, modelName)
+                .filter(this::hasGroundingCitations);
+        if (cached.isPresent()) {
+            return toSummaryDto(cached.get());
+        }
+
+        DeepSeekClient.ChatResponse resp = deepSeekClient.chat(
+                ReplayPrompts.SYSTEM_PROMPT,
                 ReplayPrompts.buildSummaryPrompt(factsJson));
+        String responseModel = resp.model() == null ? modelName : resp.model();
 
         if (!resp.success()) {
-            log.warn("Mimo summary failed for gameId={}: {}", gameId, resp.error());
-            return new GameSummaryDto(gameId, "FULL", null, null, null, resp.model(), null);
+            log.warn("DeepSeek summary failed for gameId={}: {}", gameId, resp.error());
+            return new GameSummaryDto(gameId, "FULL", null, null, null, "deepseek", responseModel);
         }
 
-        // 4. Validate grounding
-        List<TimelineEventDto> timeline = getTimeline(gameId, null);
-        AiGroundingValidator.ValidationResult validation = groundingValidator.validate(resp.content(), timeline);
-        String content = sanitizeAiText(validation.safeResponse());
+        AiGroundingValidator.ValidationResult validation =
+                groundingValidator.validate(resp.content(), timeline);
+        if (!validation.valid()) {
+            return new GameSummaryDto(
+                    gameId,
+                    "FULL",
+                    sanitizeAiText(validation.safeResponse()),
+                    null,
+                    null,
+                    "deepseek",
+                    responseModel);
+        }
 
-        // 5. Cache
         AiGameSummary summary = new AiGameSummary();
         summary.setGameId(gameId);
         summary.setSummaryType("FULL");
-        summary.setModelProvider("mimo");
-        summary.setModelName(resp.model());
-        summary.setPromptVersion("v1");
-        summary.setFactsHash(sha256(factsJson));
-        summary.setContent(content);
+        summary.setModelProvider("deepseek");
+        summary.setModelName(responseModel);
+        summary.setPromptVersion(PROMPT_VERSION);
+        summary.setFactsHash(factsHash);
+        summary.setContent(sanitizeAiText(validation.safeResponse()));
+        summary.setCitedEventIdsJson(validation.citedEventIdsJson());
+        summary.setCitedStatKeysJson(validation.citedStatKeysJson());
         summary.setCreatedAt(LocalDateTime.now());
         summaryRepository.save(summary);
 
-        return new GameSummaryDto(gameId, "FULL", content, null, null, "mimo", resp.model());
+        return toSummaryDto(summary);
     }
 
     public EventExplainDto explainEvent(String gameId, Long eventId) {
-        PlayByPlay event = playByPlayRepository.findById(eventId).orElse(null);
-        if (event == null) return null;
-
-        // 1. Check cache
-        var cached = explanationRepository.findByGameIdAndEventId(gameId, eventId);
-        if (cached.isPresent()) {
-            AiReplayExplanation e = cached.get();
-            return new EventExplainDto(gameId, eventId, toTranslatedTimelineDto(event),
-                    sanitizeAiText(e.getExplanation()), e.getCitedEventIdsJson(), e.getCitedStatKeysJson(),
-                    e.getModelProvider(), e.getModelName());
+        PlayByPlay event = playByPlayRepository.findByIdAndGameId(eventId, gameId).orElse(null);
+        if (event == null) {
+            return null;
         }
 
-        // 2. Build facts (only translate context events, not all 1600+)
-        ensureData(gameId);
         List<PlayByPlay> allEvents = playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId);
-
         int idx = -1;
         for (int i = 0; i < allEvents.size(); i++) {
-            if (allEvents.get(i).getId().equals(eventId)) {
+            if (Objects.equals(allEvents.get(i).getId(), eventId)) {
                 idx = i;
                 break;
             }
         }
 
-        // Only translate the target event + context (5 before, 5 after)
-        String eventJson = toTimelineDto(event, translationService.translateText(event.getDescription())).toString();
-        int from = Math.max(0, idx - 5);
-        int to = Math.min(allEvents.size(), idx + 6);
+        int from = idx < 0 ? 0 : Math.max(0, idx - 5);
+        int to = idx < 0 ? Math.min(allEvents.size(), 1) : Math.min(allEvents.size(), idx + 6);
         List<PlayByPlay> contextEvents = allEvents.subList(from, to);
-        List<TimelineEventDto> contextDtos = toTimelineDtos(contextEvents);
-        String contextJson = contextDtos.stream()
-                .map(TimelineEventDto::toString)
-                .collect(Collectors.joining("\n"));
-
-        // 3. Call Mimo
-        String explanation;
-        String modelName = null;
-        MimoClient.ChatResponse resp = mimoClient.chat(ReplayPrompts.SYSTEM_PROMPT,
-                ReplayPrompts.buildExplainPrompt(eventJson, contextJson));
-
-        if (resp.success()) {
-            // 4. Validate grounding (use context events only, not all 1600+)
-            AiGroundingValidator.ValidationResult validation = groundingValidator.validate(resp.content(), contextDtos);
-            explanation = sanitizeAiText(validation.safeResponse());
-            modelName = resp.model();
-        } else {
-            // Fallback: generate factual explanation from translated event data
-            log.warn("Mimo explain failed for eventId={}: {}, using fallback", eventId, resp.error());
-            explanation = buildFallbackExplanation(event, contextDtos);
-            modelName = "fallback";
+        if (contextEvents.stream().noneMatch(item -> Objects.equals(item.getId(), eventId))) {
+            contextEvents = List.of(event);
         }
 
-        // 5. Cache
+        TimelineEventDto targetDto = toTranslatedTimelineDto(event);
+        List<TimelineEventDto> contextDtos = toTimelineDtos(contextEvents);
+        String eventJson = toFactObject(targetDto).toString();
+        String contextJson = new JSONArray(contextDtos.stream().map(this::toFactObject).toList()).toString();
+        String factsHash = sha256(eventJson + contextJson);
+        String modelName = deepSeekClient.configuredModel();
+
+        var cached = explanationRepository
+                .findFirstByGameIdAndEventIdAndFactsHashAndPromptVersionAndModelNameOrderByCreatedAtDesc(
+                        gameId, eventId, factsHash, PROMPT_VERSION, modelName)
+                .filter(this::hasGroundingCitations);
+        if (cached.isPresent()) {
+            AiReplayExplanation e = cached.get();
+            return new EventExplainDto(gameId, eventId, targetDto,
+                    sanitizeAiText(e.getExplanation()), e.getCitedEventIdsJson(), e.getCitedStatKeysJson(),
+                    e.getModelProvider(), e.getModelName());
+        }
+
+        DeepSeekClient.ChatResponse resp = deepSeekClient.chat(
+                ReplayPrompts.SYSTEM_PROMPT,
+                ReplayPrompts.buildExplainPrompt(eventJson, contextJson));
+        String responseModel = resp.model() == null ? modelName : resp.model();
+
+        String explanation;
+        String citedEventIdsJson;
+        String citedStatKeysJson = null;
+        String modelProvider = "deepseek";
+        if (resp.success()) {
+            AiGroundingValidator.ValidationResult validation =
+                    groundingValidator.validate(resp.content(), contextDtos);
+            if (validation.valid()) {
+                explanation = sanitizeAiText(validation.safeResponse());
+                citedEventIdsJson = validation.citedEventIdsJson();
+                citedStatKeysJson = validation.citedStatKeysJson();
+            } else {
+                explanation = buildFallbackExplanation(event, contextDtos);
+                citedEventIdsJson = fallbackCitation(eventId);
+                responseModel = "fallback";
+                modelProvider = "local";
+            }
+        } else {
+            log.warn("DeepSeek explain failed for eventId={}: {}, using fallback", eventId, resp.error());
+            explanation = buildFallbackExplanation(event, contextDtos);
+            citedEventIdsJson = fallbackCitation(eventId);
+            responseModel = "fallback";
+            modelProvider = "local";
+        }
+
         AiReplayExplanation explanationEntity = new AiReplayExplanation();
         explanationEntity.setGameId(gameId);
         explanationEntity.setEventId(eventId);
-        explanationEntity.setModelProvider("mimo");
-        explanationEntity.setModelName(modelName);
-        explanationEntity.setPromptVersion("v1");
-        explanationEntity.setFactsHash(sha256(eventJson + contextJson));
+        explanationEntity.setModelProvider(modelProvider);
+        explanationEntity.setModelName(responseModel);
+        explanationEntity.setPromptVersion(PROMPT_VERSION);
+        explanationEntity.setFactsHash(factsHash);
         explanationEntity.setExplanation(explanation);
+        explanationEntity.setCitedEventIdsJson(citedEventIdsJson);
+        explanationEntity.setCitedStatKeysJson(citedStatKeysJson);
         explanationEntity.setCreatedAt(LocalDateTime.now());
         explanationRepository.save(explanationEntity);
 
-        return new EventExplainDto(gameId, eventId, toTranslatedTimelineDto(event),
-                explanation, null, null, "mimo", modelName);
+        return new EventExplainDto(gameId, eventId, targetDto,
+                explanation, citedEventIdsJson, citedStatKeysJson, modelProvider, responseModel);
     }
 
-    private String buildGameFactsJson(String gameId) {
-        // Timeline events
-        List<PlayByPlay> events = playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId);
-        List<String> translatedDescriptions = translationService.translateTexts(
-                events.stream().map(PlayByPlay::getDescription).collect(Collectors.toList())
-        );
-        JSONArray eventsArr = new JSONArray();
-        for (int i = 0; i < events.size(); i++) {
-            PlayByPlay e = events.get(i);
-            JSONObject obj = new JSONObject();
-            obj.put("period", e.getPeriod());
-            obj.put("clock", e.getGameClock());
-            obj.put("type", e.getEventType());
-            obj.put("player", e.getPlayerName());
-            obj.put("team", e.getTeamName());
-            obj.put("desc", translatedDescriptions.get(i));
-            obj.put("homeScore", e.getHomeScore());
-            obj.put("awayScore", e.getAwayScore());
-            eventsArr.put(obj);
-        }
-
-        // Box score
-        List<GameBoxScore> boxScores = boxScoreRepository.findByGameId(gameId);
+    private String buildGameFactsJson(String gameId, List<TimelineEventDto> timeline) {
+        JSONArray eventsArr = new JSONArray(timeline.stream().map(this::toFactObject).toList());
         JSONArray boxArr = new JSONArray();
-        for (GameBoxScore b : boxScores) {
+        for (GameBoxScore boxScore : boxScoreRepository.findByGameId(gameId)) {
             JSONObject obj = new JSONObject();
-            obj.put("player", b.getPlayerName());
-            obj.put("team", b.getTeamName());
-            obj.put("pts", b.getPoints());
-            obj.put("reb", b.getRebounds());
-            obj.put("ast", b.getAssists());
-            obj.put("min", b.getMinutes());
+            obj.put("player", boxScore.getPlayerName());
+            obj.put("team", boxScore.getTeamName());
+            obj.put("pts", boxScore.getPoints());
+            obj.put("reb", boxScore.getRebounds());
+            obj.put("ast", boxScore.getAssists());
+            obj.put("min", boxScore.getMinutes());
             boxArr.put(obj);
         }
 
@@ -216,6 +246,50 @@ public class AiReplayService {
         root.put("timeline", eventsArr);
         root.put("boxScore", boxArr);
         return root.toString();
+    }
+
+    private JSONObject toFactObject(TimelineEventDto event) {
+        JSONObject obj = new JSONObject();
+        obj.put("citationKey", event.id() == null ? null : "event:" + event.id());
+        obj.put("eventId", event.id());
+        obj.put("eventOrder", event.eventOrder());
+        obj.put("period", event.period());
+        obj.put("clock", event.gameClock());
+        obj.put("type", event.eventType());
+        obj.put("actionType", event.actionType());
+        obj.put("player", event.playerName());
+        obj.put("team", event.teamName());
+        obj.put("description", event.description());
+        obj.put("homeScore", event.homeScore());
+        obj.put("awayScore", event.awayScore());
+        obj.put("scoreMargin", event.scoreMargin());
+        obj.put("source", event.source());
+        return obj;
+    }
+
+    private boolean hasGroundingCitations(AiGameSummary summary) {
+        return hasNonEmptyJsonArray(summary.getCitedEventIdsJson())
+                || hasNonEmptyJsonArray(summary.getCitedStatKeysJson());
+    }
+
+    private boolean hasGroundingCitations(AiReplayExplanation explanation) {
+        return hasNonEmptyJsonArray(explanation.getCitedEventIdsJson())
+                || hasNonEmptyJsonArray(explanation.getCitedStatKeysJson());
+    }
+
+    private boolean hasNonEmptyJsonArray(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        try {
+            return new JSONArray(value).length() > 0;
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private String fallbackCitation(Long eventId) {
+        return new JSONArray(List.of(eventId)).toString();
     }
 
     private String sha256(String input) {
@@ -230,83 +304,46 @@ public class AiReplayService {
 
     private String sanitizeAiText(String text) {
         if (text == null) return null;
-        // Remove code fences
-        text = text.replaceAll("```\\w*\\n?", "").replaceAll("```", "");
-        // Remove bold/italic markers
-        text = text.replaceAll("\\*\\*(.+?)\\*\\*", "$1").replaceAll("\\*(.+?)\\*", "$1");
-        // Remove line-start list markers (* / - / bullet followed by space)
-        text = text.replaceAll("(?m)^\\s*[*\\-•]\\s+", "");
-        // Remove heading markers
-        text = text.replaceAll("(?m)^#{1,6}\\s*", "");
-        // Collapse multiple blank lines
-        text = text.replaceAll("\\n{3,}", "\n\n");
-        return text.trim();
+        return text.replaceAll("```\\w*\\n?", "")
+                .replace("```", "")
+                .replaceAll("\\*\\*(.+?)\\*\\*", "$1")
+                .replaceAll("\\*(.+?)\\*", "$1")
+                .replaceAll("(?m)^\\s*[-*]\\s+", "")
+                .replaceAll("(?m)^#{1,6}\\s*", "")
+                .replaceAll("\\n{3,}", "\n\n")
+                .trim();
     }
 
     private String buildFallbackExplanation(PlayByPlay event, List<TimelineEventDto> context) {
-        String translated = translationService.translateText(event.getDescription());
-        int period = event.getPeriod();
-        String clock = event.getGameClock();
-        int home = event.getHomeScore();
-        int away = event.getAwayScore();
-        String player = translationService.translateText(event.getPlayerName());
-
+        String translated = safeText(translationService.translateText(event.getDescription()));
+        String player = safeText(translationService.translateText(event.getPlayerName()));
         StringBuilder sb = new StringBuilder();
-        sb.append("第").append(period).append("节 ").append(clock).append("，");
-        if (player != null && !player.isEmpty()) {
+        sb.append("第").append(event.getPeriod()).append("节 ")
+                .append(event.getGameClock()).append("，");
+        if (!player.isBlank()) {
             sb.append(player).append(" ");
         }
-        sb.append(translated).append("。");
-        sb.append("当前比分 ").append(home).append("-").append(away).append("。");
-
-        // Add context from surrounding events
+        sb.append(translated).append("。当前比分 ")
+                .append(event.getHomeScore()).append("-").append(event.getAwayScore()).append("。");
         if (context != null && context.size() > 1) {
             long scoringCount = context.stream().filter(TimelineEventDto::isScoringPlay).count();
             if (scoringCount > 0) {
-                sb.append("该时段内有 ").append(scoringCount).append(" 次得分。");
+                sb.append("附近片段内共有 ").append(scoringCount).append(" 次得分事件。");
             }
         }
-
         return sb.toString();
     }
 
-    private void ensureData(String gameId) {
-        boolean hasPbp = !playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId).isEmpty();
-        boolean hasMomentum = !momentumRepository.findByGameIdOrderByEventOrderAsc(gameId).isEmpty();
-        boolean hasTurningPoints = !turningPointRepository.findByGameIdOrderByPeriodAscGameClockDesc(gameId).isEmpty();
-
-        if (!hasPbp) {
-            // No PlayByPlay data at all - full collection needed
-            log.info("No PlayByPlay for gameId={}, triggering full collection", gameId);
-            collectorService.collect(gameId);
-        } else if (!hasMomentum || !hasTurningPoints) {
-            // PlayByPlay exists but derived data missing - recompute from existing data
-            log.info("Derived data missing for gameId={} (momentum={}, tp={}), recomputing",
-                    gameId, hasMomentum, hasTurningPoints);
-            List<PlayByPlay> events = playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId);
-            List<PlayByPlayEvent> pbpEvents = events.stream().map(e ->
-                new PlayByPlayEvent(
-                    null, e.getPeriod(), e.getGameClock(), e.getEventType(), e.getActionType(),
-                    e.getDescription(), e.getPlayerName(), e.getPlayerId(), e.getTeamName(), e.getTeamId(),
-                    e.getHomeScore(), e.getAwayScore(), e.getScoreMargin(),
-                    Boolean.TRUE.equals(e.getIsScoringPlay()), Boolean.TRUE.equals(e.getIsHighlightCandidate()),
-                    e.getEventOrder() != null ? e.getEventOrder() : 0, null
-                )
-            ).collect(Collectors.toList());
-
-            if (!hasMomentum) {
-                momentumComputeService.compute(gameId, pbpEvents);
-            }
-            if (!hasTurningPoints) {
-                turningPointDetectService.detect(gameId, pbpEvents);
-            }
-        }
+    private String safeText(String value) {
+        return value == null ? "" : value;
     }
 
     private List<TimelineEventDto> toTimelineDtos(List<PlayByPlay> events) {
-        List<String> descriptions = translationService.translateTexts(
-                events.stream().map(PlayByPlay::getDescription).collect(Collectors.toList())
-        );
+        List<String> originals = events.stream().map(PlayByPlay::getDescription).collect(Collectors.toList());
+        List<String> descriptions = translationService.translateTexts(originals);
+        if (descriptions == null || descriptions.size() != events.size()) {
+            descriptions = originals;
+        }
         List<TimelineEventDto> result = new java.util.ArrayList<>(events.size());
         for (int i = 0; i < events.size(); i++) {
             result.add(toTimelineDto(events.get(i), descriptions.get(i)));
@@ -348,7 +385,7 @@ public class AiReplayService {
             GameHighlight h = highlights.get(i);
             result.add(new HighlightDto(h.getId(), h.getPeriod(), h.getGameClock(),
                     h.getHighlightType(), titleTranslations.get(i), descriptionTranslations.get(i),
-                    h.getPlayerId(), h.getTeamId(), h.getScoreAfter()));
+                    h.getPlayerId(), h.getTeamId(), h.getScoreAfter(), h.getEventId()));
         }
         return result;
     }
@@ -373,5 +410,16 @@ public class AiReplayService {
                     t.getImpactLevel(), t.getTeamName()));
         }
         return result;
+    }
+
+    private GameSummaryDto toSummaryDto(AiGameSummary summary) {
+        return new GameSummaryDto(
+                summary.getGameId(),
+                summary.getSummaryType(),
+                sanitizeAiText(summary.getContent()),
+                summary.getCitedEventIdsJson(),
+                summary.getCitedStatKeysJson(),
+                summary.getModelProvider(),
+                summary.getModelName());
     }
 }

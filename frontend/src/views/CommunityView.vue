@@ -2,13 +2,13 @@
   <div class="community-page">
     <section class="community-hero">
       <div class="hero-copy">
-        <span class="hero-kicker">COURTSIDE COMMUNITY</span>
-        <h1>社区</h1>
-        <p>NBA 球迷讨论区，分享观点、参与辩论</p>
-        <div class="hero-stats" aria-label="社区数据摘要">
-          <div><strong>{{ compactNumber(total) }}</strong><span>社区帖子</span></div>
-          <div><strong>{{ compactNumber(pageCommentCount) }}</strong><span>本页讨论</span></div>
-          <div><strong>{{ compactNumber(pageInteractionCount) }}</strong><span>本页互动</span></div>
+        <span class="hero-kicker">COURTSIDE FAN LOUNGE</span>
+        <h1>球迷热血看台</h1>
+        <p>聊球星、辩战术、预测季后赛，汇聚联盟最硬核的篮球声浪与球迷阵地</p>
+        <div class="hero-stats" aria-label="看台数据摘要">
+          <div><strong>{{ compactNumber(visiblePosts.length) }}</strong><span>本页讨论</span></div>
+          <div><strong>{{ compactNumber(pageCommentCount) }}</strong><span>热议回帖</span></div>
+          <div><strong>{{ compactNumber(pageInteractionCount) }}</strong><span>球迷互动</span></div>
         </div>
       </div>
       <div class="hero-visual" aria-hidden="true">
@@ -22,7 +22,7 @@
       </div>
       <el-button class="hero-create" type="primary" aria-label="发布新帖子" @click="openCreate">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-        发帖
+        登台发帖
       </el-button>
     </section>
 
@@ -51,7 +51,8 @@
       <main class="community-main" v-loading="loading">
         <article v-for="post in visiblePosts" :key="post.id" class="post-card" tabindex="0" @click="goToPost(post.id)" @keydown.enter="goToPost(post.id)">
           <div class="post-author-block">
-            <span class="author-avatar">{{ userInitial(post.username) }}</span>
+            <span class="author-avatar" v-if="post.avatarUrl"><img :src="post.avatarUrl" alt="" @error="(e: Event) => { (e.target as HTMLImageElement).style.display='none'; (e.target as HTMLImageElement).nextElementSibling?.setAttribute('style', 'display:grid') }" /><span style="display:none">{{ userInitial(post.username) }}</span></span>
+            <span class="author-avatar" v-else>{{ userInitial(post.username) }}</span>
             <div><strong>{{ post.username || '社区用户' }}</strong><span>{{ formatTime(post.createTime) }}</span></div>
           </div>
           <div class="post-content">
@@ -76,7 +77,7 @@
           </div>
         </article>
         <AppEmpty v-if="!loading && visiblePosts.length === 0" :description="activeTopic ? '当前页面没有该话题的帖子' : '暂无帖子'" />
-        <div v-if="total > 0 && !activeTopic" class="pager">
+        <div v-if="total > 0" class="pager">
           <el-pagination background layout="prev, pager, next" :total="total" v-model:current-page="page" :page-size="10" @current-change="loadPosts" />
         </div>
       </main>
@@ -84,29 +85,38 @@
       <aside class="community-sidebar">
         <section class="sidebar-card hot-ranking">
           <header><svg viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9Z"/></svg><span>热帖排行</span></header>
-          <button v-for="(post, index) in hotPosts.slice(0, 5)" :key="post.id" class="ranking-item" @click="goToPost(post.id)">
+          <button v-for="(post, index) in visibleHotPosts.slice(0, 5)" :key="post.id" class="ranking-item" @click="goToPost(post.id)">
             <span class="rank" :class="{ top: index < 3 }">{{ index + 1 }}</span>
             <span class="ranking-copy"><strong>{{ post.title }}</strong><small>{{ post.viewCount }} 浏览 · {{ post.commentCount }} 讨论</small></span>
           </button>
-          <AppEmpty v-if="hotPosts.length === 0" description="暂无热帖" size="sm" />
+          <AppEmpty v-if="visibleHotPosts.length === 0" description="暂无热帖" size="sm" />
         </section>
 
         <section class="sidebar-card topic-card">
           <header><svg viewBox="0 0 24 24"><path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.82 0l3.36-3.36a2 2 0 0 0 0-2.82Z"/><circle cx="7.5" cy="6.5" r="1"/></svg><span>热门话题</span></header>
           <div v-if="popularTopics.length" class="topic-cloud">
             <button v-for="topic in popularTopics" :key="topic.name" :class="{ active: activeTopic === topic.name }" @click="toggleTopic(topic.name)">
-              <span># {{ topic.name }}</span><small>{{ topic.count }} 篇</small>
+              <span># {{ topic.name }}</span><small>{{ topic.postCount }} 篇</small>
             </button>
           </div>
           <p v-else class="sidebar-empty">帖子添加标签后将在这里聚合</p>
         </section>
 
-        <section class="sidebar-card data-card">
-          <header><svg viewBox="0 0 24 24"><path d="M4 19V9M10 19V5M16 19v-7M22 19V2"/></svg><span>社区数据</span></header>
-          <div class="data-grid">
-            <div><strong>{{ compactNumber(total) }}</strong><span>社区帖子</span></div>
-            <div><strong>{{ compactNumber(pageCommentCount) }}</strong><span>本页讨论</span></div>
-            <div><strong>{{ compactNumber(pageInteractionCount) }}</strong><span>本页互动</span></div>
+        <section class="sidebar-card rules-card">
+          <header><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>看台公约与球友指南</span></header>
+          <div class="rules-list">
+            <div class="rule-item">
+              <span class="rule-dot">🏀</span>
+              <p><strong>理性评球</strong>：以客观战术与数据为依归，尊重球星表现与多元立场</p>
+            </div>
+            <div class="rule-item">
+              <span class="rule-dot">🔥</span>
+              <p><strong>战术辩论</strong>：鼓励深度攻防战术剖析、阵容轮换与高阶数据推演</p>
+            </div>
+            <div class="rule-item">
+              <span class="rule-dot">⚡</span>
+              <p><strong>文明看台</strong>：杜绝人身攻击与恶意刷屏，共同维护硬核纯粹看台氛围</p>
+            </div>
           </div>
         </section>
       </aside>
@@ -128,21 +138,27 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { createPost, fetchHotPosts, fetchPosts, type Post, type PostRequest } from '@/api/community'
+import { createPost, fetchHotPosts, fetchPosts, fetchTopics, type Post, type PostRequest, type Topic } from '@/api/community'
+import { useIdentityStore } from '@/stores/identity'
 import AppEmpty from '@/components/common/AppEmpty.vue'
 import EmojiPicker from '@/components/EmojiPicker.vue'
 import { useEmojiPicker } from '@/composables/useEmojiPicker'
 
 const router = useRouter()
 const emoji = useEmojiPicker()
+const identityStore = useIdentityStore()
 const loading = ref(false)
 const submitting = ref(false)
 const contentEmojiBtn = ref<HTMLElement | null>(null)
 const posts = ref<Post[]>([])
 const hotPosts = ref<Post[]>([])
+/** 过滤压测/内部测试帖，避免出现在普通用户热榜 */
+const TEST_TITLE_RE = /(压测|压宿|宿主|IDOR|注入|audit\d|loadtest|test[_-]?\d|测试帖)/i
+const visibleHotPosts = computed(() => (hotPosts.value || []).filter((p: Post) => !TEST_TITLE_RE.test(p.title || '')))
+const popularTopics = ref<Topic[]>([])
 const total = ref(0)
 const page = ref(1)
 const activeCategory = ref('ALL')
@@ -156,14 +172,9 @@ const categoryClassMap: Record<string, string> = { DISCUSSION: 'tag-discussion',
 const sortMap = { latest: 'createTime,desc', hot: 'viewCount,desc', discussed: 'commentCount,desc' }
 
 const canSubmit = computed(() => form.value.title.trim().length > 0 && form.value.content.trim().length > 0)
-const visiblePosts = computed(() => activeTopic.value ? posts.value.filter(post => postTags(post).includes(activeTopic.value)) : posts.value)
+const visiblePosts = computed(() => posts.value)
 const pageCommentCount = computed(() => posts.value.reduce((sum, post) => sum + (post.commentCount || 0), 0))
 const pageInteractionCount = computed(() => posts.value.reduce((sum, post) => sum + (post.likeCount || 0) + (post.commentCount || 0) + (post.favoriteCount || 0), 0))
-const popularTopics = computed(() => {
-  const counts = new Map<string, number>()
-  ;[...posts.value, ...hotPosts.value].forEach(post => postTags(post).forEach(tag => counts.set(tag, (counts.get(tag) || 0) + 1)))
-  return [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, 8)
-})
 
 function postTags(post: Post) { return (post.tags || '').split(/[,，#]/).map(tag => tag.trim()).filter(Boolean) }
 function categoryLabel(category: string) { return categoryMap[category] || category }
@@ -184,8 +195,9 @@ function formatTime(value?: string) {
 async function loadPosts() {
   loading.value = true
   try {
-    const params: { page: number; size: number; category?: string; sort?: string } = { page: activeTopic.value ? 0 : page.value - 1, size: activeTopic.value ? 100 : 10, sort: sortMap[sortMode.value] }
+    const params: { page: number; size: number; category?: string; tag?: string; sort?: string } = { page: page.value - 1, size: 10, sort: sortMap[sortMode.value] }
     if (activeCategory.value !== 'ALL') params.category = activeCategory.value
+    if (activeTopic.value) params.tag = activeTopic.value
     const { data } = await fetchPosts(params)
     posts.value = data.content || []
     total.value = data.totalElements || 0
@@ -196,7 +208,15 @@ async function loadHot() {
   try { const { data } = await fetchHotPosts({ page: 0, size: 10 }); hotPosts.value = data.content || [] } catch { hotPosts.value = [] }
 }
 
-function onCategoryChange() { page.value = 1; activeTopic.value = ''; loadPosts() }
+async function loadTopics() {
+  try {
+    const category = activeCategory.value !== 'ALL' ? activeCategory.value : undefined
+    const { data } = await fetchTopics({ category, limit: 8 })
+    popularTopics.value = data || []
+  } catch { popularTopics.value = [] }
+}
+
+function onCategoryChange() { page.value = 1; activeTopic.value = ''; loadPosts(); loadTopics() }
 function onSortChange() { page.value = 1; loadPosts() }
 function selectTopic(topic: string) { activeTopic.value = topic; page.value = 1; loadPosts() }
 function clearTopic() { activeTopic.value = ''; page.value = 1; loadPosts() }
@@ -217,17 +237,32 @@ async function submitPost() {
   } catch { ElMessage.error('发布失败') } finally { submitting.value = false }
 }
 
-onMounted(() => Promise.all([loadPosts(), loadHot()]))
+// 实时身份同步：更新帖子作者名和头像
+watch(() => identityStore.revision, () => {
+  posts.value = posts.value.map(post => {
+    const id = identityStore.getIdentity(post.userId)
+    if (!id) return post
+    return { ...post, username: id.username, avatarUrl: id.avatarUrl }
+  })
+  hotPosts.value = hotPosts.value.map(post => {
+    const id = identityStore.getIdentity(post.userId)
+    if (!id) return post
+    return { ...post, username: id.username, avatarUrl: id.avatarUrl }
+  })
+})
+
+onMounted(() => Promise.all([loadPosts(), loadHot(), loadTopics()]))
 </script>
 
 <style scoped>
-.community-page{max-width:1240px;min-height:calc(100vh - 88px);margin:0 auto;padding:0 24px 48px;color:var(--text-primary)}
-.community-hero{position:relative;display:flex;min-height:210px;margin-bottom:20px;padding:32px 34px;overflow:hidden;border:1px solid var(--border-light);border-radius:var(--radius-xl);background:var(--bg-card);box-shadow:var(--shadow-sm)}
-.community-hero::before{position:absolute;inset:0;content:'';background:radial-gradient(circle at 72% 36%,var(--purple-glow),transparent 35%),linear-gradient(110deg,var(--bg-card) 36%,var(--purple-dim));pointer-events:none}
-.hero-copy{position:relative;z-index:2}.hero-kicker{color:var(--accent);font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:1.4px}.hero-copy h1{margin:8px 0 4px;font-family:var(--font-heading);font-size:32px;letter-spacing:0}.hero-copy p{margin:0;color:var(--text-muted);font-size:13px}.hero-stats{display:flex;gap:38px;margin-top:28px}.hero-stats div{display:grid;gap:2px}.hero-stats strong{font-size:16px}.hero-stats span{color:var(--text-muted);font-size:11px}.hero-create{position:absolute;z-index:3;top:24px;right:26px;height:40px;padding-inline:18px}.hero-create svg{width:15px;margin-right:6px}.hero-visual{position:absolute;inset:0 0 0 44%;overflow:hidden}.logo-orbit{position:absolute;top:50%;left:54%;width:220px;height:120px;transform:translate(-50%,-50%)}.logo-orbit::before{position:absolute;inset:-20px;border:1px solid var(--purple);border-radius:50%;content:'';opacity:.24;transform:rotate(-12deg)}.logo-orbit img{position:absolute;width:72px;height:72px;object-fit:contain;filter:drop-shadow(0 10px 20px var(--purple-glow))}.logo-orbit img:first-child{top:20px;left:72px;width:82px;height:82px}.logo-orbit img:nth-child(2){top:0;left:4px;opacity:.68}.logo-orbit img:nth-child(3){right:0;bottom:0;opacity:.68}.court-line{position:absolute;width:500px;height:160px;border:1px solid var(--border-medium);border-radius:50%;opacity:.35}.court-line--one{right:-80px;bottom:-80px}.court-line--two{right:100px;bottom:-120px}
+.community-page{max-width:1440px;min-height:calc(100vh - 88px);margin:0 auto;padding:0 24px 48px;color:var(--text-primary)}
+.community-hero{position:relative;display:flex;min-height:150px;margin-bottom:16px;padding:22px 28px;overflow:hidden;border:1px solid var(--border-light);border-radius:16px;background:var(--bg-card);box-shadow:var(--shadow-sm)}
+.community-hero::before{position:absolute;inset:0;content:'';background:radial-gradient(circle at 72% 36%,rgba(34, 211, 238,.12),transparent 35%),linear-gradient(110deg,var(--bg-card) 36%,rgba(34, 211, 238,.06));pointer-events:none}
+.community-hero::after{position:absolute;inset:0 0 auto;height:1px;content:'';background:linear-gradient(90deg,transparent,rgba(34, 211, 238,.7),transparent);opacity:.75;pointer-events:none}
+.hero-copy{position:relative;z-index:2}.hero-kicker{color:var(--accent);font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:1.4px}.hero-copy h1{margin:6px 0 3px;font-family:var(--font-heading);font-size:26px;letter-spacing:0}.hero-copy p{margin:0;color:var(--text-muted);font-size:13px}.hero-stats{display:flex;gap:32px;margin-top:16px}.hero-stats div{display:grid;gap:2px}.hero-stats strong{font-size:16px}.hero-stats span{color:var(--text-muted);font-size:11px}.hero-create{position:absolute;z-index:3;top:20px;right:24px;height:38px;padding-inline:18px}.hero-create svg{width:15px;margin-right:6px}.hero-visual{position:absolute;inset:0 0 0 44%;overflow:hidden}.logo-orbit{position:absolute;top:50%;left:54%;width:220px;height:120px;transform:translate(-50%,-50%)}.logo-orbit::before{position:absolute;inset:-20px;border:1px solid var(--purple);border-radius:50%;content:'';opacity:.24;transform:rotate(-12deg)}.logo-orbit img{position:absolute;width:72px;height:72px;object-fit:contain;filter:drop-shadow(0 10px 20px var(--purple-glow))}.logo-orbit img:first-child{top:20px;left:72px;width:82px;height:82px}.logo-orbit img:nth-child(2){top:0;left:4px;opacity:.68}.logo-orbit img:nth-child(3){right:0;bottom:0;opacity:.68}.court-line{position:absolute;width:500px;height:160px;border:1px solid var(--border-medium);border-radius:50%;opacity:.35}.court-line--one{right:-80px;bottom:-80px}.court-line--two{right:100px;bottom:-120px}
 .community-toolbar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:14px;border-bottom:1px solid var(--border-light)}.community-tabs{min-width:0;flex:1}:deep(.community-tabs .el-tabs__header){margin:0}:deep(.community-tabs .el-tabs__nav-wrap::after){display:none}:deep(.community-tabs .el-tabs__active-bar){background:var(--accent)}:deep(.community-tabs .el-tabs__item){height:48px;color:var(--text-muted)}:deep(.community-tabs .el-tabs__item.is-active){color:var(--accent)}.toolbar-actions{display:flex;align-items:center;gap:8px}.sort-select{width:126px}.topic-filter{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border-radius:var(--radius-sm);background:var(--accent-lighter);color:var(--accent);font-size:12px}.topic-filter button{border:0;background:transparent;color:inherit;cursor:pointer;font-size:16px}
-.community-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px}.community-main{min-width:0}.post-card{display:grid;grid-template-columns:116px minmax(0,1fr);gap:20px;margin-bottom:10px;padding:18px 20px;border:1px solid var(--border-light);border-radius:var(--radius-lg);background:var(--bg-card);cursor:pointer;transition:border-color var(--duration-normal),transform var(--duration-normal),box-shadow var(--duration-normal)}.post-card:hover,.post-card:focus-visible{border-color:var(--border-medium);box-shadow:var(--shadow-md);outline:none;transform:translateY(-2px)}.post-author-block{display:flex;align-items:flex-start;gap:9px;padding-right:16px;border-right:1px solid var(--border-light)}.author-avatar{display:grid;width:38px;height:38px;flex:0 0 38px;place-items:center;border:1px solid var(--border-medium);border-radius:50%;background:var(--accent-lighter);color:var(--accent);font-weight:800}.post-author-block div{display:grid;min-width:0;gap:3px}.post-author-block strong{overflow:hidden;color:var(--text-secondary);font-size:12px;text-overflow:ellipsis}.post-author-block span{color:var(--text-dim);font-size:10px}.post-labels{display:flex;align-items:center;gap:6px;margin-bottom:6px}.post-category-tag,.status-tag{padding:3px 7px;border-radius:var(--radius-sm);font-size:10px;font-weight:700}.tag-discussion{background:var(--cyan-dim);color:var(--cyan)}.tag-news{background:var(--accent-lighter);color:var(--accent)}.tag-debate{background:var(--warning-glow);color:var(--warning)}.tag-prediction{background:var(--purple-dim);color:var(--purple)}.status-tag--top{background:var(--danger-glow);color:var(--danger)}.status-tag--featured{background:var(--warning-glow);color:var(--warning)}.status-tag--hot{background:var(--accent-lighter);color:var(--accent)}.post-content h2{margin:0 0 5px;color:var(--text-primary);font-size:16px;line-height:1.45;transition:color var(--duration-fast)}.post-card:hover h2{color:var(--accent)}.post-content>p{display:-webkit-box;margin:0 0 8px;overflow:hidden;color:var(--text-muted);font-size:12px;line-height:1.6;-webkit-box-orient:vertical;-webkit-line-clamp:2}.post-tags{display:flex;gap:6px;margin-bottom:9px}.post-tags button{padding:0;border:0;background:transparent;color:var(--text-dim);cursor:pointer;font-size:11px}.post-tags button:hover{color:var(--accent)}.post-signals{display:flex;align-items:center;gap:18px;color:var(--text-dim);font-size:11px}.post-signals span{display:inline-flex;align-items:center;gap:5px}.post-signals svg,.sidebar-card header svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8}.post-signals time{margin-left:auto}
-.community-sidebar{display:grid;align-content:start;gap:10px}.sidebar-card{overflow:hidden;border:1px solid var(--border-light);border-radius:var(--radius-lg);background:var(--bg-card)}.sidebar-card header{display:flex;align-items:center;gap:8px;padding:14px 15px;border-bottom:1px solid var(--border-light);font-size:13px;font-weight:700}.sidebar-card header svg{color:var(--accent)}.ranking-item{display:flex;width:100%;gap:10px;padding:10px 14px;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}.ranking-item:hover{background:var(--bg-hover)}.rank{display:grid;width:20px;height:20px;flex:0 0 20px;place-items:center;border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-muted);font-size:10px;font-weight:800}.rank.top{background:var(--accent);color:var(--text-inverse)}.ranking-copy{display:grid;min-width:0;gap:3px}.ranking-copy strong{overflow:hidden;color:var(--text-secondary);font-size:11px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.ranking-copy small{color:var(--text-dim);font-size:9px}.topic-cloud{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:12px}.topic-cloud button{display:grid;gap:3px;padding:8px;border:1px solid var(--border-light);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-muted);text-align:left;cursor:pointer}.topic-cloud button:hover,.topic-cloud button.active{border-color:var(--accent);color:var(--accent)}.topic-cloud span{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.topic-cloud small{color:var(--text-dim);font-size:9px}.sidebar-empty{margin:0;padding:20px;color:var(--text-dim);font-size:11px;text-align:center}.data-grid{display:grid;grid-template-columns:repeat(3,1fr);padding:15px}.data-grid div{display:grid;gap:4px;text-align:center}.data-grid div+div{border-left:1px solid var(--border-light)}.data-grid strong{font-size:14px}.data-grid span{color:var(--text-dim);font-size:9px}.pager{display:flex;justify-content:center;margin-top:18px}.post-editor{position:relative;width:100%}.emoji-trigger{position:absolute;right:9px;bottom:30px;display:grid;width:30px;height:30px;padding:0;place-items:center;border:1px solid var(--border-light);border-radius:var(--radius-md);background:var(--bg-card);color:var(--text-muted);cursor:pointer}.emoji-trigger:hover{border-color:var(--accent);color:var(--accent)}.emoji-trigger svg{width:16px;fill:none;stroke:currentColor;stroke-width:1.8}
+.community-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px}.community-main{min-width:0}.post-card{display:grid;grid-template-columns:116px minmax(0,1fr);gap:20px;margin-bottom:10px;padding:18px 20px;border:1px solid var(--border-light);border-radius:14px;background:var(--bg-card);cursor:pointer;transition:border-color .18s ease,transform .22s var(--ease-out-quart,ease),box-shadow .22s var(--ease-out-quart,ease)}.post-card:hover,.post-card:focus-visible{border-color:rgba(34, 211, 238,.32);box-shadow:var(--shadow-md),0 10px 24px rgba(34, 211, 238,.08);outline:none;transform:translateY(-3px)}.post-author-block{display:flex;align-items:flex-start;gap:9px;padding-right:16px;border-right:1px solid var(--border-light)}.author-avatar{display:grid;width:38px;height:38px;flex:0 0 38px;place-items:center;border:1px solid var(--border-medium);border-radius:50%;background:var(--accent-lighter);color:var(--accent);font-weight:800;overflow:hidden}.author-avatar img{width:100%;height:100%;object-fit:cover}.post-author-block div{display:grid;min-width:0;gap:3px}.post-author-block strong{overflow:hidden;color:var(--text-secondary);font-size:12px;text-overflow:ellipsis}.post-author-block span{color:var(--text-dim);font-size:10px}.post-labels{display:flex;align-items:center;gap:6px;margin-bottom:6px}.post-category-tag,.status-tag{padding:3px 7px;border-radius:var(--radius-sm);font-size:10px;font-weight:700}.tag-discussion{background:var(--cyan-dim);color:var(--cyan)}.tag-news{background:var(--accent-lighter);color:var(--accent)}.tag-debate{background:var(--warning-glow);color:var(--warning)}.tag-prediction{background:var(--purple-dim);color:var(--purple)}.status-tag--top{background:var(--danger-glow);color:var(--danger)}.status-tag--featured{background:var(--warning-glow);color:var(--warning)}.status-tag--hot{background:var(--accent-lighter);color:var(--accent)}.post-content h2{margin:0 0 5px;color:var(--text-primary);font-size:16px;line-height:1.45;transition:color var(--duration-fast)}.post-card:hover h2{color:var(--accent)}.post-content>p{display:-webkit-box;margin:0 0 8px;overflow:hidden;color:var(--text-muted);font-size:12px;line-height:1.6;-webkit-box-orient:vertical;-webkit-line-clamp:2}.post-tags{display:flex;gap:6px;margin-bottom:9px}.post-tags button{padding:0;border:0;background:transparent;color:var(--text-dim);cursor:pointer;font-size:11px}.post-tags button:hover{color:var(--accent)}.post-signals{display:flex;align-items:center;gap:18px;color:var(--text-dim);font-size:11px}.post-signals span{display:inline-flex;align-items:center;gap:5px}.post-signals svg,.sidebar-card header svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8}.post-signals time{margin-left:auto}
+.community-sidebar{display:grid;align-content:start;gap:10px}.sidebar-card{overflow:hidden;border:1px solid var(--border-light);border-radius:var(--radius-lg);background:var(--bg-card)}.sidebar-card header{display:flex;align-items:center;gap:8px;padding:14px 15px;border-bottom:1px solid var(--border-light);font-size:13px;font-weight:700}.sidebar-card header svg{color:var(--accent)}.ranking-item{display:flex;width:100%;gap:10px;padding:10px 14px;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}.ranking-item:hover{background:var(--bg-hover)}.rank{display:grid;width:20px;height:20px;flex:0 0 20px;place-items:center;border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-muted);font-size:10px;font-weight:800}.rank.top{background:var(--accent);color:var(--text-inverse)}.ranking-copy{display:grid;min-width:0;gap:3px}.ranking-copy strong{overflow:hidden;color:var(--text-secondary);font-size:11px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.ranking-copy small{color:var(--text-dim);font-size:9px}.topic-cloud{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:12px}.topic-cloud button{display:grid;gap:3px;padding:8px;border:1px solid var(--border-light);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-muted);text-align:left;cursor:pointer}.topic-cloud button:hover,.topic-cloud button.active{border-color:var(--accent);color:var(--accent)}.topic-cloud span{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.topic-cloud small{color:var(--text-dim);font-size:9px}.sidebar-empty{margin:0;padding:20px;color:var(--text-dim);font-size:11px;text-align:center}.data-grid{display:grid;grid-template-columns:repeat(3,1fr);padding:15px}.data-grid div{display:grid;gap:4px;text-align:center}.data-grid div+div{border-left:1px solid var(--border-light)}.data-grid strong{font-size:14px}.data-grid span{color:var(--text-dim);font-size:9px}.rules-list{display:grid;gap:12px;padding:14px 15px}.rule-item{display:flex;align-items:flex-start;gap:10px;font-size:12px;line-height:1.5;color:var(--text-muted)}.rule-item p{margin:0}.rule-item strong{color:var(--text-primary);font-weight:600}.rule-dot{font-size:13px;line-height:1.4;flex-shrink:0}.pager{display:flex;justify-content:center;margin-top:18px}.post-editor{position:relative;width:100%}.emoji-trigger{position:absolute;right:9px;bottom:30px;display:grid;width:30px;height:30px;padding:0;place-items:center;border:1px solid var(--border-light);border-radius:var(--radius-md);background:var(--bg-card);color:var(--text-muted);cursor:pointer}.emoji-trigger:hover{border-color:var(--accent);color:var(--accent)}.emoji-trigger svg{width:16px;fill:none;stroke:currentColor;stroke-width:1.8}
 @media(max-width:900px){.community-layout{grid-template-columns:1fr}.community-sidebar{grid-template-columns:repeat(3,1fr)}.hero-visual{opacity:.45}.post-card{grid-template-columns:96px minmax(0,1fr)}}
-@media(max-width:700px){.community-page{padding-inline:14px}.community-hero{min-height:230px;padding:24px}.hero-create{top:20px;right:18px}.hero-visual{display:none}.hero-stats{gap:24px}.community-toolbar{align-items:flex-end;flex-direction:column;gap:0}.community-tabs{width:100%}.toolbar-actions{width:100%;justify-content:flex-end;padding:8px 0}.post-card{grid-template-columns:1fr;padding:16px}.post-author-block{align-items:center;padding:0 0 10px;border-right:0;border-bottom:1px solid var(--border-light)}.post-signals{gap:12px;flex-wrap:wrap}.post-signals time{width:100%;margin:0}.community-sidebar{grid-template-columns:1fr}.logo-orbit{display:none}}
+@media(max-width:700px){.community-page{padding-inline:14px}.community-hero{min-height:0;padding:18px 20px}.hero-create{top:20px;right:18px}.hero-visual{display:none}.hero-stats{gap:24px}.community-toolbar{align-items:flex-end;flex-direction:column;gap:0}.community-tabs{width:100%}.toolbar-actions{width:100%;justify-content:flex-end;padding:8px 0}.post-card{grid-template-columns:1fr;padding:16px}.post-author-block{align-items:center;padding:0 0 10px;border-right:0;border-bottom:1px solid var(--border-light)}.post-signals{gap:12px;flex-wrap:wrap}.post-signals time{width:100%;margin:0}.community-sidebar{grid-template-columns:1fr}.logo-orbit{display:none}}
 </style>

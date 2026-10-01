@@ -1,0 +1,354 @@
+/* =====================================================================
+   Courtside · Visual Polish Layer (v2)
+   统一美化层：在既有设计令牌之上叠加更精致的质感 —
+   环境光、表面光泽、渐变描边、发光阴影、微交互。
+   全部使用既有 CSS 变量，深浅色主题自动适配。
+   ===================================================================== */
+
+:root {
+  /* 新增质感令牌 */
+  --sheen-top: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 42%);
+  --sheen-top-strong: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 46%);
+  --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --edge-highlight-strong: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  --ring-accent: 0 0 0 3px rgba(34, 211, 238, 0.22);
+  --shadow-pop: 0 2px 6px rgba(0, 0, 0, 0.32), 0 14px 34px -8px rgba(0, 0, 0, 0.5);
+  --shadow-float: 0 4px 10px rgba(0, 0, 0, 0.3), 0 20px 44px -12px rgba(0, 0, 0, 0.55);
+  --glow-accent-soft: 0 6px 24px -6px rgba(34, 211, 238, 0.38);
+  --accent-gradient-vivid: linear-gradient(135deg, #67E8F9 0%, #22D3EE 52%, #0EA5E9 100%);
+  --accent-text-gradient: linear-gradient(120deg, #A5F3FC 0%, #22D3EE 60%, #67E8F9 100%);
+  --hairline-fade: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.18) 18%, rgba(148, 163, 184, 0.18) 82%, transparent);
+}
+
+[data-theme="light"] {
+  --sheen-top: linear-gradient(180deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0) 42%);
+  --sheen-top-strong: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0) 46%);
+  --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  --edge-highlight-strong: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  --shadow-pop: 0 2px 6px rgba(15, 23, 42, 0.06), 0 14px 34px -10px rgba(15, 23, 42, 0.14);
+  --shadow-float: 0 4px 10px rgba(15, 23, 42, 0.05), 0 20px 44px -14px rgba(15, 23, 42, 0.18);
+}
+
+/* ---------- 全局环境光：球场聚光 ---------- */
+body {
+  background-color: var(--bg-page);
+}
+
+/* 深色：三层聚光 + 微弱全场中线弧光 */
+[data-theme]:not([data-theme="light"]) body::after,
+body.arena-ambient::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(1100px 500px at 82% -14%, rgba(34, 211, 238, 0.075), transparent 62%),
+    radial-gradient(900px 460px at 8% -10%, rgba(59, 130, 246, 0.05), transparent 58%),
+    radial-gradient(1400px 900px at 50% 118%, rgba(34, 211, 238, 0.035), transparent 64%);
+}
+
+/* ---------- 文字选择 & 焦点 ---------- */
+::selection {
+  background: rgba(34, 211, 238, 0.32);
+  color: #fff;
+}
+[data-theme="light"] ::selection {
+  background: rgba(34, 211, 238, 0.24);
+  color: #164E63;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- 滚动条：更细、悬停显色 ---------- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  border: 2.5px solid transparent;
+  background-clip: padding-box;
+  transition: background var(--duration-normal) var(--ease-smooth);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, 0.55);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* =====================================================================
+   卡片体系：表面光泽 + 顶部高光边 + 悬停浮起
+   ===================================================================== */
+.glass-card,
+.el-card {
+  background-image: var(--sheen-top);
+  box-shadow: var(--edge-highlight), var(--shadow-sm);
+}
+
+.glass-card:hover,
+.el-card.hoverable:hover {
+  box-shadow: var(--edge-highlight), var(--shadow-pop);
+}
+
+/* 可点击卡片的统一浮起语言 */
+a.glass-card,
+.glass-card.clickable,
+.el-card.is-hover-shadow:hover {
+  transition: transform var(--duration-normal) var(--ease-out-quart),
+    box-shadow var(--duration-normal) var(--ease-out-quart),
+    border-color var(--duration-normal) var(--ease-smooth);
+}
+a.glass-card:hover,
+.glass-card.clickable:hover,
+.el-card.is-hover-shadow:hover {
+  transform: translateY(-3px);
+  border-color: rgba(34, 211, 238, 0.35);
+  box-shadow: var(--edge-highlight), var(--glow-accent-soft), var(--shadow-pop);
+}
+
+/* =====================================================================
+   按钮：渐变主按钮 + 内高光 + 发光悬停
+   ===================================================================== */
+.el-button {
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  border-radius: var(--radius-btn);
+  transition: transform var(--duration-fast) var(--ease-out-quart),
+    box-shadow var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-smooth),
+    border-color var(--duration-fast) var(--ease-smooth),
+    color var(--duration-fast) var(--ease-smooth),
+    filter var(--duration-fast) var(--ease-smooth);
+}
+
+.el-button--primary {
+  --el-button-bg-color: #0891B2;
+  --el-button-border-color: transparent;
+  --el-button-hover-bg-color: #22D3EE;
+  --el-button-hover-border-color: transparent;
+  --el-button-active-bg-color: #0E7490;
+  background-image: var(--accent-gradient-vivid);
+  border: none;
+  /* 青绿渐变较亮，白字对比不足，统一用深墨青文字 */
+  color: var(--accent-contrast, #04202A);
+  text-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 14px -4px rgba(34, 211, 238, 0.5);
+}
+
+.el-button--primary:hover,
+.el-button--primary:focus-visible {
+  background-image: linear-gradient(135deg, #67E8F9 0%, #22D3EE 52%, #0EA5E9 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 8px 22px -6px rgba(34, 211, 238, 0.62);
+  transform: translateY(-1px);
+  color: var(--accent-contrast, #04202A);
+}
+
+.el-button--primary:active {
+  transform: translateY(0) scale(0.985);
+  filter: brightness(0.96);
+}
+
+.el-button--primary.is-plain,
+.el-button--primary.is-text,
+.el-button--primary.is-link {
+  background-image: none;
+  text-shadow: none;
+}
+
+/* 默认按钮：玻璃感 */
+.el-button:not(.el-button--primary):not(.is-text):not(.is-link) {
+  box-shadow: var(--edge-highlight);
+}
+.el-button:not(.el-button--primary):not(.is-text):not(.is-link):hover {
+  transform: translateY(-1px);
+}
+
+/* =====================================================================
+   表格：专栏化表头 + 行悬停
+   ===================================================================== */
+.el-table {
+  --el-table-row-hover-bg-color: rgba(34, 211, 238, 0.05);
+}
+
+.el-table th.el-table__cell {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.el-table .el-table__row {
+  transition: background-color var(--duration-fast) var(--ease-smooth);
+}
+
+/* =====================================================================
+   标签 / 徽章
+   ===================================================================== */
+.el-tag {
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+/* =====================================================================
+   输入框：聚焦光晕
+   ===================================================================== */
+.el-input__wrapper,
+.el-textarea__inner {
+  transition: box-shadow var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-smooth),
+    background-color var(--duration-fast) var(--ease-smooth) !important;
+}
+
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--accent) inset, var(--ring-accent) !important;
+}
+
+/* =====================================================================
+   弹窗 / 浮层：更强层次
+   ===================================================================== */
+.el-dialog {
+  background-image: var(--sheen-top);
+  box-shadow: var(--edge-highlight), var(--shadow-float) !important;
+}
+
+.el-message-box,
+.el-popper.is-light,
+.el-select-dropdown,
+.el-picker-panel {
+  box-shadow: var(--edge-highlight), var(--shadow-pop);
+}
+
+/* =====================================================================
+   文字工具类
+   ===================================================================== */
+.text-gradient-accent {
+  background: var(--accent-text-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.eyebrow-label {
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* 细分隔线 */
+.hairline {
+  height: 1px;
+  border: 0;
+  background: var(--hairline-fade);
+}
+
+/* =====================================================================
+   页面标题区统一打磨
+   ===================================================================== */
+.page-title,
+.page-header h1,
+.page-header h2 {
+  letter-spacing: -0.02em;
+}
+
+/* 列表页标题左侧装饰条 */
+.page-header h1::before,
+.page-title::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 0.92em;
+  margin-right: 10px;
+  border-radius: 2px;
+  background: var(--accent-gradient-vivid);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.45);
+  vertical-align: -0.08em;
+}
+
+/* =====================================================================
+   动效：尊重减少动态偏好
+   ===================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* =====================================================================
+   竞技数据指标徽章与微光胶囊 (Sports Telemetry & Stat Badges)
+   ===================================================================== */
+.stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-chip--clutch {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #F59E0B;
+}
+
+.stat-chip--elite {
+  background: rgba(34, 211, 238, 0.12);
+  border-color: rgba(34, 211, 238, 0.35);
+  color: var(--accent);
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.15);
+}
+
+/* 球场半场背景微网格装饰 (Court Grid & Tactical Markings) */
+.tactical-mesh-bg {
+  position: relative;
+}
+.tactical-mesh-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 50% 50%, rgba(34, 211, 238, 0.03) 1px, transparent 1px),
+    linear-gradient(to right, rgba(148, 163, 184, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px, 48px 48px, 48px 48px;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+/* 冠军荣耀金光卡片 */
+.champion-glow-card {
+  position: relative;
+  overflow: hidden;
+}
+.champion-glow-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 140px;
+  height: 140px;
+  background: radial-gradient(circle at top right, rgba(245, 158, 11, 0.18), transparent 70%);
+  pointer-events: none;
+}

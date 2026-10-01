@@ -128,9 +128,10 @@ export interface MatchRecord {
   awayScore: number
   matchDate: string
   season: string
-  status: 'SCHEDULED' | 'LIVE' | 'FINISHED'
-  nbaGameId: string | null
-}
+    status: 'SCHEDULED' | 'LIVE' | 'FINISHED'
+    nbaGameId: string | null
+    gameType: 'SUMMER_LEAGUE' | 'REGULAR_SEASON' | 'PLAYOFFS' | 'NBA_CUP'
+  }
 
 export interface BoxScorePlayer {
   playerId: number
@@ -380,6 +381,7 @@ export interface TimelineEvent {
   isHighlightCandidate: boolean
   eventOrder: number
   source: string
+  sourceEventId?: string | null
 }
 
 export interface MomentumSnapshot {
@@ -402,6 +404,7 @@ export interface Highlight {
   playerId: number | null
   teamId: number | null
   scoreAfter: string
+  eventId?: number | null
 }
 
 export interface TurningPoint {
@@ -433,6 +436,10 @@ export interface GameSummary {
   citedStatKeysJson: string | null
   modelProvider: string | null
   modelName: string | null
+  claims?: ReplayClaim[]
+  provenance?: ReplayProvenance | null
+  validationStatus?: ReplayValidationStatus | null
+  factsHash?: string | null
 }
 
 export interface EventExplain {
@@ -442,6 +449,93 @@ export interface EventExplain {
   explanation: string | null
   citedEventIdsJson: string | null
   citedStatKeysJson: string | null
+  modelProvider: string | null
+  modelName: string | null
+  claims?: ReplayClaim[]
+  provenance?: ReplayProvenance | null
+  validationStatus?: ReplayValidationStatus | null
+  factsHash?: string | null
+}
+
+export type ReplayPageState = 'NOT_STARTED' | 'READY' | 'PARTIAL' | 'PREPARING' | 'UNAVAILABLE'
+
+export type ReplayQualityLevel = 'FULL' | 'PARTIAL' | 'SUMMARY_ONLY' | 'UNAVAILABLE'
+
+export interface ReplayQuality {
+  level: ReplayQualityLevel
+  eventCount: number
+  scoringEventCount: number
+  periodsCovered: number[]
+  source: string | null
+  sourceLabel: string | null
+  synthetic: boolean
+  finalScoreVerified: boolean
+  monotonicScores: boolean
+  lastSyncedAt: string | null
+  warnings: string[]
+  factsHash: string | null
+}
+
+export interface ReplayError {
+  code: string
+  message: string
+  retryable: boolean
+  lastAttemptAt: string | null
+  nextRetryAt: string | null
+}
+
+export interface ReplayBootstrap {
+  gameId: string
+  state: ReplayPageState
+  quality: ReplayQuality
+  timeline: TimelineEvent[]
+  momentum: MomentumSnapshot[]
+  highlights: Highlight[]
+  turningPoints: TurningPoint[]
+  cachedSummary: GameSummary | null
+  error: ReplayError | null
+}
+
+export interface ReplayPreparation {
+  gameId: string
+  state: ReplayPageState
+  operationId: string | null
+  reused: boolean
+  retryAfterSeconds: number | null
+  startedAt: string | null
+  leaseExpiresAt: string | null
+  error: ReplayError | null
+}
+
+export type ReplayValidationStatus = 'VERIFIED' | 'REJECTED' | 'FALLBACK'
+
+export interface ReplayCitation {
+  key: string
+  type: 'EVENT' | 'STAT'
+  eventId?: number | null
+  statKey?: string | null
+  source?: string | null
+  sourceEventId?: string | null
+  eventOrder?: number | null
+  period?: number | null
+  gameClock?: string | null
+  payloadHash?: string | null
+}
+
+export interface ReplayClaim {
+  claimId: string
+  text: string
+  citationKeys?: string[]
+  citations: ReplayCitation[]
+}
+
+export interface ReplayProvenance {
+  factsHash: string
+  syncId: string | null
+  dataAsOf: string | null
+  qualityStatus: ReplayQualityLevel
+  promptVersion: string
+  citationSchemaVersion: string
   modelProvider: string | null
   modelName: string | null
 }

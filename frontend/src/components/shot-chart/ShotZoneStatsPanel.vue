@@ -1,6 +1,6 @@
 <template>
   <div class="zone-panel">
-    <div class="zone-title">区域命中率</div>
+    <div class="zone-title">半场攻防投篮热区与效率 (Zone Efficiency)</div>
     <div v-for="z in zones" :key="z.zone" class="zone-row">
       <span class="zone-name">{{ z.label }}</span>
       <div class="zone-bar-wrap">
@@ -37,13 +37,13 @@ function pctColor(pct: number, att: number) {
 .zone-panel {
   display: flex; flex-direction: column; gap: 10px;
   padding: 20px; min-width: 300px;
-  background: rgba(17, 24, 39, 0.72);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
   border-radius: 14px;
 }
-.zone-title { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px; }
+.zone-title { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px; }
 .zone-row { display: grid; grid-template-columns: 100px 1fr 48px 52px; align-items: center; gap: 10px; }
-.zone-name { font-size: 12px; color: #94a3b8; }
+.zone-name { font-size: 12px; color: var(--text-secondary); }
 .zone-bar-wrap { height: 5px; background: rgba(255,255,255,0.04); border-radius: 3px; overflow: hidden; }
 .zone-bar { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
 .bar-green { background: #00E676; }
@@ -51,22 +51,22 @@ function pctColor(pct: number, att: number) {
 .bar-yellow { background: #FFC107; }
 .bar-red { background: #FF5252; }
 .bar-empty { background: rgba(255,255,255,0.06); }
-.zone-stat { font-size: 11px; color: #64748b; text-align: right; font-variant-numeric: tabular-nums; }
+.zone-stat { font-size: 11px; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
 .zone-pct { font-size: 12px; font-weight: 700; text-align: right; }
 .c-green { color: #00E676; }
 .c-teal { color: #26a69a; }
 .c-yellow { color: #FFC107; }
 .c-red { color: #FF5252; }
-.c-dim { color: #334155; }
+.c-dim { color: var(--text-secondary); }
 
 /* ===== 亮色主题 ===== */
 [data-theme="light"] .zone-panel {
   background: rgba(0, 0, 0, 0.02);
   border-color: rgba(0, 0, 0, 0.08);
 }
-[data-theme="light"] .zone-name { color: #475569; }
+[data-theme="light"] .zone-name { color: var(--text-dim); }
 [data-theme="light"] .zone-bar-wrap { background: rgba(0, 0, 0, 0.06); }
 [data-theme="light"] .bar-empty { background: rgba(0, 0, 0, 0.06); }
-[data-theme="light"] .zone-stat { color: #475569; }
-[data-theme="light"] .c-dim { color: #64748b; }
+[data-theme="light"] .zone-stat { color: var(--text-dim); }
+[data-theme="light"] .c-dim { color: var(--text-muted); }
 </style>

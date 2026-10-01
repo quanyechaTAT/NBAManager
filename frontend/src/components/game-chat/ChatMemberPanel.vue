@@ -119,8 +119,8 @@ function onImgError(e: Event) {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent, #E85D26), var(--cyan, #06B6D4));
-  color: #fff;
+  background: linear-gradient(135deg, var(--accent-light, #22D3EE), var(--accent, #0891B2));
+  color: var(--accent-contrast, #04202A);
   font-size: 13px;
   font-weight: 700;
   display: flex;
@@ -150,8 +150,8 @@ function onImgError(e: Event) {
 .member-admin-badge {
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(var(--accent-orange-rgb, 232, 93, 38), 0.12);
-  color: var(--accent, #E85D26);
+  background: rgba(var(--accent-orange-rgb, 8, 145, 178), 0.12);
+  color: var(--accent, #0891B2);
   font-size: 10px;
   font-weight: 700;
   flex-shrink: 0;

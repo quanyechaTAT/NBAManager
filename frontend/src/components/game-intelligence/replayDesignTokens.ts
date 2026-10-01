@@ -8,7 +8,7 @@ export const gi = {
     text: '#F8FAFC',
     muted: '#94A3B8',
     home: '#3B82F6',
-    away: '#F97316',
+    away: '#A78BFA',
     success: '#10B981',
     danger: '#EF4444',
     warning: '#F59E0B',
@@ -25,7 +25,7 @@ export const gi = {
     text: '#0F172A',
     muted: '#64748B',
     home: '#2563EB',
-    away: '#EA580C',
+    away: '#7C3AED',
     success: '#059669',
     danger: '#DC2626',
     warning: '#D97706',
@@ -36,7 +36,7 @@ export const gi = {
   },
 } as const
 
-export type GiTheme = typeof gi.dark
+export type GiTheme = (typeof gi)[keyof typeof gi]
 
 export function useGiTheme(isDark: boolean): GiTheme {
   return isDark ? gi.dark : gi.light

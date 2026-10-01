@@ -13,7 +13,7 @@
 
 环境变量：
   ADMIN_USER  管理员用户名（默认 admin）
-  ADMIN_PASS  管理员密码（默认 [REMOVED_ADMIN_PASS]）
+  ADMIN_PASS  管理员密码（必须显式配置）
   API_BASE    后端地址（默认 http://localhost:8080/api）
 """
 
@@ -50,6 +50,11 @@ try:
     HAS_API_TRANSLATOR = True
 except ImportError:
     HAS_API_TRANSLATOR = False
+
+# 本脚本访问的对象是本机后端 API 与 DeepSeek（均无需代理），
+# 清掉 nba_data_fetcher .env 加载时写入的抓取代理，避免 localhost 请求被 7890 劫持
+for _k in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']:
+    os.environ.pop(_k, None)
 
 API_BASE = os.environ.get('API_BASE', 'http://localhost:8080/api')
 AUTH_TOKEN = None
@@ -300,14 +305,14 @@ def load_env():
                     k, v = line.split('=', 1)
                     os.environ[k.strip()] = v.strip()
 
-    # 默认禁用代理（MIMO API直连）
+    # 默认禁用代理（DeepSeek API直连）
     os.environ.setdefault('USE_PROXY', 'false')
     os.environ.setdefault('DISABLE_SSL_VERIFY', 'true')
 
     # 刷新翻译模块的配置
     import translator as _t
-    _t.MIMO_API_KEY = os.environ.get('MIMO_API_KEY', '')
-    _t.MIMO_BASE_URL = os.environ.get('MIMO_BASE_URL', _t.MIMO_BASE_URL)
+    _t.DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
+    _t.DEEPSEEK_API_BASE = os.environ.get('DEEPSEEK_API_BASE', _t.DEEPSEEK_API_BASE)
     _t.USE_PROXY = os.environ.get('USE_PROXY', 'false').lower() == 'true'
     _t.DISABLE_SSL_VERIFY = os.environ.get('DISABLE_SSL_VERIFY', 'false').lower() == 'true'
 

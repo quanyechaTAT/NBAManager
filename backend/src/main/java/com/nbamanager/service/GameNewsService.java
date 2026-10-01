@@ -7,15 +7,20 @@ import com.nbamanager.repository.UserBrowseHistoryRepository;
 import com.nbamanager.repository.UserFavoriteRepository;
 import com.nbamanager.web.dto.GameNewsDto;
 import com.nbamanager.web.dto.GameNewsRequest;
+import com.nbamanager.web.support.PageRequestSanitizer;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,18 +31,64 @@ public class GameNewsService {
 
     private final GameNewsRepository gameNewsRepository;
     private final UserFavoriteRepository userFavoriteRepository;
+    private final org.springframework.beans.factory.ObjectProvider<NewsListCache> newsListCache;
     private final UserBrowseHistoryRepository userBrowseHistoryRepository;
 
-    /** 分页查询所有赛事资讯 */
-    @Transactional(readOnly = true)
+    /** 资讯列表允许的排序字段（白名单，未知字段返回 400 而非 500）。 */
+    private static final Set<String> ALLOWED_SORTS = Set.of(
+            "id", "title", "category", "viewCount", "favoriteCount",
+            "gameStartTime", "createTime", "status");
+    private static final Map<String, String> SORT_ALIASES = Map.of(
+            "createdAt", "createTime",
+            "updatedAt", "createTime",
+            "startTime", "gameStartTime");
+    private static final Sort DEFAULT_SORT = Sort.by(Sort.Direction.DESC, "createTime");
+
+    /**
+     * 分页查询所有赛事资讯（第 8 轮 P1-4 改造）：
+     * 用户无关基座来自 NewsListCache（85KB 大响应缓存，写后由仓库层切面失效），
+     * 每用户 favoritedByMe 在基座上装饰（仍是每页一条批量收藏查询）。
+     */
     public Page<GameNewsDto> list(String keyword, Long userId, Pageable pageable) {
+        Pageable safePageable = PageRequestSanitizer.sanitize(
+                pageable, ALLOWED_SORTS, SORT_ALIASES, DEFAULT_SORT);
+        NewsListCache.PagePayload base = newsListCache.getObject().load(keyword, safePageable);
+
+        List<Long> pageIds = base.content().stream().map(GameNewsDto::id).collect(Collectors.toList());
+        Set<Long> favoritedIds = (userId == null || pageIds.isEmpty())
+                ? Set.of()
+                : new java.util.HashSet<>(userFavoriteRepository
+                        .findTargetIdsByUserIdAndTargetTypeAndTargetIdIn(userId, "NEWS", pageIds));
+        List<GameNewsDto> decorated = base.content().stream()
+                .map(dto -> withFavoritedByMe(dto, favoritedIds.contains(dto.id())))
+                .collect(Collectors.toList());
+        return new org.springframework.data.domain.PageImpl<>(decorated, safePageable, base.totalElements());
+    }
+
+    /** 用户无关基座查询（NewsListCache 未命中时执行）。 */
+    public NewsListCache.PagePayload queryNewsBasePage(String keyword, Pageable safePageable) {
         Page<GameNews> page;
         if (keyword == null || keyword.isBlank()) {
-            page = gameNewsRepository.findAll(pageable);
+            page = gameNewsRepository.findAll(safePageable);
         } else {
-            page = gameNewsRepository.search(keyword.trim(), pageable);
+            page = gameNewsRepository.search(keyword.trim(), safePageable);
         }
-        return page.map(g -> toDto(g, userId != null && userFavoriteRepository.existsByUserIdAndTargetTypeAndTargetId(userId, "NEWS", g.getId())));
+        List<GameNewsDto> base = page.getContent().stream()
+                .map(g -> toDto(g, false))
+                .collect(Collectors.toList());
+        return new NewsListCache.PagePayload(base, page.getTotalElements());
+    }
+
+    /** GameNewsDto 是 record：按收藏标记复制一份（其余字段原样）。 */
+    private static GameNewsDto withFavoritedByMe(GameNewsDto dto, boolean favorited) {
+        if (dto.favoritedByMe() == favorited) {
+            return dto;
+        }
+        return new GameNewsDto(dto.id(), dto.title(), dto.summary(), dto.content(),
+                dto.homeTeam(), dto.awayTeam(), dto.homeScore(), dto.awayScore(),
+                dto.gameStartTime(), dto.gameEndTime(), dto.status(), dto.createTime(),
+                dto.nbaGameId(), dto.category(), dto.sourceUrl(), dto.imageUrl(),
+                dto.viewCount(), dto.favoriteCount(), favorited);
     }
 
     /** 查询单条资讯 */
@@ -51,25 +102,29 @@ public class GameNewsService {
         return toDto(g, favorited);
     }
 
-    /** 收藏/取消收藏 */
+    /** 收藏/取消收藏（原子化：以唯一键为准，计数走原子 UPDATE） */
     @Transactional
     public boolean toggleFavorite(Long userId, Long newsId) {
         gameNewsRepository.findById(newsId).orElseThrow(() -> notFound(newsId));
-        if (userFavoriteRepository.existsByUserIdAndTargetTypeAndTargetId(userId, "NEWS", newsId)) {
-            userFavoriteRepository.deleteByUserIdAndTargetTypeAndTargetId(userId, "NEWS", newsId);
-            GameNews g = gameNewsRepository.findById(newsId).orElse(null);
-            if (g != null) { g.setFavoriteCount(Math.max(0, g.getFavoriteCount() - 1)); gameNewsRepository.save(g); }
-            return false;
-        } else {
-            com.nbamanager.domain.UserFavorite fav = new com.nbamanager.domain.UserFavorite();
-            fav.setUserId(userId);
-            fav.setTargetType("NEWS");
-            fav.setTargetId(newsId);
-            userFavoriteRepository.save(fav);
-            GameNews g = gameNewsRepository.findById(newsId).orElse(null);
-            if (g != null) { g.setFavoriteCount(g.getFavoriteCount() + 1); gameNewsRepository.save(g); }
-            return true;
-        }
+        // 资讯收藏与帖子收藏共用同一张 user_favorites 表，按同键串行化避免死锁
+        return com.nbamanager.service.support.KeyedMutex.execute(
+                "favorite:" + userId + ":NEWS:" + newsId,
+                () -> {
+                    int deleted = userFavoriteRepository.deleteByUserIdAndTargetTypeAndTargetId(
+                            userId, "NEWS", newsId);
+                    if (deleted > 0) {
+                        gameNewsRepository.bumpFavoriteCount(newsId, -1);
+                        return false;
+                    }
+
+                    int inserted = userFavoriteRepository.insertIgnore(userId, "NEWS", newsId);
+                    if (inserted > 0) {
+                        gameNewsRepository.bumpFavoriteCount(newsId, +1);
+                        return true;
+                    }
+
+                    throw new ApiException(HttpStatus.CONFLICT, "收藏状态正在更新，请稍后重试");
+                });
     }
 
     /** 查询今日赛事 */
@@ -92,7 +147,9 @@ public class GameNewsService {
         GameNews g = new GameNews();
         apply(g, req);
         g.setCreateTime(LocalDateTime.now());
-        return toDto(gameNewsRepository.save(g), false);
+        GameNews saved = gameNewsRepository.save(g);
+        cleanupOldNews(100);
+        return toDto(saved, false);
     }
 
     /** 修改赛事资讯 */
@@ -124,29 +181,22 @@ public class GameNewsService {
         return (int) count;
     }
 
-    /** 清理超出100条的旧资讯，同步删除浏览历史和收藏 */
+    /** 所有资讯类型共用一个保留上限，并批量清理关联数据。 */
     @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
     @Transactional
     public int cleanupOldNews(int keepCount) {
-        List<GameNews> allNews = gameNewsRepository.findAll(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createTime"));
-        if (allNews.size() <= keepCount) return 0;
+        int boundedKeepCount = Math.max(0, keepCount);
+        long excess = gameNewsRepository.count() - boundedKeepCount;
+        if (excess <= 0) return 0;
 
-        List<GameNews> toDelete = allNews.subList(keepCount, allNews.size());
-        int deleted = 0;
-        for (GameNews news : toDelete) {
-            Long newsId = news.getId();
-            // 删除相关的浏览历史
-            try {
-                userBrowseHistoryRepository.deleteByTargetTypeAndTargetId("NEWS", newsId);
-            } catch (Exception e) { /* ignore */ }
-            // 删除相关的收藏
-            try {
-                userFavoriteRepository.deleteByTargetTypeAndTargetId("NEWS", newsId);
-            } catch (Exception e) { /* ignore */ }
-            gameNewsRepository.delete(news);
-            deleted++;
-        }
-        return deleted;
+        int deleteCount = (int) Math.min(excess, Integer.MAX_VALUE);
+        List<Long> ids = gameNewsRepository.findOldestIds(PageRequest.of(0, deleteCount));
+        if (ids.isEmpty()) return 0;
+
+        userFavoriteRepository.deleteNewsTargetsByIds("NEWS", ids);
+        userBrowseHistoryRepository.deleteNewsTargetsByIds("NEWS", ids);
+        gameNewsRepository.deleteAllByIdInBatch(ids);
+        return ids.size();
     }
 
     private void apply(GameNews g, GameNewsRequest req) {

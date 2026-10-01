@@ -1,7 +1,7 @@
 """Replay Agent - handles game replay analysis"""
 import json
 from tools.data_tools import get_game_timeline, get_game_momentum, get_game_highlights, get_game_turning_points, get_box_score
-from tools.llm_tool import call_mimo
+from tools.llm_tool import call_deepseek
 
 SYSTEM_PROMPT = """你是 NBA 比赛事实分析助手。
 
@@ -36,7 +36,7 @@ def handle(query: str, game_id: str | None = None) -> dict:
     }, ensure_ascii=False, indent=2)
 
     user_prompt = f"<FACTS>\n{facts}\n</FACTS>\n\n用户问题: {query}"
-    answer = call_mimo(SYSTEM_PROMPT, user_prompt)
+    answer = call_deepseek(SYSTEM_PROMPT, user_prompt)
 
     return {
         "answer": answer,

@@ -78,7 +78,7 @@ const formattedTime = computed(() => {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent, #E85D26), var(--cyan, #06B6D4));
+  background: linear-gradient(135deg, var(--cyan, #06B6D4), var(--purple, #8B5CF6));
   color: #fff;
   font-size: 16px;
   font-weight: 700;
@@ -136,8 +136,8 @@ const formattedTime = computed(() => {
 .admin-badge {
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(var(--accent-orange-rgb, 232, 93, 38), 0.12);
-  color: var(--accent, #E85D26);
+  background: rgba(var(--accent-orange-rgb, 8, 145, 178), 0.12);
+  color: var(--accent, #0891B2);
   font-size: 10px;
   font-weight: 700;
 }
@@ -164,7 +164,7 @@ const formattedTime = computed(() => {
 
 .msg-item.is-self .msg-bubble {
   background: var(--chat-bubble-self, var(--accent-lighter));
-  border-color: rgba(var(--accent-orange-rgb, 232, 93, 38), 0.12);
+  border-color: rgba(var(--accent-orange-rgb, 8, 145, 178), 0.12);
 }
 
 .msg-text {

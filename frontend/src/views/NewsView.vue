@@ -2,13 +2,14 @@
   <div class="news-page">
     <section class="news-hero">
       <div>
-        <h1>赛事资讯</h1>
-        <p>{{ todayStr }} · 今日赛程、联盟动态与赛后深度</p>
+        <span class="news-kicker">NBA GAME CENTER</span>
+        <h1>赛事与战报中心</h1>
+        <p>{{ todayStr }} · 今日焦点赛况、赛程日程与深度战报复盘</p>
       </div>
       <div class="news-hero-actions">
         <div class="search-wrap">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-          <input v-model="q" class="news-search" type="text" placeholder="搜索标题、球队、专题" @keyup.enter="load" />
+          <input v-model="q" class="news-search" type="text" placeholder="搜索比赛焦点、球队、战报..." @keyup.enter="() => load()" />
           <button v-if="q" @click="q = ''; load()" class="search-clear" aria-label="清除搜索">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
           </button>
@@ -18,7 +19,12 @@
       </div>
     </section>
 
-    <section class="score-strip" v-loading="todayLoading">
+    <section
+      class="score-strip"
+      :class="{ 'score-strip--empty': !todayLoading && visibleTodayGames.length === 0 }"
+      v-loading="todayLoading"
+    >
+      <template v-if="todayLoading || visibleTodayGames.length > 0">
       <div class="score-strip-header">
         <span>今日赛事</span>
         <small>横向滑动查看更多</small>
@@ -55,10 +61,9 @@
             </div>
           </div>
         </article>
-        <div v-if="!todayLoading && visibleTodayGames.length === 0" class="today-empty">
-          今日暂无可查看详情的赛事
-        </div>
       </div>
+      </template>
+      <p v-else class="today-inline">今日暂无赛事，赛程同步后在此展示今日对决</p>
     </section>
 
     <section class="news-layout">
@@ -90,7 +95,7 @@
             <div class="news-thumb" :class="{ 'news-thumb--placeholder': !thumbnailUrl(row) }">
               <img v-if="thumbnailUrl(row)" :src="thumbnailUrl(row)" :alt="row.title" loading="lazy" @error="onThumbError(row)" />
               <div v-else class="thumb-placeholder">
-                <span>{{ fallbackBadge(row) }}</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
               </div>
             </div>
           </article>
@@ -151,9 +156,9 @@
           </el-button>
           <ShareButton :url="newsUrl" :title="current.title" :description="current.summary" />
           <el-button v-if="current.sourceUrl" type="success" plain size="small" @click="openSource(current.sourceUrl)">🔗 查看原文</el-button>
-          <el-button v-if="current.nbaGameId" type="primary" size="small" @click="goToMatchDetail(current)">📊 查看比赛详细数据</el-button>
+          <el-button v-if="current.nbaGameId" type="primary" size="small" @click="goToMatchDetail(current)">查看比赛详细数据</el-button>
           <el-tooltip v-else content="该新闻未关联NBA比赛ID，无法查看比赛详情" placement="top">
-            <el-button type="info" plain size="small" disabled>📊 比赛数据（暂无）</el-button>
+            <el-button type="info" plain size="small" disabled>比赛数据（暂无）</el-button>
           </el-tooltip>
         </div>
       </template>
@@ -241,17 +246,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { fetchNews, fetchNewsDetail, fetchTodayNews, createNews, updateNews, deleteNews, toggleNewsFavorite, type GameNewsPayload } from '@/api/news'
+import { fetchNews, fetchNewsDetail, fetchTodayNews, createNews, updateNews, toggleNewsFavorite, type GameNewsPayload } from '@/api/news'
 import { recordBrowse } from '@/api/browseHistory'
 import { useAuthStore } from '@/stores/auth'
 import { sanitizeHtml } from '@/utils/sanitize'
 import ShareButton from '@/components/ShareButton.vue'
 import type { GameNews } from '@/api/types'
-import request from '@/utils/request'
 import { getTeamLogo } from '@/utils/teamLogos'
+import { getJob, syncModule, type SyncJobResponse } from '@/api/dataManagement'
+import { subscribeDataRefresh, type DataRefreshSignal } from '@/utils/dataRefresh'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -390,17 +396,13 @@ function formatGameTime(t: string | null | undefined): string {
   return `${month}月${day}日 ${hh}:${mm}`
 }
 
-function teamLogo(name: string | null | undefined): string | null {
-  if (!name) return null
-  return getTeamLogo(name) || null
+function teamLogo(name: string | null | undefined): string | undefined {
+  if (!name) return undefined
+  return getTeamLogo(name) || undefined
 }
 
 function fallbackTeamInitial(name: string | null | undefined): string {
   return name ? name.charAt(0) : '?'
-}
-function formatTeamName(name: string | null | undefined): string {
-  if (!name || name === '待定' || name === 'TBD') return ''
-  return name
 }
 function sourceName(item: GameNews): string {
   if (item.sourceUrl) {
@@ -441,11 +443,6 @@ function onThumbError(item: GameNews) {
   if (!url) return
   failedThumbs.value = { ...failedThumbs.value, [thumbnailKey(item, url)]: true }
 }
-function fallbackBadge(item: GameNews) {
-  const home = formatTeamName(item.homeTeam)
-  if (home) return home.slice(0, 2)
-  return categoryLabel(item.category || 'general').slice(0, 2)
-}
 function formatTimeSingle(t: string) {
   return new Date(t).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
@@ -464,10 +461,15 @@ function formatTimeRange(start: string, end: string) {
   return `${formatTimeSingle(start)} - ${formatTimeSingle(end)}`
 }
 
-async function load() {
+async function load(forceFresh = false) {
   newsLoading.value = true
   try {
-    const res = await fetchNews({ q: q.value || '', page: page.value - 1, size: size.value })
+    const res = await fetchNews({
+      q: q.value || '',
+      page: page.value - 1,
+      size: size.value,
+      cacheNonce: forceFresh ? Date.now() : undefined,
+    })
     list.value = res.data.content
     total.value = res.data.totalElements
   } catch {
@@ -498,30 +500,83 @@ async function loadToday() {
   }
 }
 
-// 刷新所有数据（从API同步最新数据）
+const REFRESH_TERMINAL_STATUSES = new Set([
+  'SUCCESS', 'PARTIAL_FAILED', 'FAILED', 'CANCELLED', 'INTERRUPTED'
+])
+let refreshDisposed = false
+
+function wait(ms: number): Promise<void> {
+  return new Promise(resolve => window.setTimeout(resolve, ms))
+}
+
+async function waitForSyncJob(jobId: number): Promise<SyncJobResponse> {
+  const deadline = Date.now() + 15 * 60 * 1000
+  while (!refreshDisposed && Date.now() < deadline) {
+    const { data: job } = await getJob(jobId)
+    if (REFRESH_TERMINAL_STATUSES.has(job.status)) return job
+    await wait(2000)
+  }
+  if (refreshDisposed) throw new Error('页面已关闭')
+  throw new Error('同步任务等待超时，请到数据管理中心查看任务状态')
+}
+
+// 新闻和今日赛事均通过统一 Coordinator 提交，并等待真实任务终态。
 async function refreshAll() {
   refreshing.value = true
   try {
-    // 同时触发新闻和比赛同步
-    await Promise.all([
-      request.post('/admin/sync/news'),
-      request.post('/admin/sync/matches')
+    const modules = ['NEWS', 'TODAY_GAMES'] as const
+    const submissionResults = await Promise.allSettled([
+      syncModule('NEWS'),
+      syncModule('TODAY_GAMES')
     ])
-    ElMessage.success('数据同步已启动')
-
-    // 等待后端同步完成后重新加载（轮询最多10秒）
-    for (let i = 0; i < 5; i++) {
-      await new Promise(r => setTimeout(r, 2000))
-      await Promise.all([loadToday(), load()])
-      // 如果今日赛事已加载，提前退出
-      if (todayNews.value.length > 0) break
+    const submissions = submissionResults.flatMap((result, index) =>
+      result.status === 'fulfilled'
+        ? [{ module: modules[index], response: result.value }]
+        : []
+    )
+    const submissionFailures = submissionResults.flatMap((result, index) => {
+      if (result.status === 'fulfilled') return []
+      const reason: any = result.reason
+      const message = reason?.response?.data?.message || reason?.message || '提交失败'
+      return [`${modules[index]}: ${message}`]
+    })
+    if (submissions.length === 0) {
+      const firstFailure = submissionResults.find(result => result.status === 'rejected')
+      if (firstFailure?.status === 'rejected') {
+        throw firstFailure.reason
+      }
+      throw new Error('同步任务提交失败')
     }
-    refreshing.value = false
+    ElMessage.info('数据同步已启动，正在等待任务完成')
+
+    const jobs = await Promise.all(
+      submissions.map(({ response }) => waitForSyncJob(response.data.jobId))
+    )
+    page.value = 1
+    await Promise.all([loadToday(), load(true)])
+
+    const failed = jobs.filter(job => job.status !== 'SUCCESS')
+    if (submissionFailures.length > 0 || failed.length > 0) {
+      const details = submissionFailures.concat(failed
+        .map(job => `${job.module}: ${job.errorMessage || job.status}`)
+      ).join('；')
+      ElMessage.error(`部分同步未完成：${details}`)
+    } else {
+      const inserted = jobs.reduce((sum, job) => sum + (job.insertedCount || 0), 0)
+      const updated = jobs.reduce((sum, job) => sum + (job.updatedCount || 0), 0)
+      if (inserted === 0) {
+        ElMessage.info(`同步完成：上游暂无新资讯，更新 ${updated} 条比赛数据`)
+      } else {
+        ElMessage.success(`数据同步完成：新增 ${inserted} 条，更新 ${updated} 条`)
+      }
+    }
   } catch (error: any) {
+    if (refreshDisposed) return
     console.error('同步失败:', error)
     const msg = error.response?.data?.message || error.message || '同步失败'
     ElMessage.error(`同步失败: ${msg}`)
-    await Promise.all([loadToday(), load()])
+    await Promise.all([loadToday(), load(true)])
+  } finally {
     refreshing.value = false
   }
 }
@@ -573,25 +628,6 @@ function openCreate() {
   formVisible.value = true
 }
 
-function openEdit(item: GameNews) {
-  editingId.value = item.id
-  formTitle.value = '编辑赛事资讯'
-  form.title = item.title
-  form.summary = item.summary
-  form.content = item.content
-  form.homeTeam = item.homeTeam
-  form.awayTeam = item.awayTeam
-  form.homeScore = item.homeScore
-  form.awayScore = item.awayScore
-  form.gameStartTime = item.gameStartTime
-  form.gameEndTime = item.gameEndTime
-  form.nbaGameId = item.nbaGameId || ''
-  form.category = item.category || 'general'
-  form.sourceUrl = item.sourceUrl || ''
-  form.imageUrl = item.imageUrl || ''
-  formVisible.value = true
-}
-
 function resetForm() {
   form.title = ''
   form.summary = ''
@@ -631,18 +667,19 @@ async function handleSubmit() {
   }
 }
 
-async function handleDelete(id: number) {
-  try {
-    await deleteNews(id)
-    ElMessage.success('删除成功')
-    loadToday()
-    load()
-  } catch {
-    ElMessage.error('删除失败')
+let unsubscribeDataRefresh = () => {}
+
+async function handleDataRefresh(signal: DataRefreshSignal) {
+  if (signal.module === 'NEWS') {
+    page.value = 1
+    await load(true)
+  } else if (signal.module === 'TODAY_GAMES') {
+    await loadToday()
   }
 }
 
 onMounted(async () => {
+  unsubscribeDataRefresh = subscribeDataRefresh(handleDataRefresh)
   await Promise.all([loadToday(), load()])
   // 如果 URL 中有 newsId 参数，自动打开对应的资讯详情
   const newsId = route.query.newsId
@@ -664,11 +701,26 @@ onMounted(async () => {
     }
   }
 })
+
+onUnmounted(() => {
+  refreshDisposed = true
+  unsubscribeDataRefresh()
+})
 </script>
 
 <style scoped>
 /* 防止 stagger-in 动画与 el-dialog 关闭动画冲突导致抖动 */
 :deep(.el-overlay) { animation: none !important; opacity: 1 !important; transform: none !important; }
+
+.news-kicker {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 1.2px;
+  margin-bottom: 2px;
+}
 
 .page {
   padding: 4px 0;
@@ -719,12 +771,38 @@ onMounted(async () => {
   letter-spacing: 0.2px;
 }
 /* ===== 今日赛事网格 ===== */
-.today-empty {
-  padding: 24px;
-  text-align: center;
+.score-strip--empty {
+  padding: 10px 16px;
+}
+.today-inline {
+  margin: 0;
   color: var(--text-muted);
   font-size: 13px;
-  white-space: nowrap;
+}
+.today-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: 1;
+  min-height: 96px;
+  padding: 20px;
+  text-align: center;
+  white-space: normal;
+}
+.today-empty svg {
+  margin-bottom: 6px;
+  color: var(--text-dim);
+}
+.today-empty strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.today-empty span {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 /* ===== 资讯卡片 ===== */
@@ -760,7 +838,7 @@ onMounted(async () => {
 
 /* ===== Sports portal news feed ===== */
 .news-page {
-  max-width: 1180px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 8px 20px 32px;
   color: var(--text-primary);
@@ -770,15 +848,19 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 10px 0 18px;
+  padding: 12px 0 20px;
   border-bottom: 1px solid var(--border-light);
+  position: relative;
+}
+.news-hero::after {
+  content: none;
 }
 .news-hero h1 {
   margin: 0;
-  font-size: 24px;
-  line-height: 1.25;
+  font-size: 28px;
+  line-height: 1.2;
   font-weight: 800;
-  letter-spacing: 0;
+  letter-spacing: -0.4px;
   color: var(--text-primary);
 }
 .news-hero p {
@@ -796,12 +878,12 @@ onMounted(async () => {
 .news-hero-actions :deep(.el-button--primary) {
   background: var(--accent) !important;
   border-color: var(--accent) !important;
-  color: #fff !important;
-  box-shadow: 0 8px 18px rgba(232, 93, 38, 0.18);
+  color: var(--accent-contrast, #04202A) !important;
+  box-shadow: 0 8px 18px rgba(34, 211, 238, 0.18);
 }
 .news-hero-actions :deep(.el-button--primary.is-plain) {
-  background: rgba(232, 93, 38, .08) !important;
-  border-color: rgba(232, 93, 38, .24) !important;
+  background: rgba(34, 211, 238, .08) !important;
+  border-color: rgba(34, 211, 238, .24) !important;
   color: var(--accent) !important;
   box-shadow: none;
 }
@@ -825,7 +907,7 @@ onMounted(async () => {
 }
 .search-wrap:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(232, 93, 38, 0.10);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.10);
 }
 .news-search {
   flex: 1;
@@ -867,7 +949,7 @@ onMounted(async () => {
 /* ── 赛事比分卡 ── */
 .today-game-card {
   flex: 0 0 220px;
-  min-height: 130px;
+  min-height: 108px;
   padding: 10px 14px;
   border: 1px solid var(--border-light);
   border-radius: 6px;
@@ -895,7 +977,7 @@ onMounted(async () => {
 }
 .status-pill.live { color: #dc2626; background: rgba(220,38,38,.08); }
 .status-pill.finished { color: var(--text-dim); background: var(--bg-hover); }
-.status-pill.scheduled { color: var(--accent); background: rgba(232,93,38,.08); }
+.status-pill.scheduled { color: var(--accent); background: rgba(34, 211, 238,.08); }
 .game-time { font-size: 12px; color: var(--text-muted); }
 .game-matchup {
   display: flex;
@@ -1029,11 +1111,11 @@ onMounted(async () => {
   gap: 5px;
 }
 .today-empty {
-  padding: 24px;
+  padding: 20px;
   text-align: center;
   color: var(--text-muted);
   font-size: 13px;
-  white-space: nowrap;
+  white-space: normal;
 }
 .news-layout {
   display: grid;
@@ -1044,8 +1126,20 @@ onMounted(async () => {
 .feed-panel {
   min-width: 0;
   border: 1px solid var(--border-light);
-  border-radius: 8px;
+  border-radius: 14px;
   background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  position: relative;
+}
+.feed-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.55), transparent);
+  opacity: 0.55;
+  pointer-events: none;
 }
 .feed-header {
   display: flex;
@@ -1081,10 +1175,13 @@ onMounted(async () => {
   border-bottom: 1px solid var(--border-light);
   cursor: pointer;
   background: var(--bg-card);
-  transition: background .15s ease;
+  transition:
+    background .18s ease,
+    transform .18s var(--ease-out-quart, ease);
 }
 .news-item:hover {
   background: var(--bg-hover);
+  transform: translateX(2px);
 }
 .news-item-main {
   min-width: 0;
@@ -1113,7 +1210,7 @@ onMounted(async () => {
   padding: 2px 6px;
   border-radius: 4px;
   color: var(--accent);
-  background: rgba(232, 93, 38, .10);
+  background: rgba(34, 211, 238, .10);
   font-size: 11px;
   font-weight: 700;
 }
@@ -1165,10 +1262,12 @@ onMounted(async () => {
   height: 100%;
   display: grid;
   place-items: center;
-  color: var(--accent);
-  background: linear-gradient(135deg, rgba(232, 93, 38, .10), rgba(16, 185, 129, .08));
-  font-size: 18px;
-  font-weight: 800;
+  color: var(--text-dim);
+  background: var(--bg-hover);
+}
+.thumb-placeholder svg {
+  width: 22px;
+  height: 22px;
 }
 .news-sidebar {
   display: grid;
@@ -1635,20 +1734,20 @@ onMounted(async () => {
   background: linear-gradient(135deg, var(--bg-card) 0%, #FAFAF8 100%);
 }
 [data-theme="light"] .game-card:hover {
-  box-shadow: 0 8px 24px rgba(232, 93, 38, 0.12) !important;
+  box-shadow: 0 8px 24px rgba(34, 211, 238, 0.12) !important;
 }
 [data-theme="light"] .detail-score {
-  background: linear-gradient(135deg, rgba(232, 93, 38, 0.04) 0%, rgba(232, 93, 38, 0.01) 100%);
-  border-color: rgba(232, 93, 38, 0.12);
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.04) 0%, rgba(34, 211, 238, 0.01) 100%);
+  border-color: rgba(34, 211, 238, 0.12);
 }
 [data-theme="light"] .detail-vs {
-  background: linear-gradient(135deg, rgba(232, 93, 38, 0.03) 0%, transparent 100%);
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.03) 0%, transparent 100%);
 }
 [data-theme="light"] .search-input-wrap {
   background: var(--bg-card);
   border-color: var(--border-medium);
 }
 [data-theme="light"] .cell-link:hover {
-  color: #D14E1F;
+  color: #0E7490;
 }
 </style>

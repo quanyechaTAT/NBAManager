@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用curl调用MIMO API翻译新闻（绕过Python urllib SSL问题）"""
+"""用curl调用DeepSeek API翻译新闻（绕过Python urllib SSL问题）"""
 
 import json
 import os
@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 API = 'http://localhost:8080/api'
-MIMO_KEY = os.environ.get('MIMO_API_KEY', '')
+DEEPSEEK_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
 
 
 def curl_json(method, url, data=None, headers=None):
@@ -25,11 +25,11 @@ def curl_json(method, url, data=None, headers=None):
 
 
 def translate(text):
-    """用MIMO API翻译"""
+    """用DeepSeek API翻译"""
     if not text or len(text) < 5:
         return text
     payload = {
-        'model': 'mimo-v2.5',
+        'model': 'deepseek-v4-flash',
         'messages': [
             {'role': 'system', 'content': 'NBA体育新闻翻译专家。球员用中文名，球队用中文名，术语用中文。只返回翻译。'},
             {'role': 'user', 'content': f'翻译为中文：{text}'}
@@ -38,9 +38,9 @@ def translate(text):
         'max_tokens': 4000
     }
     try:
-        result = curl_json('POST', 'https://token-plan-cn.xiaomimimo.com/v1/chat/completions', payload, {
+        result = curl_json('POST', 'https://api.deepseek.com/chat/completions', payload, {
             'Content-Type': 'application/json',
-            'Authorization': f'Bearer {MIMO_KEY}'
+            'Authorization': f'Bearer {DEEPSEEK_KEY}'
         })
         if result and 'choices' in result and result['choices']:
             return result['choices'][0]['message']['content'].strip()

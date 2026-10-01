@@ -23,7 +23,7 @@
           <div class="match-hero-team">
             <div class="hero-team-icon">
               <img v-if="homeTeamLogo" :src="homeTeamLogo" alt="" class="team-logo-img" />
-              <span v-else>🏀</span>
+              <span v-else class="icon-fallback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="1em" height="1em"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span>
             </div>
             <div class="hero-team-info">
               <span class="hero-team-name">{{ boxScore?.homeTeam || queryHomeTeam || '--' }}</span>
@@ -49,33 +49,34 @@
             </div>
             <div class="hero-team-icon">
               <img v-if="awayTeamLogo" :src="awayTeamLogo" alt="" class="team-logo-img" />
-              <span v-else>🏀</span>
+              <span v-else class="icon-fallback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="1em" height="1em"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- 关键数据对比 -->
+      <!-- 关键数据对比：统计缺失时明确说明，不渲染全零 -->
       <div class="key-comparison" v-if="boxScore">
         <div class="section-header">
           <div class="section-header-left"><h2>关键数据对比</h2></div>
         </div>
-        <div class="comparison-grid">
+        <div class="comparison-grid" v-if="statsAvailable">
           <div class="comparison-item" v-for="item in comparisonItems" :key="item.label">
-            <span class="comp-value" :class="{ win: item.homeValue > item.awayValue }">{{ item.homeValue }}</span>
+            <span class="comp-value" :class="{ win: comparisonWinner(item, 'home') }">{{ item.homeValue }}</span>
             <span class="comp-label">{{ item.label }}</span>
-            <span class="comp-value" :class="{ win: item.awayValue > item.homeValue }">{{ item.awayValue }}</span>
+            <span class="comp-value" :class="{ win: comparisonWinner(item, 'away') }">{{ item.awayValue }}</span>
           </div>
         </div>
+        <p v-else class="stats-unavailable">{{ stats.hasPlayers ? '双方统计尚未齐全，暂无法对比' : '统计暂未提供' }}</p>
       </div>
 
       <!-- Tabs -->
       <el-tabs v-model="activeTab" class="detail-tabs">
-        <el-tab-pane label="统计" name="stats">
-          <!-- 逐节比分 -->
+        <el-tab-pane label="技术统计" name="stats">
+          <!-- 数据源提供每节结束时的累计比分 -->
           <div class="section-header">
             <div class="section-header-left">
-              <h2>📊 逐节比分</h2>
+                <h2>节末比分</h2>
             </div>
           </div>
           <el-card shadow="never" class="quarter-card">
@@ -85,12 +86,12 @@
                   <span class="period-label">{{ periodLabel(row.period) }}</span>
                 </template>
               </el-table-column>
-              <el-table-column :label="boxScore?.homeTeam || '主队'" align="center">
+              <el-table-column :label="`${boxScore?.homeTeam || '主队'}累计`" align="center">
                 <template #default="{ row }">
                   <span class="quarter-score" :class="{ 'quarter-score--win': row.homeScore > row.awayScore }">{{ row.homeScore }}</span>
                 </template>
               </el-table-column>
-              <el-table-column :label="boxScore?.awayTeam || '客队'" align="center">
+              <el-table-column :label="`${boxScore?.awayTeam || '客队'}累计`" align="center">
                 <template #default="{ row }">
                   <span class="quarter-score" :class="{ 'quarter-score--win': row.awayScore > row.homeScore }">{{ row.awayScore }}</span>
                 </template>
@@ -101,11 +102,11 @@
           <!-- 球员统计 -->
           <div class="section-header">
             <div class="section-header-left">
-              <h3 class="team-table-title">{{ boxScore?.homeTeam || '主队' }}</h3>
+              <h3 class="team-table-title">{{ boxScore?.homeTeam || '主队' }} · 阵容技术统计</h3>
             </div>
           </div>
           <el-card shadow="never" class="boxscore-card">
-            <el-table :data="sortedHomePlayers" stripe v-loading="boxscoreLoading" empty-text="暂无数据" size="small">
+            <el-table :data="sortedHomePlayers" stripe v-loading="boxscoreLoading" :empty-text="boxScoreEmptyText" size="small" :row-class-name="boxScoreRowClass">
               <el-table-column label="球员" min-width="140" fixed="left">
                 <template #default="{ row }">
                   <div class="player-cell">
@@ -114,23 +115,23 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="分钟" width="70" align="center" prop="minutes" />
-              <el-table-column label="得分" width="65" align="center" prop="points" sortable />
-              <el-table-column label="篮板" width="65" align="center" prop="rebounds" sortable />
-              <el-table-column label="助攻" width="65" align="center" prop="assists" sortable />
-              <el-table-column label="抢断" width="65" align="center" prop="steals" />
-              <el-table-column label="盖帽" width="65" align="center" prop="blocks" />
-              <el-table-column label="失误" width="65" align="center" prop="turnovers" />
-              <el-table-column label="投篮" width="110" align="center">
-                <template #default="{ row }">{{ formatShooting(row.fgMade, row.fgAttempted, row.fgPct) }}</template>
+              <el-table-column label="时间 MIN" width="76" align="center" prop="minutes" />
+              <el-table-column label="得分 PTS" width="74" align="center" prop="points" sortable />
+              <el-table-column label="篮板 REB" width="74" align="center" prop="rebounds" sortable />
+              <el-table-column label="助攻 AST" width="74" align="center" prop="assists" sortable />
+              <el-table-column label="抢断 STL" width="70" align="center" prop="steals" />
+              <el-table-column label="盖帽 BLK" width="70" align="center" prop="blocks" />
+              <el-table-column label="失误 TO" width="68" align="center" prop="turnovers" />
+              <el-table-column label="投篮 FG" width="112" align="center">
+                <template #default="{ row }"><span class="shooting-stat">{{ formatShooting(row.fgMade, row.fgAttempted, row.fgPct) }}</span></template>
               </el-table-column>
-              <el-table-column label="三分" width="110" align="center">
-                <template #default="{ row }">{{ formatShooting(row.threeMade, row.threeAttempted, row.threePct) }}</template>
+              <el-table-column label="三分 3PT" width="112" align="center">
+                <template #default="{ row }"><span class="shooting-stat">{{ formatShooting(row.threeMade, row.threeAttempted, row.threePct) }}</span></template>
               </el-table-column>
-              <el-table-column label="罚球" width="110" align="center">
-                <template #default="{ row }">{{ formatShooting(row.ftMade, row.ftAttempted, row.ftPct) }}</template>
+              <el-table-column label="罚球 FT" width="112" align="center">
+                <template #default="{ row }"><span class="shooting-stat">{{ formatShooting(row.ftMade, row.ftAttempted, row.ftPct) }}</span></template>
               </el-table-column>
-              <el-table-column label="+/-" width="70" align="center" prop="plusMinus" sortable>
+              <el-table-column label="+/-" width="72" align="center" prop="plusMinus" sortable>
                 <template #default="{ row }">
                   <span :class="row.plusMinus >= 0 ? 'plus-positive' : 'plus-negative'">{{ row.plusMinus >= 0 ? '+' : '' }}{{ row.plusMinus }}</span>
                 </template>
@@ -140,11 +141,11 @@
 
           <div class="section-header" style="margin-top: 24px;">
             <div class="section-header-left">
-              <h3 class="team-table-title">{{ boxScore?.awayTeam || '客队' }}</h3>
+              <h3 class="team-table-title">{{ boxScore?.awayTeam || '客队' }} · 阵容技术统计</h3>
             </div>
           </div>
           <el-card shadow="never" class="boxscore-card">
-            <el-table :data="sortedAwayPlayers" stripe v-loading="boxscoreLoading" empty-text="暂无数据" size="small">
+            <el-table :data="sortedAwayPlayers" stripe v-loading="boxscoreLoading" :empty-text="boxScoreEmptyText" size="small" :row-class-name="boxScoreRowClass">
               <el-table-column label="球员" min-width="140" fixed="left">
                 <template #default="{ row }">
                   <div class="player-cell">
@@ -153,23 +154,23 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="分钟" width="70" align="center" prop="minutes" />
-              <el-table-column label="得分" width="65" align="center" prop="points" sortable />
-              <el-table-column label="篮板" width="65" align="center" prop="rebounds" sortable />
-              <el-table-column label="助攻" width="65" align="center" prop="assists" sortable />
-              <el-table-column label="抢断" width="65" align="center" prop="steals" />
-              <el-table-column label="盖帽" width="65" align="center" prop="blocks" />
-              <el-table-column label="失误" width="65" align="center" prop="turnovers" />
-              <el-table-column label="投篮" width="110" align="center">
-                <template #default="{ row }">{{ formatShooting(row.fgMade, row.fgAttempted, row.fgPct) }}</template>
+              <el-table-column label="时间 MIN" width="76" align="center" prop="minutes" />
+              <el-table-column label="得分 PTS" width="74" align="center" prop="points" sortable />
+              <el-table-column label="篮板 REB" width="74" align="center" prop="rebounds" sortable />
+              <el-table-column label="助攻 AST" width="74" align="center" prop="assists" sortable />
+              <el-table-column label="抢断 STL" width="70" align="center" prop="steals" />
+              <el-table-column label="盖帽 BLK" width="70" align="center" prop="blocks" />
+              <el-table-column label="失误 TO" width="68" align="center" prop="turnovers" />
+              <el-table-column label="投篮 FG" width="112" align="center">
+                <template #default="{ row }"><span class="shooting-stat">{{ formatShooting(row.fgMade, row.fgAttempted, row.fgPct) }}</span></template>
               </el-table-column>
-              <el-table-column label="三分" width="110" align="center">
-                <template #default="{ row }">{{ formatShooting(row.threeMade, row.threeAttempted, row.threePct) }}</template>
+              <el-table-column label="三分 3PT" width="112" align="center">
+                <template #default="{ row }"><span class="shooting-stat">{{ formatShooting(row.threeMade, row.threeAttempted, row.threePct) }}</span></template>
               </el-table-column>
-              <el-table-column label="罚球" width="110" align="center">
-                <template #default="{ row }">{{ formatShooting(row.ftMade, row.ftAttempted, row.ftPct) }}</template>
+              <el-table-column label="罚球 FT" width="112" align="center">
+                <template #default="{ row }"><span class="shooting-stat">{{ formatShooting(row.ftMade, row.ftAttempted, row.ftPct) }}</span></template>
               </el-table-column>
-              <el-table-column label="+/-" width="70" align="center" prop="plusMinus" sortable>
+              <el-table-column label="+/-" width="72" align="center" prop="plusMinus" sortable>
                 <template #default="{ row }">
                   <span :class="row.plusMinus >= 0 ? 'plus-positive' : 'plus-negative'">{{ row.plusMinus >= 0 ? '+' : '' }}{{ row.plusMinus }}</span>
                 </template>
@@ -178,7 +179,7 @@
           </el-card>
         </el-tab-pane>
 
-        <el-tab-pane label="投篮图" name="shotchart">
+        <el-tab-pane label="投篮热图" name="shotchart">
           <GameShotChartPanel
             :shots="gameShots"
             :mode="shotChartMode"
@@ -192,10 +193,33 @@
           />
         </el-tab-pane>
 
-        <el-tab-pane label="比赛回放" name="playbyplay">
+        <el-tab-pane label="战术情报与复盘" name="playbyplay">
           <div v-if="replayLoading" class="loading-state">加载中...</div>
+          <ReplayAvailabilityPanel
+            :state="replayState"
+            :quality="replayQuality"
+            :error="replayError"
+            :operation-id="replayOperationId"
+            :retry-after-seconds="replayRetryAfterSeconds"
+            :busy="replayBusy"
+            @prepare="replay.prepare"
+            @retry="replay.retry"
+            @refresh="replay.refresh"
+          />
+          <div v-if="!replayLoading && replaySummaryOnly" class="summary-only-panel">
+            <div class="summary-only-head">
+              <h3>节末比分摘要</h3>
+              <p>当前来源只提供节末比分，页面不会生成走势、AI 解读或伪逐回合事件。</p>
+            </div>
+            <div class="summary-only-grid">
+              <div v-for="event in timelineEvents" :key="event.id ?? event.eventOrder" class="summary-only-item">
+                <span>{{ periodLabel(event.period) }}</span>
+                <strong>{{ event.homeScore }} - {{ event.awayScore }}</strong>
+              </div>
+            </div>
+          </div>
           <GameIntelligenceCenter
-            v-else
+            v-if="!replayLoading && showReplayCenter"
             :game-id="gameId"
             :home-team="queryHomeTeam || boxScore?.homeTeam || ''"
             :away-team="queryAwayTeam || boxScore?.awayTeam || ''"
@@ -210,13 +234,14 @@
             :selected-event="selectedTimelineEvent"
             @select-event="selectedTimelineEvent = $event"
           />
+          <div v-if="!replayLoading && !replaySummaryOnly && !showReplayCenter" class="empty-inline">暂无可展示的比赛回放事实</div>
         </el-tab-pane>
 
-        <el-tab-pane label="实时聊天" name="livechat">
+        <el-tab-pane label="观赛聊天室" name="livechat">
           <LiveChat :game-id="gameId" :home-team="boxScore?.homeTeam || queryHomeTeam" :away-team="boxScore?.awayTeam || queryAwayTeam" />
         </el-tab-pane>
 
-        <el-tab-pane label="评论区" name="comments">
+        <el-tab-pane label="赛后热评" name="comments">
           <!-- 评论区 -->
           <div class="comment-section">
             <!-- 发表评论 -->
@@ -242,6 +267,10 @@
               <div class="comment-main">
                 <div class="comment-body">
                   <div class="comment-meta">
+                    <span class="comment-avatar comment-avatar--lg" :class="{ 'has-img': !!comment.avatarUrl }">
+                      <span class="comment-avatar-fallback">{{ comment.username?.charAt(0)?.toUpperCase() }}</span>
+                      <img v-if="comment.avatarUrl" :src="comment.avatarUrl" alt="" @error="onCommentAvatarError" />
+                    </span>
                     <span class="comment-user">{{ comment.username }}</span>
                     <span class="comment-time">{{ formatCommentTime(comment.createTime) }}</span>
                   </div>
@@ -261,6 +290,10 @@
               <div v-if="comment.replies && comment.replies.length > 0" class="comment-replies">
                 <div v-for="reply in comment.replies" :key="reply.id" class="comment-reply">
                   <div class="comment-meta">
+                    <span class="comment-avatar comment-avatar--sm" :class="{ 'has-img': !!reply.avatarUrl }">
+                      <span class="comment-avatar-fallback">{{ reply.username?.charAt(0)?.toUpperCase() }}</span>
+                      <img v-if="reply.avatarUrl" :src="reply.avatarUrl" alt="" @error="onCommentAvatarError" />
+                    </span>
                     <span class="comment-user">{{ reply.username }}</span>
                     <span class="comment-time">{{ formatCommentTime(reply.createTime) }}</span>
                   </div>
@@ -314,29 +347,31 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { fetchBoxScore, fetchQuarterScores, fetchPlayByPlay } from '@/api/matchDetail'
-import { fetchTimeline, fetchMomentum, fetchHighlights, fetchTurningPoints, fetchGameSummary } from '@/api/aiReplay'
+import { fetchBoxScore, fetchQuarterScores } from '@/api/matchDetail'
 import { getGameShotChart } from '@/api/shotChart'
 import { fetchGameComments, createComment, deleteComment, updateComment, toggleCommentLike } from '@/api/community'
 import EmojiPicker from '@/components/EmojiPicker.vue'
 import { useEmojiPicker } from '@/composables/useEmojiPicker'
 import { useCommentRealtime } from '@/composables/useCommentRealtime'
-import ShotChart from '@/components/ShotChart.vue'
 import GameShotChartPanel from '@/components/shot-chart/GameShotChartPanel.vue'
 import LiveChat from '@/components/LiveChat.vue'
 import GameIntelligenceCenter from '@/components/game-intelligence/GameIntelligenceCenter.vue'
+import ReplayAvailabilityPanel from '@/components/game-intelligence/ReplayAvailabilityPanel.vue'
+import { useGameReplay } from '@/composables/useGameReplay'
 import type { BoxScore, BoxScorePlayer, QuarterScore, TimelineEvent, MomentumSnapshot, Highlight, TurningPoint, ShotData } from '@/api/types'
 import type { Comment } from '@/api/community'
 import { getTeamLogo } from '@/utils/teamLogos'
+import { assessBoxScoreStats, meaningfulPlayers } from '@/utils/boxScoreStats'
 import { useAuthStore } from '@/stores/auth'
+import { useIdentityStore } from '@/stores/identity'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const identityStore = useIdentityStore()
 
 const gameId = computed(() => (route.query.gameId as string) || '')
 const status = computed(() => (route.query.status as string) || 'FINISHED')
-const returnTo = computed(() => (route.query.returnTo as string) || '')
 const queryHomeTeam = computed(() => (route.query.homeTeam as string) || '')
 const queryAwayTeam = computed(() => (route.query.awayTeam as string) || '')
 const queryHomeScore = computed(() => {
@@ -358,8 +393,7 @@ const activeTab = ref('stats')
 // Tab 切换时加载对应数据
 watch(activeTab, (tab) => {
   if (tab === 'playbyplay') {
-    loadPlayByPlay()
-    loadReplayData(gameId.value)
+    void loadReplayData()
   }
   if (tab === 'shotchart' && gameId.value && !gameShots.value.length) {
     loadGameShotChart(gameId.value)
@@ -394,7 +428,7 @@ useCommentRealtime(
   () => void loadComments(),
 )
 
-// 当boxScore加载完成后，如果quarterScores为空，则从boxScore中获取
+// 当 boxScore 加载完成后，如果 quarterScores 为空，则从 boxScore 中获取
 watch(boxScore, (newVal) => {
   if (newVal?.quarterScores?.length && !quarterScores.value.length) {
     quarterScores.value = newVal.quarterScores
@@ -407,13 +441,13 @@ const quarterLoading = ref(false)
 const quarterFallbackAttempted = ref(false)
 
 const quarterEmptyText = computed(() => {
-  if (quarterLoading.value) return '暂无逐节比分，正在尝试从官方比分源补全'
-  if (quarterFallbackAttempted.value) return '该场比赛官方逐节数据暂不可用'
-  return '暂无逐节比分数据'
+  if (quarterLoading.value) return '暂无节末比分，正在尝试从官方比分源补全'
+  if (quarterFallbackAttempted.value) return '该场比赛官方节末比分暂不可用'
+  return '暂无节末比分数据'
 })
 
 const homeTotalScore = computed(() => {
-  // 优先级: query比分 > 后端返回比分 > boxScore球员得分求和 > '--'
+  // 优先级：query 比分 > 后端返回比分 > boxScore 球员得分求和 > '--'
   if (queryHomeScore.value !== null && queryHomeScore.value > 0) return String(queryHomeScore.value)
   if (boxScore.value?.homeScore != null && boxScore.value.homeScore > 0) return String(boxScore.value.homeScore)
   if (!boxScore.value) return '--'
@@ -433,7 +467,7 @@ const awayTeamLogo = computed(() => {
 })
 
 const awayTotalScore = computed(() => {
-  // 优先级: query比分 > 后端返回比分 > boxScore球员得分求和 > '--'
+  // 优先级：query 比分 > 后端返回比分 > boxScore 球员得分求和 > '--'
   if (queryAwayScore.value !== null && queryAwayScore.value > 0) return String(queryAwayScore.value)
   if (boxScore.value?.awayScore != null && boxScore.value.awayScore > 0) return String(boxScore.value.awayScore)
   if (!boxScore.value) return '--'
@@ -450,12 +484,25 @@ function sortPlayers(players: BoxScorePlayer[]): BoxScorePlayer[] {
   })
 }
 
-const sortedHomePlayers = computed(() => sortPlayers(boxScore.value?.homePlayers ?? []))
-const sortedAwayPlayers = computed(() => sortPlayers(boxScore.value?.awayPlayers ?? []))
+function boxScoreRowClass({ row, rowIndex }: { row: BoxScorePlayer; rowIndex: number }) {
+  if (row.starter) return 'row-starter'
+  return rowIndex === 5 ? 'row-bench-first row-bench' : 'row-bench'
+}
+
+/** 过滤掉无任何统计的空行，避免整行 0 误导 */
+const sortedHomePlayers = computed(() => sortPlayers(meaningfulPlayers(boxScore.value?.homePlayers)))
+const sortedAwayPlayers = computed(() => sortPlayers(meaningfulPlayers(boxScore.value?.awayPlayers)))
+
+/** 技术统计是否可用：两队都无有效数据时判定缺失 */
+const stats = computed(() => assessBoxScoreStats(boxScore.value))
+const statsAvailable = computed(() => stats.value.available)
+const boxScoreEmptyText = computed(() =>
+  boxscoreLoading.value ? '' : (stats.value.available ? '暂无数据' : '统计暂未提供')
+)
 
 // 关键数据对比
 const comparisonItems = computed(() => {
-  if (!boxScore.value) return []
+  if (!boxScore.value || !statsAvailable.value) return []
   const h = boxScore.value.homePlayers ?? []
   const a = boxScore.value.awayPlayers ?? []
   const sum = (players: any[], field: string) => players.reduce((s: number, p: any) => s + (p[field] ?? 0), 0)
@@ -477,13 +524,22 @@ const comparisonItems = computed(() => {
   ]
 })
 
+/** 字符串比分与百分比均按数值比较；失误数较少的一方高亮。 */
+function comparisonWinner(item: { label: string; homeValue: string; awayValue: string }, side: 'home' | 'away') {
+  const home = Number.parseFloat(item.homeValue)
+  const away = Number.parseFloat(item.awayValue)
+  if (!Number.isFinite(home) || !Number.isFinite(away) || home === away) return false
+  const lowerIsBetter = item.label === '总失误'
+  return side === 'home' ? (lowerIsBetter ? home < away : home > away) : (lowerIsBetter ? away < home : away > home)
+}
+
 function statusType(s: string) {
-  const map: Record<string, string> = { SCHEDULED: 'warning', LIVE: 'danger', FINISHED: 'info' }
+  const map: Record<string, string> = { SCHEDULED: 'warning', LIVE: 'info', FINISHED: 'info' }
   return map[s] || 'info'
 }
 
 function statusLabel(s: string) {
-  const map: Record<string, string> = { SCHEDULED: '未开始', LIVE: '进行中', FINISHED: '已结束' }
+  const map: Record<string, string> = { SCHEDULED: '未开赛', LIVE: '进行中', FINISHED: '已结束' }
   return map[s] || s
 }
 
@@ -515,17 +571,33 @@ async function loadBoxScore() {
   }
 }
 
-// Play-by-Play
-const playByPlay = ref<any[]>([])
-const pbpLoading = ref(false)
-
 // AI Replay data
-const timelineEvents = ref<TimelineEvent[]>([])
-const momentumData = ref<MomentumSnapshot[]>([])
-const highlightsData = ref<Highlight[]>([])
-const turningPointsData = ref<TurningPoint[]>([])
+const replay = useGameReplay(gameId, { autoLoad: false, autoPrepare: false })
+const replayState = replay.state
+const replayError = replay.error
+const replayQuality = replay.quality
+const replayBusy = replay.isBusy
+const replayOperationId = replay.operationId
+const replayRetryAfterSeconds = replay.retryAfterSeconds
+const timelineEvents = computed<TimelineEvent[]>(() => replay.data.value?.timeline ?? [])
+const momentumData = computed<MomentumSnapshot[]>(() => replay.data.value?.momentum ?? [])
+const highlightsData = computed<Highlight[]>(() => replay.data.value?.highlights ?? [])
+const turningPointsData = computed<TurningPoint[]>(() => replay.data.value?.turningPoints ?? [])
+const gameSummary = computed(() => replay.data.value?.cachedSummary ?? null)
+const replaySummaryOnly = computed(() => replayQuality.value?.level === 'SUMMARY_ONLY')
+const showReplayCenter = computed(() => (
+  (replayState.value === 'ready' || replayState.value === 'partial')
+  && !replaySummaryOnly.value
+  && timelineEvents.value.length > 0
+))
 const selectedTimelineEvent = ref<TimelineEvent | null>(null)
-const replayLoading = ref(false)
+const replayLoading = computed(() => replayBusy.value && !replay.data.value)
+
+watch(timelineEvents, (events) => {
+  if (!selectedTimelineEvent.value) return
+  const stillVisible = events.some(event => event.id === selectedTimelineEvent.value?.id)
+  if (!stillVisible) selectedTimelineEvent.value = null
+})
 
 // 投篮图状态
 const shotChartLoading = ref(false)
@@ -534,46 +606,9 @@ const shotChartMode = ref<string>('UNAVAILABLE')
 const shotChartSource = ref<string>('')
 const shotChartMessage = ref<string>('')
 
-async function loadPlayByPlay() {
-  if (!gameId.value || playByPlay.value.length) return
-  pbpLoading.value = true
-  try {
-    const { data } = await fetchPlayByPlay(gameId.value)
-    playByPlay.value = data ?? []
-  } catch {
-    ElMessage.error('加载比赛回放失败')
-  } finally {
-    pbpLoading.value = false
-  }
-}
-
-const gameSummary = ref<any>(null)
-
-async function loadReplayData(gameIdStr: string) {
-  replayLoading.value = true
-  try {
-    const [timeline, momentum, highlights, turningPoints, summary] = await Promise.all([
-      fetchTimeline(gameIdStr).catch(() => []),
-      fetchMomentum(gameIdStr).catch(() => []),
-      fetchHighlights(gameIdStr).catch(() => []),
-      fetchTurningPoints(gameIdStr).catch(() => []),
-      fetchGameSummary(gameIdStr).catch(() => null)
-    ])
-    timelineEvents.value = timeline
-    momentumData.value = momentum
-    highlightsData.value = highlights
-    turningPointsData.value = turningPoints
-    gameSummary.value = summary
-  } finally {
-    replayLoading.value = false
-  }
-}
-
-function handleMomentumClick(snapshot: MomentumSnapshot) {
-  const event = timelineEvents.value.find(e => e.eventOrder === snapshot.eventOrder)
-  if (event) {
-    selectedTimelineEvent.value = event
-  }
+async function loadReplayData() {
+  if (!gameId.value) return
+  await replay.load()
 }
 
 // 投篮图过滤
@@ -712,6 +747,25 @@ function formatCommentTime(t: string) {
 }
 
 
+// 实时身份同步：更新评论用户名/头像
+watch(() => identityStore.revision, () => {
+  comments.value = comments.value.map(c => applyIdentityToComment(c))
+})
+
+function onCommentAvatarError(e: Event) {
+  const img = e.target as HTMLImageElement
+  img.style.display = 'none'
+}
+
+function applyIdentityToComment(c: Comment): Comment {
+  const id = identityStore.getIdentity(c.userId)
+  const updated = id ? { ...c, username: id.username, avatarUrl: id.avatarUrl } : c
+  if (c.replies?.length) {
+    updated.replies = c.replies.map(r => applyIdentityToComment(r))
+  }
+  return updated
+}
+
 onMounted(async () => {
   // 并行加载数据
   await Promise.all([
@@ -721,7 +775,7 @@ onMounted(async () => {
   ])
   // 如果默认 tab 是 playbyplay，也加载回放数据
   if (activeTab.value === 'playbyplay' && gameId.value) {
-    loadReplayData(gameId.value)
+    void loadReplayData()
   }
 })
 </script>
@@ -768,12 +822,13 @@ onMounted(async () => {
 .match-hero {
   background: var(--bg-card);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-xl);
+  border-radius: 18px;
   padding: 28px 32px;
   margin-bottom: 24px;
   position: relative;
   overflow: hidden;
-  animation: matchHeroIn 0.6s var(--ease-smooth) forwards;
+  animation: courtside-rise 0.5s var(--ease-out-expo, ease) both;
+  box-shadow: var(--shadow-md);
   opacity: 0;
   transform: translateY(16px);
 }
@@ -785,7 +840,7 @@ onMounted(async () => {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-light), var(--purple));
+  background: linear-gradient(90deg, var(--accent-light), var(--accent));
 }
 .match-hero::after {
   content: '';
@@ -794,7 +849,7 @@ onMounted(async () => {
   right: -10%;
   width: 300px;
   height: 300px;
-  background: radial-gradient(circle, var(--purple-glow) 0%, transparent 70%);
+  background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
   opacity: 0.3;
   pointer-events: none;
 }
@@ -820,7 +875,7 @@ onMounted(async () => {
   width: 60px;
   height: 60px;
   border-radius: var(--radius-lg);
-  background: var(--purple-dim);
+  background: var(--accent-lighter);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -831,8 +886,8 @@ onMounted(async () => {
   transition: all var(--duration-normal) var(--ease-smooth);
 }
 .match-hero:hover .hero-team-icon {
-  border-color: var(--purple);
-  box-shadow: 0 0 16px var(--purple-glow);
+  border-color: var(--accent);
+  box-shadow: 0 0 16px var(--accent-glow);
 }
 .team-logo-img {
   width: 48px;
@@ -886,11 +941,14 @@ onMounted(async () => {
 
 /* LIVE 脉冲动画 */
 .live-badge {
+  --el-tag-bg-color: rgba(var(--live-rgb), 0.13);
+  --el-tag-border-color: rgba(var(--live-rgb), 0.42);
+  --el-tag-text-color: var(--live);
   animation: livePulse 1.5s ease-in-out infinite;
 }
 @keyframes livePulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--danger-glow); }
-  50% { opacity: 0.5; box-shadow: 0 0 16px var(--danger-glow); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(var(--live-rgb), 0.18); }
+  50% { opacity: 0.72; box-shadow: 0 0 16px rgba(var(--live-rgb), 0.3); }
 }
 
 /* section header */
@@ -1002,8 +1060,20 @@ onMounted(async () => {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--purple), var(--accent));
+  background: linear-gradient(90deg, var(--accent-light), var(--accent));
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+.boxscore-card :deep(.el-table__row.row-starter) {
+  font-weight: 500;
+}
+.boxscore-card :deep(.el-table__row.row-bench-first td) {
+  border-top: 2px dashed rgba(var(--accent-rgb), 0.3) !important;
+}
+.shooting-stat {
+  font-family: var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-primary);
 }
 .player-cell {
   display: flex;
@@ -1020,19 +1090,34 @@ onMounted(async () => {
 }
 .starter-tag {
   font-size: 10px !important;
-  padding: 0 4px !important;
-  height: 16px !important;
+  padding: 0 5px !important;
+  height: 18px !important;
   line-height: 16px !important;
+  border-radius: 4px !important;
+  background: var(--accent-soft) !important;
+  color: var(--accent) !important;
+  border: 1px solid rgba(var(--accent-rgb), 0.35) !important;
+  font-weight: 700 !important;
 }
 .plus-positive {
-  color: var(--accent);
-  font-weight: 600;
-  text-shadow: 0 0 8px var(--accent-glow);
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm, 6px);
+  background: rgba(16, 185, 129, 0.12);
+  color: #10B981;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid rgba(16, 185, 129, 0.28);
 }
 .plus-negative {
-  color: var(--danger);
-  font-weight: 600;
-  text-shadow: 0 0 8px var(--danger-glow);
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm, 6px);
+  background: rgba(239, 68, 68, 0.1);
+  color: #EF4444;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid rgba(239, 68, 68, 0.28);
 }
 
 /* 节次筛选 */
@@ -1058,7 +1143,7 @@ onMounted(async () => {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--cyan), var(--purple));
+  background: linear-gradient(90deg, var(--accent-light), var(--accent));
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 .pbp-list {
@@ -1163,7 +1248,7 @@ onMounted(async () => {
   transition: all var(--duration-fast) var(--ease-smooth);
 }
 .comment-item:hover {
-  background: var(--purple-dim);
+  background: var(--bg-hover);
   border-radius: var(--radius-md);
   padding-left: 8px;
 }
@@ -1186,6 +1271,15 @@ onMounted(async () => {
   font-size: 12px;
   color: var(--text-dim);
 }
+.comment-avatar { position: relative; border-radius: 50%; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-medium); background: var(--accent-lighter); }
+.comment-avatar--lg { width: 40px; height: 40px; }
+.comment-avatar--sm { width: 28px; height: 28px; }
+.comment-avatar-fallback { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: var(--accent); font-weight: 700; font-size: inherit; }
+.comment-avatar--lg .comment-avatar-fallback { font-size: 16px; }
+.comment-avatar--sm .comment-avatar-fallback { font-size: 11px; }
+.comment-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+.comment-avatar.has-img .comment-avatar-fallback { display: none; }
+.comment-avatar img[style*="display: none"] ~ .comment-avatar-fallback { display: flex; }
 .comment-text {
   margin: 0 0 8px;
   font-size: 14px;
@@ -1225,6 +1319,17 @@ onMounted(async () => {
 /* 关键数据对比 */
 .key-comparison {
   margin-bottom: 20px;
+}
+/* 统计缺失提示：替代全零网格 */
+.stats-unavailable {
+  margin: 0;
+  padding: 28px 20px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  background: var(--bg-card);
+  border: 1px dashed var(--border-medium);
+  border-radius: 10px;
 }
 .comparison-grid {
   display: grid;
@@ -1298,11 +1403,71 @@ onMounted(async () => {
   font-size: 14px;
 }
 
+.summary-only-panel {
+  margin-top: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(34, 197, 94, 0.08), rgba(59, 130, 246, 0.04)),
+    rgba(14, 16, 19, 0.72);
+  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.28);
+  padding: 20px;
+}
+
+.summary-only-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.summary-only-head h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.summary-only-head p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.summary-only-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 10px;
+}
+
+.summary-only-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 14px;
+  background: rgba(14, 16, 19, 0.52);
+  padding: 12px 14px;
+}
+
+.summary-only-item span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.summary-only-item strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+}
+
 .loading-state {
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 16px;
-  background: rgba(15, 23, 42, 0.72);
-  color: #94a3b8;
+  background: rgba(14, 16, 19, 0.72);
+  color: var(--text-secondary);
   padding: 60px;
   text-align: center;
 }

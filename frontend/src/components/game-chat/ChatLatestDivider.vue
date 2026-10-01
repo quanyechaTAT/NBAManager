@@ -13,11 +13,13 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+withDefaults(defineProps<{
   isAtBottom: boolean
   hasNewMessages: boolean
   messagesLength?: number
-}>()
+}>(), {
+  messagesLength: 0,
+})
 
 defineEmits<{ 'scroll-to-bottom': [] }>()
 </script>

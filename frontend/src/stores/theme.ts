@@ -4,9 +4,9 @@ import { ref, watch } from 'vue'
 const THEME_KEY = 'nba_theme'
 
 export const useThemeStore = defineStore('theme', () => {
-  const theme = ref<'dark' | 'light'>(
-    (localStorage.getItem(THEME_KEY) as 'dark' | 'light') || 'dark'
-  )
+  const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
+  const stored = localStorage.getItem(THEME_KEY) as 'dark' | 'light' | null
+  const theme = ref<'dark' | 'light'>(stored ?? (prefersLight ? 'light' : 'dark'))
 
   function applyTheme(t: 'dark' | 'light') {
     document.documentElement.setAttribute('data-theme', t)

@@ -27,9 +27,16 @@ public class ChatMessageService {
 
     private final ChatMessageRepository repo;
     private final UserAccountRepository userAccountRepository;
+    private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
     private static final int MAX_CONTENT_LENGTH = 500;
     private static final int RATE_LIMIT_COUNT = 5;
     private static final int RATE_LIMIT_SECONDS = 10;
+    private static final String RATE_LIMIT_KEY_PREFIX = "nba:chat:rl:";
+    // 原子窗口计数：INCR + 首次 PEXPIRE。DB 计数在并发下存在读-判竞态，压测中可被穿透
+    private static final String RATE_LIMIT_LUA =
+            "local v = redis.call('INCR', KEYS[1]) " +
+            "if v == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end " +
+            "return v";
     private static final Pattern UNSAFE_CONTROL_CHARS = Pattern.compile("[\\p{Cc}\\p{Cf}&&[^\\n\\t]]");
 
     @Transactional
@@ -50,6 +57,11 @@ public class ChatMessageService {
             if (imageUrl == null || imageUrl.isBlank()) {
                 throw new IllegalArgumentException("图片消息必须包含图片URL");
             }
+            // 白名单（安全报告 §十二 12.3 I4）：只允许本服务 /uploads/ 下的图片路径，
+            // 拒绝 javascript:、外域跟踪 URL 与任意协议注入
+            if (!imageUrl.startsWith("/uploads/")) {
+                throw new IllegalArgumentException("图片URL仅允许本站 /uploads/ 路径");
+            }
         }
         // Duplicate check
         if (req.clientMessageId() != null && !req.clientMessageId().isBlank()) {
@@ -58,11 +70,16 @@ public class ChatMessageService {
                 return existing.get();
             }
         }
+        // Fetch current identity from account table (not from stale WebSocket Principal)
+        var account = userAccountRepository.findById(user.getId()).orElse(null);
+        String currentUsername = account != null ? account.getUsername() : user.getUsername();
+        String currentAvatarUrl = account != null ? account.getAvatarUrl() : avatarUrl;
+
         ChatMessage msg = new ChatMessage();
         msg.setGameId(gameId);
         msg.setUserId(user.getId());
-        msg.setUsername(user.getUsername());
-        msg.setAvatarUrl(avatarUrl);
+        msg.setUsername(currentUsername);
+        msg.setAvatarUrl(currentAvatarUrl);
         msg.setMessageType(type);
         msg.setContent(content);
         msg.setImageUrl(imageUrl);
@@ -77,12 +94,18 @@ public class ChatMessageService {
         var page = PageRequest.of(0, safeLimit, Sort.by(Sort.Direction.DESC, "id"));
         List<ChatMessage> messages = repo.findHistory(gameId, beforeId, page);
         Set<Long> userIds = messages.stream().map(ChatMessage::getUserId).collect(Collectors.toSet());
-        Map<Long, String> currentAvatars = userAccountRepository.findAllById(userIds).stream()
+        // 批量加载当前身份（用户名 + 头像），覆盖历史快照
+        Map<Long, com.nbamanager.domain.UserAccount> identityMap = userAccountRepository.findAllById(userIds).stream()
                 .collect(Collectors.toMap(
-                        account -> account.getId(),
-                        account -> account.getAvatarUrl() == null ? "" : account.getAvatarUrl()));
+                        com.nbamanager.domain.UserAccount::getId,
+                        account -> account));
         return messages.stream()
-                .map(message -> toResponse(message, currentAvatars.get(message.getUserId())))
+                .map(message -> {
+                    com.nbamanager.domain.UserAccount account = identityMap.get(message.getUserId());
+                    String currentUsername = account != null ? account.getUsername() : message.getUsername();
+                    String currentAvatar = account != null && account.getAvatarUrl() != null ? account.getAvatarUrl() : null;
+                    return toResponseWithIdentity(message, currentUsername, currentAvatar);
+                })
                 .toList();
     }
 
@@ -98,6 +121,18 @@ public class ChatMessageService {
     }
 
     public boolean isRateLimited(Long userId) {
+        // Redis 原子窗口（拒绝的消息也计入窗口，防刷更严）；Redis 不可用时回退 DB 计数
+        try {
+            Long count = stringRedisTemplate.execute(
+                    new org.springframework.data.redis.core.script.DefaultRedisScript<>(RATE_LIMIT_LUA, Long.class),
+                    java.util.List.of(RATE_LIMIT_KEY_PREFIX + userId),
+                    String.valueOf(RATE_LIMIT_SECONDS * 1000));
+            if (count != null) {
+                return count > RATE_LIMIT_COUNT;
+            }
+        } catch (Exception e) {
+            log.warn("聊天限流 Redis 不可用，回退 DB 计数: {}", e.getMessage());
+        }
         Instant since = Instant.now().minusSeconds(RATE_LIMIT_SECONDS);
         long count = repo.countRecentByUser(userId, since);
         return count >= RATE_LIMIT_COUNT;
@@ -128,18 +163,23 @@ public class ChatMessageService {
 
     private ChatMessageResponse toResponse(ChatMessage msg, String currentAvatarUrl) {
         return new ChatMessageResponse(
-                msg.getId(),
-                msg.getClientMessageId(),
-                msg.getGameId(),
-                msg.getUserId(),
-                msg.getUsername(),
+                msg.getId(), msg.getClientMessageId(), msg.getGameId(),
+                msg.getUserId(), msg.getUsername(),
                 currentAvatarUrl == null || currentAvatarUrl.isBlank() ? null : currentAvatarUrl,
-                null, // role will be enriched at broadcast time
-                msg.getMessageType(),
+                null, msg.getMessageType(),
                 msg.isDeleted() ? null : msg.getContent(),
                 msg.isDeleted() ? null : msg.getImageUrl(),
-                msg.getCreatedAt(),
-                msg.isDeleted()
-        );
+                msg.getCreatedAt(), msg.isDeleted());
+    }
+
+    private ChatMessageResponse toResponseWithIdentity(ChatMessage msg, String currentUsername, String currentAvatarUrl) {
+        return new ChatMessageResponse(
+                msg.getId(), msg.getClientMessageId(), msg.getGameId(),
+                msg.getUserId(), currentUsername,
+                currentAvatarUrl == null || currentAvatarUrl.isBlank() ? null : currentAvatarUrl,
+                null, msg.getMessageType(),
+                msg.isDeleted() ? null : msg.getContent(),
+                msg.isDeleted() ? null : msg.getImageUrl(),
+                msg.getCreatedAt(), msg.isDeleted());
     }
 }

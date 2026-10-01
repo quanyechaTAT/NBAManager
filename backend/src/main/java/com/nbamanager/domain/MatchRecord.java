@@ -64,5 +64,9 @@ public class MatchRecord {
     @Column(length = 16)
     private String nbaGameId;
 
+    /** SUMMER_LEAGUE / REGULAR_SEASON / PLAYOFFS / NBA_CUP */
+    @Column(name = "game_type", length = 24)
+    private String gameType;
+
 
 }

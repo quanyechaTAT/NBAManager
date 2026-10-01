@@ -22,25 +22,25 @@ defineProps<{ total: number }>()
 <style scoped>
 .legend-panel {
   display: flex; flex-direction: column; gap: 10px; padding: 20px;
-  background: rgba(17, 24, 39, 0.72);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
   border-radius: 14px;
 }
-.legend-title { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 1.5px; }
+.legend-title { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; }
 .legend-items { display: flex; gap: 20px; }
 .legend-item { display: flex; align-items: center; gap: 8px; }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
 .dot-made { background: #00E676; box-shadow: 0 0 6px rgba(0,230,118,0.4); }
 .dot-missed { background: #FF5252; box-shadow: 0 0 6px rgba(255,82,82,0.4); }
-.legend-label { font-size: 12px; color: #94a3b8; }
-.legend-total { font-size: 11px; color: #475569; }
+.legend-label { font-size: 12px; color: var(--text-secondary); }
+.legend-total { font-size: 11px; color: var(--text-dim); }
 
 /* ===== 亮色主题 ===== */
 [data-theme="light"] .legend-panel {
   background: rgba(0, 0, 0, 0.02);
   border-color: rgba(0, 0, 0, 0.08);
 }
-[data-theme="light"] .legend-title { color: #475569; }
-[data-theme="light"] .legend-label { color: #475569; }
-[data-theme="light"] .legend-total { color: #64748b; }
+[data-theme="light"] .legend-title { color: var(--text-dim); }
+[data-theme="light"] .legend-label { color: var(--text-dim); }
+[data-theme="light"] .legend-total { color: var(--text-muted); }
 </style>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, type ComponentPublicInstance } from 'vue'
 import type { TimelineEvent } from '@/api/types'
 import { getTimelineDescription } from '@/utils/replayText'
 
@@ -17,6 +17,7 @@ const periodFilter = ref<number | 'all'>('all')
 const typeFilter = ref<string>('all')
 const searchQuery = ref('')
 const rowRefs = new Map<number, HTMLElement>()
+const timelineScrollRef = ref<HTMLElement | null>(null)
 
 const periods = [
   { label: '全部', value: 'all' as const },
@@ -128,12 +129,26 @@ function hasScore(event: TimelineEvent): boolean {
     && event.awayScore !== null && event.awayScore !== undefined
 }
 
-function setRowRef(event: TimelineEvent, el: Element | null) {
-  if (el instanceof HTMLElement) {
-    rowRefs.set(event.id, el)
+function setRowRef(event: TimelineEvent, el: Element | ComponentPublicInstance | null) {
+  const target = el instanceof HTMLElement
+    ? el
+    : el && !(el instanceof Element) && el.$el instanceof HTMLElement
+      ? el.$el
+      : null
+  if (target) {
+    rowRefs.set(event.id, target)
   } else {
     rowRefs.delete(event.id)
   }
+}
+
+function centerRowInScroller(id: number) {
+  const scroller = timelineScrollRef.value
+  const row = rowRefs.get(id)
+  if (!scroller || !row) return
+
+  const targetTop = row.offsetTop - (scroller.clientHeight / 2) + (row.clientHeight / 2)
+  scroller.scrollTop = Math.max(0, targetTop)
 }
 
 watch(
@@ -147,11 +162,7 @@ watch(
       searchQuery.value = ''
     }
     await nextTick()
-    rowRefs.get(id)?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'center',
-      inline: 'nearest',
-    })
+    centerRowInScroller(id)
   }
 )
 </script>
@@ -198,7 +209,7 @@ watch(
     </div>
 
     <!-- Timeline -->
-    <div class="timeline-scroll">
+    <div ref="timelineScrollRef" class="timeline-scroll">
       <div
         v-if="filteredEvents.length === 0"
         class="empty-state"
@@ -213,7 +224,13 @@ watch(
         :ref="(el) => setRowRef(event, el)"
         class="timeline-row"
         :class="{ selected: isSelected(event) }"
+        role="button"
+        tabindex="0"
+        :aria-pressed="isSelected(event)"
+        :aria-label="`${periodLabel(event.period)} ${event.gameClock} ${event.playerName || '事件'} ${getTimelineDescription(event)}`"
         @click="onSelect(event)"
+        @keydown.enter.prevent="onSelect(event)"
+        @keydown.space.prevent="onSelect(event)"
       >
         <!-- Timeline line + dot -->
         <div class="timeline-track">
@@ -385,6 +402,12 @@ watch(
   transform: translateY(-1px);
 }
 
+.timeline-row:focus-visible {
+  outline: 2px solid var(--gi-home, #3B82F6);
+  outline-offset: 3px;
+  border-radius: 14px;
+}
+
 .timeline-row:hover .event-card {
   border-color: rgba(255,255,255,0.18);
 }
@@ -484,7 +507,7 @@ watch(
 }
 
 .away-score {
-  color: var(--gi-away, #F97316);
+  color: var(--gi-away, #22D3EE);
 }
 
 .score-sep {

@@ -1,20 +1,22 @@
 """API routes for NBA Copilot"""
 import uuid
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from agents.supervisor import classify_intent
 from agents.replay_agent import handle as replay_handle
 from agents.stats_agent import handle as stats_handle
 from agents.general_agent import handle as general_handle
 
 router = APIRouter(prefix="/api/nba-copilot")
+MAX_MESSAGE_CHARS = 2000
 
 # In-memory conversation store (replace with DB in production)
 conversations: dict[str, dict] = {}
 
 class ChatRequest(BaseModel):
     conversationId: str | None = None
-    message: str
+    # 长度上限：message 直送 LLM，防超长输入的 token 成本攻击
+    message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
     context: dict | None = None
 
 class ChatResponse(BaseModel):

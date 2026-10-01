@@ -71,6 +71,7 @@ class DashboardOverviewServiceTest {
                 3L,
                 2L,
                 "fan",
+                null,
                 "Finals preview",
                 "content",
                 "general",

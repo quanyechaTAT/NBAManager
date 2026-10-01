@@ -28,13 +28,13 @@ const router = createRouter({
           path: 'dashboard',
           name: 'dashboard',
           component: () => import('@/views/DashboardView.vue'),
-          meta: { title: '数据看板' },
+          meta: { title: '赛事总览' },
         },
         {
           path: 'teams',
           name: 'teams',
           component: () => import('@/views/TeamListView.vue'),
-          meta: { title: '球队战绩' },
+          meta: { title: '球队战绩榜' },
         },
         {
           path: 'teams/detail',
@@ -46,25 +46,25 @@ const router = createRouter({
           path: 'players',
           name: 'players',
           component: () => import('@/views/PlayerListView.vue'),
-          meta: { title: '球员数据' },
+          meta: { title: '球星档案库' },
         },
         {
           path: 'players/detail',
           name: 'player-detail',
           component: () => import('@/views/PlayerDetailView.vue'),
-          meta: { title: '球员详情', requiresAuth: true },
+          meta: { title: '球星详情', requiresAuth: true },
         },
         {
           path: 'players/compare',
           name: 'player-compare',
           component: () => import('@/views/PlayerCompareView.vue'),
-          meta: { title: '球员对比' },
+          meta: { title: '双星对决' },
         },
         {
           path: 'news',
           name: 'news',
           component: () => import('@/views/NewsView.vue'),
-          meta: { title: '赛事资讯' },
+          meta: { title: '赛事中心' },
         },
         {
           path: 'match-detail',
@@ -76,49 +76,49 @@ const router = createRouter({
           path: 'community',
           name: 'community',
           component: () => import('@/views/CommunityView.vue'),
-          meta: { title: '社区' },
+          meta: { title: '球迷看台' },
         },
         {
           path: 'community/post',
           name: 'post-detail',
           component: () => import('@/views/PostDetailView.vue'),
-          meta: { title: '帖子详情' },
+          meta: { title: '看台热议' },
         },
         {
           path: 'drafts',
           name: 'drafts',
           component: () => import('@/views/DraftView.vue'),
-          meta: { title: '选秀数据库' },
+          meta: { title: '选秀殿堂' },
         },
         {
           path: 'playoff',
           name: 'playoff',
           component: () => import('@/views/PlayoffView.vue'),
-          meta: { title: '季后赛' },
+          meta: { title: '季后赛对阵图' },
         },
         {
           path: 'history',
           name: 'history',
           component: () => import('@/views/HistoricalDataView.vue'),
-          meta: { title: '历史数据' },
+          meta: { title: '历史长卷' },
         },
         {
           path: 'smart-search',
           name: 'smart-search',
           component: () => import('@/views/SmartSearchView.vue'),
-          meta: { title: '智能问答' },
+          meta: { title: 'AI 战术智囊' },
         },
         {
           path: 'profile',
           name: 'profile',
           component: () => import('@/views/ProfileView.vue'),
-          meta: { title: '个人主页' },
+          meta: { title: '我的主场' },
         },
         {
           path: 'admin/sync',
           name: 'admin-sync',
           component: () => import('@/views/admin/DataSyncView.vue'),
-          meta: { title: '数据管理', requiresAdmin: true },
+          meta: { title: '数据调度中心', requiresAdmin: true },
         },
       ],
     },
@@ -128,6 +128,11 @@ const router = createRouter({
 router.beforeEach((to) => {
   const auth = useAuthStore()
   auth.hydrate()
+
+  const shareId = typeof to.query.share === 'string' ? to.query.share : ''
+  if (to.name === 'smart-search' && /^[A-Za-z0-9]{8,64}$/.test(shareId)) {
+    return true
+  }
 
   if (to.meta.public) {
     if (getToken() && (to.path === '/login' || to.path === '/register')) {

@@ -12,21 +12,21 @@
         <div v-if="searching" class="search-loading">搜索中...</div>
         <template v-else-if="hasResults">
           <div v-if="playerResults.length" class="search-group">
-            <div class="search-group-title">🏀 球员</div>
+            <div class="search-group-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="1em" height="1em"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg> 球员</div>
             <div v-for="p in playerResults" :key="'p'+p.id" class="search-item" @mousedown.prevent="goPlayer(p.id)">
               <span>{{ p.name }}</span>
               <span class="search-sub">{{ p.teamName }} · {{ p.position }}</span>
             </div>
           </div>
           <div v-if="teamResults.length" class="search-group">
-            <div class="search-group-title">🏟️ 球队</div>
+            <div class="search-group-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="1em" height="1em"><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg> 球队</div>
             <div v-for="t in teamResults" :key="'t'+t.id" class="search-item" @mousedown.prevent="goTeam(t.name)">
               <span>{{ t.name }}</span>
               <span class="search-sub">{{ t.city }} · {{ t.conference }}</span>
             </div>
           </div>
           <div v-if="newsResults.length" class="search-group">
-            <div class="search-group-title">📰 资讯</div>
+            <div class="search-group-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="1em" height="1em"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/></svg> 资讯</div>
             <div v-for="n in newsResults" :key="'n'+n.id" class="search-item" @mousedown.prevent="goNews">
               <span>{{ n.title.slice(0, 40) }}</span>
             </div>
@@ -113,24 +113,29 @@ function goNews() { showDropdown.value = false; query.value = ''; router.push('/
 </script>
 
 <style scoped>
-.global-search { position: relative; flex: 1; max-width: 320px; }
+.global-search { position: relative; flex: 1; max-width: 340px; }
 .search-wrap {
   display: flex;
   align-items: center;
   gap: 8px;
   background: var(--bg-input);
-  border: 1.5px solid var(--border-light);
-  border-radius: 10px;
-  padding: 7px 14px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  padding: 8px 14px;
+  transition:
+    border-color var(--duration-nav, 0.18s) var(--ease-smooth),
+    box-shadow var(--duration-nav, 0.18s) var(--ease-smooth),
+    background-color var(--duration-nav, 0.18s) var(--ease-smooth),
+    transform var(--duration-nav, 0.18s) var(--ease-out-quart, ease);
 }
 .search-wrap--focus {
-  border-color: var(--accent, var(--purple)) !important;
-  box-shadow: 0 0 0 3px rgba(232, 93, 38, 0.10);
+  border-color: rgba(34, 211, 238, 0.55) !important;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12), 0 8px 22px rgba(0, 0, 0, 0.12);
   background: var(--bg-card) !important;
+  transform: translateY(-1px);
 }
 .search-icon { color: var(--text-dim); flex-shrink: 0; transition: color 0.2s; }
-.search-wrap--focus .search-icon { color: var(--accent, var(--purple)); }
+.search-wrap--focus .search-icon { color: var(--accent); }
 .search-input {
   background: transparent;
   border: none;
@@ -142,28 +147,23 @@ function goNews() { showDropdown.value = false; query.value = ''; router.push('/
 }
 .search-input::placeholder { color: var(--text-dim); }
 
-/* ===== 亮色主题搜索框覆盖 ===== */
 [data-theme="light"] .search-wrap {
-  background: #F5F3F0 !important;
-  border-color: #E8E5E0 !important;
+  background: rgba(248, 250, 252, 0.95) !important;
+  border-color: var(--border-light) !important;
 }
 [data-theme="light"] .search-wrap--focus {
-  border-color: #E85D26 !important;
-  box-shadow: 0 0 0 3px rgba(232, 93, 38, 0.10) !important;
+  border-color: rgba(34, 211, 238, 0.45) !important;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.1), 0 8px 20px rgba(15, 23, 42, 0.06) !important;
   background: #FFFFFF !important;
 }
-[data-theme="light"] .search-icon { color: #A8A29E !important; }
-[data-theme="light"] .search-wrap--focus .search-icon { color: #E85D26 !important; }
-[data-theme="light"] .search-input { color: #1A1A1A !important; }
-[data-theme="light"] .search-input::placeholder { color: #A8A29E !important; }
 
 @media (max-width: 768px) {
   .global-search {
-    max-width: 140px;
+    max-width: 148px;
     flex: 1;
   }
   .search-wrap {
-    padding: 5px 10px;
+    padding: 6px 10px;
     gap: 4px;
   }
   .search-input {
@@ -175,18 +175,21 @@ function goNews() { showDropdown.value = false; query.value = ''; router.push('/
 <style>
 /* ===== 搜索下拉框（Teleport 到 body，全局样式） ===== */
 .search-dropdown {
-  background: var(--bg-card);
-  border: 1px solid var(--border-light);
-  border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  background: var(--surface-glass, var(--bg-card));
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid var(--surface-glass-border, var(--border-light));
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg), 0 16px 40px rgba(0, 0, 0, 0.18);
   z-index: 9999;
   max-height: 400px;
   overflow-y: auto;
-  animation: searchDropIn 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: searchDropIn 0.22s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+  overflow: hidden;
 }
 
 @keyframes searchDropIn {
-  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
@@ -206,7 +209,7 @@ function goNews() { showDropdown.value = false; query.value = ''; router.push('/
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-heading);
 }
 .search-item {
   display: flex;
@@ -216,24 +219,20 @@ function goNews() { showDropdown.value = false; query.value = ''; router.push('/
   cursor: pointer;
   font-size: 13px;
   color: var(--text-primary);
-  transition: background-color 0.15s ease;
-  border-radius: 0;
+  transition:
+    background-color 0.15s ease,
+    transform 0.15s ease,
+    padding-left 0.15s ease;
 }
-.search-item:hover { background: var(--bg-hover); }
+.search-item:hover {
+  background: var(--bg-hover);
+  padding-left: 18px;
+}
 .search-sub { font-size: 11px; color: var(--text-dim); }
 
-/* ===== 亮色主题下拉框覆盖 ===== */
 [data-theme="light"] .search-dropdown {
-  background: #FFFFFF !important;
-  border: 1px solid #E8E5E0 !important;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.04) !important;
-  border-radius: 12px !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  border: 1px solid var(--border-light) !important;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.1), 0 4px 12px rgba(15, 23, 42, 0.04) !important;
 }
-[data-theme="light"] .search-group { border-color: #F3F0EB !important; }
-[data-theme="light"] .search-group-title { color: #A8A29E !important; }
-[data-theme="light"] .search-item { color: #1A1A1A !important; }
-[data-theme="light"] .search-item:hover { background: #FAF9F7 !important; }
-[data-theme="light"] .search-sub { color: #A8A29E !important; }
-[data-theme="light"] .search-loading,
-[data-theme="light"] .search-empty { color: #A8A29E !important; }
 </style>

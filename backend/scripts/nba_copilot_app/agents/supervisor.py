@@ -1,5 +1,5 @@
 """Supervisor Agent - routes user queries to specialized agents"""
-from tools.llm_tool import call_mimo
+from tools.llm_tool import call_deepseek
 from tools.data_tools import *
 
 INTENT_SYSTEM_PROMPT = """你是 NBA Copilot 的意图分类器。根据用户消息，判断应该路由到哪个 Agent。
@@ -17,7 +17,7 @@ INTENT_SYSTEM_PROMPT = """你是 NBA Copilot 的意图分类器。根据用户�
 
 def classify_intent(message: str) -> str:
     """Classify user intent and return agent name"""
-    result = call_mimo(INTENT_SYSTEM_PROMPT, message, temperature=0.1)
+    result = call_deepseek(INTENT_SYSTEM_PROMPT, message, temperature=0.1)
     agent = result.strip().upper()
     valid = {"REPLAY", "STATS", "PLAYER", "TEAM", "NEWS", "DRAFT", "GENERAL"}
     return agent if agent in valid else "GENERAL"

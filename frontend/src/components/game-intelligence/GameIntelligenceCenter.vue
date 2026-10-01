@@ -40,7 +40,8 @@
     <TurningPointStoryRail ref="tpRailRef" :points="turningPoints" />
 
     <!-- Stat comparison -->
-    <StatComparisonPanel :items="comparisonItems" />
+    <StatComparisonPanel v-if="comparisonItems.length" :items="comparisonItems" />
+    <p v-else class="gi-stats-unavailable">双方统计尚未齐全，暂无法生成数据对比。</p>
 
     <!-- Player performance rail -->
     <PlayerPerformanceRail
@@ -81,6 +82,12 @@ const props = defineProps<{
 const emit = defineEmits<{ selectEvent: [event: TimelineEvent] }>()
 const tpRailRef = ref<InstanceType<typeof TurningPointStoryRail> | null>(null)
 
+function scrollWindowToElement(target: HTMLElement, offset = 96) {
+  const rect = target.getBoundingClientRect()
+  const top = Math.max(0, window.scrollY + rect.top - offset)
+  window.scrollTo({ top, behavior: 'smooth' })
+}
+
 function handleRunClick(startOrder: number, endOrder: number) {
   // Find matching turning point by event order range
   const match = props.turningPoints.find(tp =>
@@ -97,7 +104,7 @@ function handleRunClick(startOrder: number, endOrder: number) {
   if (match) {
     const card = railEl.querySelector(`[data-tp-id="${match.id}"]`) as HTMLElement | null
     if (card) {
-      card.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      scrollWindowToElement(card, 140)
       card.classList.add('tp-highlight')
       setTimeout(() => card.classList.remove('tp-highlight'), 1500)
       return
@@ -105,7 +112,7 @@ function handleRunClick(startOrder: number, endOrder: number) {
   }
 
   // Fallback: scroll to the turning points section
-  railEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  scrollWindowToElement(railEl)
 }
 
 function handleMomentumClick(snapshot: MomentumSnapshot) {
@@ -133,6 +140,15 @@ function handleMomentumClick(snapshot: MomentumSnapshot) {
   gap: 18px;
   padding: 0;
   animation: gi-fadeIn 0.35s ease;
+}
+.gi-stats-unavailable {
+  margin: 0;
+  padding: 18px 20px;
+  border: 1px solid var(--gi-border);
+  border-radius: 12px;
+  background: var(--gi-surface);
+  color: var(--gi-muted);
+  font-size: 13px;
 }
 @keyframes gi-fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 

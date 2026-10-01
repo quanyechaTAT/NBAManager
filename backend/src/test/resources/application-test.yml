@@ -7,6 +7,9 @@ spring:
     hibernate:
       ddl-auto: create-drop
     show-sql: false
+  flyway:
+    # 测试库为一次性空库，schema 全部由 create-drop 建立，保持与迁移解耦
+    enabled: false
   data:
     redis:
       host: ${TEST_REDIS_HOST:localhost}

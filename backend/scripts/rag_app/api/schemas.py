@@ -3,11 +3,18 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class ConversationTurn(BaseModel):
+    role: str
+    content: str
+
+
 class QueryRequest(BaseModel):
-    question: str
+    # 长度上限：question 直送 LLM（token/成本攻击面），超长一律 422 拒绝
+    question: str = Field(min_length=2, max_length=2000)
     top_k: int = Field(5, ge=1, le=20)
     session_id: str | None = None
     force_web_search: bool = False
+    conversation_history: list[ConversationTurn] = Field(default_factory=list)
 
 
 class QueryResponse(BaseModel):

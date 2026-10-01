@@ -8,6 +8,7 @@ public record CommentDto(
         Long postId,
         Long userId,
         String username,
+        String avatarUrl,
         Long parentId,
         String content,
         Integer likeCount,

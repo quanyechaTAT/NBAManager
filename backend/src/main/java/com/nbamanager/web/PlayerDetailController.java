@@ -1,6 +1,7 @@
 package com.nbamanager.web;
 
 import com.nbamanager.service.PlayerDetailService;
+import com.nbamanager.web.dto.LeagueAveragesDto;
 import com.nbamanager.web.dto.PlayerCareerStatsDto;
 import com.nbamanager.web.dto.PlayerDetailDto;
 import com.nbamanager.web.dto.PlayerGameLogDto;
@@ -38,5 +39,12 @@ public class PlayerDetailController {
             @RequestParam(required = false) String season,
             @PageableDefault(size = 10) Pageable pageable) {
         return playerDetailService.getGameLog(id, season, pageable);
+    }
+
+    /** 联盟平均与极值（球员详情页“联盟相对水平”对比条数据源） */
+    @GetMapping("/league-averages")
+    public LeagueAveragesDto getLeagueAverages(
+            @RequestParam(required = false, defaultValue = "2025-26") String season) {
+        return playerDetailService.getLeagueAverages(season);
     }
 }

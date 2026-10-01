@@ -1,5 +1,7 @@
 package com.nbamanager.web.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.nbamanager.web.support.StrictStringDeserializer;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -7,9 +9,9 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 public record PlayerRequest(
-        @NotBlank String name,
+        @JsonDeserialize(using = StrictStringDeserializer.class) @NotBlank String name,
         @NotNull Long teamId,
-        @NotBlank String position,
+        @JsonDeserialize(using = StrictStringDeserializer.class) @NotBlank String position,
         @NotNull @DecimalMin("0.0") Double pointsPerGame,
         @NotNull @DecimalMin("0.0") Double reboundsPerGame,
         @NotNull @DecimalMin("0.0") Double assistsPerGame,
@@ -24,7 +26,7 @@ public record PlayerRequest(
         @NotNull @DecimalMin("0.0") Double efficiency,
         @NotNull @DecimalMin("0.0") Double trueShootingPct,
         @NotNull @DecimalMin("0.0") Double usagePct,
-        @Size(max = 3) String jerseyNumber,
-        @NotBlank @Size(max = 32) String height,
+        @JsonDeserialize(using = StrictStringDeserializer.class) @Size(max = 3) String jerseyNumber,
+        @JsonDeserialize(using = StrictStringDeserializer.class) @NotBlank @Size(max = 32) String height,
         @NotNull @Min(0) Integer weight,
-        @NotBlank @Size(max = 64) String country) {}
+        @JsonDeserialize(using = StrictStringDeserializer.class) @NotBlank @Size(max = 64) String country) {}

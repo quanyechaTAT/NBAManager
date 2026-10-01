@@ -8,16 +8,19 @@ import com.nbamanager.repository.TeamRepository;
 import com.nbamanager.web.dto.TeamDto;
 import com.nbamanager.web.dto.TeamRankDto;
 import com.nbamanager.web.dto.TeamRequest;
+import com.nbamanager.web.support.PageRequestSanitizer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,14 +32,23 @@ public class TeamService {
     private final TeamRepository teamRepository;
     private final MatchRecordRepository matchRecordRepository;
 
+    /** 球队列表允许的排序字段（默认按胜场降序，与前端期望一致）。 */
+    private static final Set<String> ALLOWED_SORTS = Set.of(
+            "id", "name", "nameEn", "abbreviation", "city", "conference", "division",
+            "wins", "losses", "logoUrl");
+    private static final Map<String, String> SORT_ALIASES = Map.of();
+    private static final Sort DEFAULT_SORT = Sort.by(Sort.Direction.DESC, "wins");
+
     @Transactional(readOnly = true)
     public Page<TeamDto> list(String keyword, Pageable pageable) {
+        Pageable safePageable = PageRequestSanitizer.sanitize(
+                pageable, ALLOWED_SORTS, SORT_ALIASES, DEFAULT_SORT);
         Page<Team> page;
         if (keyword == null || keyword.isBlank()) {
-            page = teamRepository.findAll(pageable);
+            page = teamRepository.findAll(safePageable);
         } else {
             String q = keyword.trim();
-            page = teamRepository.findByNameContainingIgnoreCaseOrCityContainingIgnoreCase(q, q, pageable);
+            page = teamRepository.findByNameContainingIgnoreCaseOrCityContainingIgnoreCase(q, q, safePageable);
         }
         return page.map(this::toDto);
     }

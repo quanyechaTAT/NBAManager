@@ -9,6 +9,15 @@
         </el-button>
       </div>
 
+      <div v-if="!loading && !post" class="post-missing">
+        <span class="post-missing__icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="26" height="26"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg>
+        </span>
+        <strong>帖子不存在或已被删除</strong>
+        <span>该内容可能已被作者移除，去看看社区里的其他讨论吧</span>
+        <el-button type="primary" @click="router.replace('/community')">返回社区</el-button>
+      </div>
+
       <div v-loading="loading" v-if="post">
         <!-- 帖子内容 -->
         <div class="post-card">
@@ -23,7 +32,7 @@
           </div>
           <!-- 作者信息 -->
           <div class="post-author-bar" v-if="post.username">
-            <div class="author-avatar"><img v-if="post.avatarUrl" :src="post.avatarUrl" alt="" @error="(e: Event) => { (e.target as HTMLImageElement).style.display='none'; (e.target as HTMLImageElement).parentElement!.textContent = post.username?.charAt(0)?.toUpperCase() ?? '' }" /><template v-else>{{ post.username?.charAt(0)?.toUpperCase() }}</template></div>
+              <div class="author-avatar"><img v-if="post.avatarUrl" :src="post.avatarUrl" alt="" @error="onPostAvatarError" /><template v-else>{{ post.username?.charAt(0)?.toUpperCase() }}</template></div>
             <div class="author-info">
               <span class="author-name">{{ post.username }}</span>
               <span class="author-time">发布于 {{ formatTime(post.createTime) }}</span>
@@ -91,6 +100,10 @@
               <div class="comment-body">
                 <div class="comment-meta">
                   <span v-if="comment.pinned" class="pin-badge">置顶</span>
+                  <span class="comment-avatar comment-avatar--lg" :class="{ 'has-img': !!comment.avatarUrl }">
+                    <span class="comment-avatar-fallback">{{ comment.username?.charAt(0)?.toUpperCase() }}</span>
+                    <img v-if="comment.avatarUrl" :src="comment.avatarUrl" alt="" @error="onCommentAvatarError" />
+                  </span>
                   <span class="comment-user">{{ comment.username }}</span>
                   <span class="comment-time">{{ formatTime(comment.createTime) }}</span>
                 </div>
@@ -124,6 +137,10 @@
             <div v-if="comment.replies && comment.replies.length > 0" class="comment-replies">
               <div v-for="reply in comment.replies" :key="reply.id" class="comment-reply">
                 <div class="comment-meta">
+                  <span class="comment-avatar comment-avatar--sm" :class="{ 'has-img': !!reply.avatarUrl }">
+                    <span class="comment-avatar-fallback">{{ reply.username?.charAt(0)?.toUpperCase() }}</span>
+                    <img v-if="reply.avatarUrl" :src="reply.avatarUrl" alt="" @error="onCommentAvatarError" />
+                  </span>
                   <span class="comment-user">{{ reply.username }}</span>
                   <span class="comment-time">{{ formatTime(reply.createTime) }}</span>
                 </div>
@@ -240,6 +257,7 @@ const auth = useAuthStore()
 const identityStore = useIdentityStore()
 
 const loading = ref(false)
+const loadFailed = ref(false)
 const post = ref<Post | null>(null)
 const comments = ref<Comment[]>([])
 const newComment = ref('')
@@ -299,6 +317,12 @@ function formatTime(t: string) {
   return d.toLocaleDateString('zh-CN')
 }
 
+function onPostAvatarError(e: Event) {
+  const img = e.target as HTMLImageElement
+  img.style.display = 'none'
+  img.parentElement!.textContent = post.value?.username?.charAt(0)?.toUpperCase() ?? ''
+}
+
 async function loadPost() {
   if (!postId.value) return
   loading.value = true
@@ -308,7 +332,7 @@ async function loadPost() {
     if (auth.token) {
       recordBrowse('POST', postId.value).catch(() => {})
     }
-  } catch { ElMessage.error('加载帖子失败') }
+  } catch { loadFailed.value = true }
   finally { loading.value = false }
 }
 
@@ -485,6 +509,11 @@ watch(() => identityStore.revision, () => {
   comments.value = comments.value.map(c => applyIdentityToComment(c))
 })
 
+function onCommentAvatarError(e: Event) {
+  const img = e.target as HTMLImageElement
+  img.style.display = 'none'
+}
+
 function applyIdentityToComment(c: Comment): Comment {
   const id = identityStore.getIdentity(c.userId)
   const updated = id ? { ...c, username: id.username, avatarUrl: id.avatarUrl } : c
@@ -498,6 +527,42 @@ onMounted(() => { loadPost(); loadComments(); checkFavoriteStatus() })
 </script>
 
 <style scoped>
+.post-missing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 420px;
+  margin: 48px auto 64px;
+  padding: 44px 36px 40px;
+  text-align: center;
+  background: var(--bg-card);
+  border: 1px dashed var(--border-medium);
+  border-radius: 10px;
+}
+.post-missing__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 8px;
+  border-radius: 50%;
+  background: var(--accent-lighter);
+  color: var(--accent);
+}
+.post-missing strong {
+  font-family: var(--font-heading);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.post-missing span {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
 .page { max-width: 1200px; margin: 0 auto; padding: 0 20px; min-height: calc(100vh - 108px); position: relative; animation: pageFadeIn 0.3s ease forwards; opacity: 0; transform: translateY(8px); }
 @keyframes pageFadeIn { to { opacity: 1; transform: translateY(0); } }
 .back-row { margin-bottom: 16px; }
@@ -515,6 +580,14 @@ onMounted(() => { loadPost(); loadComments(); checkFavoriteStatus() })
 .post-card-top {
   height: 3px;
   background: linear-gradient(90deg, var(--accent), var(--accent-light));
+}
+.post-card {
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.22s var(--ease-out-quart, ease);
+}
+.post-card:hover {
+  box-shadow: var(--shadow-md);
 }
 .post-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding: 20px 24px 0; }
 .post-header-left { display: flex; align-items: center; gap: 8px; }
@@ -581,18 +654,18 @@ onMounted(() => { loadPost(); loadComments(); checkFavoriteStatus() })
   --el-tag-border-color: rgba(100, 116, 139, 0.28) !important;
   --el-tag-text-color: var(--text-secondary) !important;
   border-radius: 5px !important;
-  background: linear-gradient(180deg, rgba(30, 41, 59, 0.76), rgba(15, 23, 42, 0.86)) !important;
+  background: linear-gradient(180deg, rgba(27, 30, 37, 0.76), rgba(14, 16, 19, 0.86)) !important;
   border-color: rgba(100, 116, 139, 0.28) !important;
   color: var(--text-secondary) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .tag-item:hover {
-  --el-tag-border-color: rgba(232, 93, 38, 0.38) !important;
+  --el-tag-border-color: rgba(34, 211, 238, 0.38) !important;
   --el-tag-text-color: var(--accent-light) !important;
-  border-color: rgba(232, 93, 38, 0.38) !important;
+  border-color: rgba(34, 211, 238, 0.38) !important;
   color: var(--accent-light) !important;
-  background: rgba(232, 93, 38, 0.12) !important;
+  background: rgba(34, 211, 238, 0.12) !important;
 }
 
 .post-actions {
@@ -667,12 +740,27 @@ onMounted(() => { loadPost(); loadComments(); checkFavoriteStatus() })
 .comment-item {
   padding: 14px 0;
   border-bottom: 1px solid var(--border-light);
-  transition: background 0.15s;
+  transition:
+    background 0.18s ease,
+    padding-left 0.18s var(--ease-out-quart, ease);
+  border-radius: var(--radius-sm);
 }
-.comment-item:hover { background: var(--bg-hover); border-radius: var(--radius-sm); }
+.comment-item:hover {
+  background: var(--bg-hover);
+  padding-left: 4px;
+}
 .comment-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .comment-user { font-size: 13px; font-weight: 600; color: var(--accent); }
 .comment-time { font-size: 12px; color: var(--text-dim); }
+.comment-avatar { position: relative; border-radius: 50%; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-medium); background: var(--accent-lighter); }
+.comment-avatar--lg { width: 40px; height: 40px; }
+.comment-avatar--sm { width: 28px; height: 28px; }
+.comment-avatar-fallback { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: var(--accent); font-weight: 700; font-size: inherit; }
+.comment-avatar--lg .comment-avatar-fallback { font-size: 16px; }
+.comment-avatar--sm .comment-avatar-fallback { font-size: 11px; }
+.comment-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+.comment-avatar.has-img .comment-avatar-fallback { display: none; }
+.comment-avatar img[style*="display: none"] ~ .comment-avatar-fallback { display: flex; }
 .comment-text { margin: 0 0 8px; font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
 .comment-actions { display: flex; gap: 8px; align-items: center; }
 

@@ -1,6 +1,5 @@
 package com.nbamanager.service;
 
-import com.nbamanager.domain.GameNews;
 import com.nbamanager.domain.UserFavorite;
 import com.nbamanager.exception.ApiException;
 import com.nbamanager.repository.GameNewsRepository;
@@ -31,33 +30,47 @@ public class FavoriteService {
                 .collect(Collectors.toList());
     }
 
-    @CacheEvict(value = {"favorites", "dashboard"}, allEntries = true)
+    /**
+     * 收藏 / 取消收藏。
+     *
+     * 缓存：收藏 POST 会改变帖子列表基座里的 favoriteCount，因此必须连"posts"一起失效
+     * （@CacheEvict 的 condition 是整条注解级别，不能只对 POST 生效又不影响 favorites/dashboard，
+     * 所以这里对四种 targetType 统一失效；TEAM/PLAYER/NEWS 收藏是多一次可接受的空刷）。
+     */
+    @CacheEvict(value = {"favorites", "dashboard", "posts"}, allEntries = true)
     @Transactional
     public boolean toggle(Long userId, String targetType, Long targetId) {
         if (!"TEAM".equals(targetType) && !"PLAYER".equals(targetType) && !"POST".equals(targetType) && !"NEWS".equals(targetType)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "targetType 必须是 TEAM、PLAYER、POST 或 NEWS");
         }
-        if (userFavoriteRepository.existsByUserIdAndTargetTypeAndTargetId(userId, targetType, targetId)) {
-            userFavoriteRepository.deleteByUserIdAndTargetTypeAndTargetId(userId, targetType, targetId);
-            if ("NEWS".equals(targetType)) {
-                updateNewsFavoriteCount(targetId, -1);
-            }
-            return false;
-        } else {
-            UserFavorite fav = new UserFavorite();
-            fav.setUserId(userId);
-            fav.setTargetType(targetType);
-            fav.setTargetId(targetId);
-            userFavoriteRepository.save(fav);
-            if ("NEWS".equals(targetType)) {
-                updateNewsFavoriteCount(targetId, 1);
-            }
-            // 通知帖子作者被收藏
-            if ("POST".equals(targetType)) {
-                notifyPostFavorited(userId, targetId);
-            }
-            return true;
-        }
+
+        // 同一 (userId, targetType, targetId) 串行化：DELETE + INSERT 并发交错会死锁
+        return com.nbamanager.service.support.KeyedMutex.execute(
+                "favorite:" + userId + ":" + targetType + ":" + targetId,
+                () -> {
+                    int deleted = userFavoriteRepository.deleteByUserIdAndTargetTypeAndTargetId(
+                            userId, targetType, targetId);
+                    if (deleted > 0) {
+                        if ("NEWS".equals(targetType)) {
+                            updateNewsFavoriteCount(targetId, -1);
+                        }
+                        return false;
+                    }
+
+                    int inserted = userFavoriteRepository.insertIgnore(userId, targetType, targetId);
+                    if (inserted <= 0) {
+                        throw new ApiException(HttpStatus.CONFLICT, "收藏状态正在更新，请稍后重试");
+                    }
+
+                    if ("NEWS".equals(targetType)) {
+                        updateNewsFavoriteCount(targetId, 1);
+                    }
+                    // 通知帖子作者被收藏
+                    if ("POST".equals(targetType)) {
+                        notifyPostFavorited(userId, targetId);
+                    }
+                    return true;
+                });
     }
 
     private void notifyPostFavorited(Long userId, Long postId) {
@@ -69,11 +82,8 @@ public class FavoriteService {
     }
 
     private void updateNewsFavoriteCount(Long newsId, int delta) {
-        GameNews news = gameNewsRepository.findById(newsId).orElse(null);
-        if (news != null) {
-            news.setFavoriteCount(Math.max(0, news.getFavoriteCount() + delta));
-            gameNewsRepository.save(news);
-        }
+        // 原子 UPDATE：并发收藏/取消时读改写会丢失计数
+        gameNewsRepository.bumpFavoriteCount(newsId, delta);
     }
 
     @Transactional(readOnly = true)

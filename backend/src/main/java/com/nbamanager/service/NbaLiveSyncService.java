@@ -14,9 +14,14 @@ import org.json.JSONObject;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -27,15 +32,14 @@ import jakarta.annotation.PostConstruct;
 
 /**
  * NBA实时数据同步服务
- * - 每日凌晨3点同步全量数据（球队、球员、比赛）
- * - 比赛日每5分钟同步今日比赛比分
+ * - 今日比赛/新闻的实时同步执行体（由 TodayGamesSyncWorker/NewsSyncWorker 调用）
+ * - 重复新闻清理与 ESPN↔NBA gameId 映射维护
  */
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class NbaLiveSyncService {
 
-    private final NbaDataSyncService nbaDataSyncService;
     private final GameNewsRepository gameNewsRepository;
     private final MatchRecordRepository matchRecordRepository;
     private final GameNewsService gameNewsService;
@@ -49,6 +53,7 @@ public class NbaLiveSyncService {
     private final PythonScriptRunner pythonScriptRunner;
     private final PythonTimeoutProperties pythonTimeoutProperties;
     private final org.springframework.context.ApplicationContext applicationContext;
+    private final NewsPersistenceService newsPersistenceService;
 
     /**
      * 启动时清理重复新闻
@@ -74,36 +79,7 @@ public class NbaLiveSyncService {
         }
     }
 
-    /**
-     * 每日凌晨3点执行全量数据同步
-     */
-    public void scheduledFullSync() {
-        log.info("========== 定时全量同步开始 ==========");
-        nbaDataSyncService.syncAll();
-        log.info("========== 定时全量同步结束 ==========");
-    }
 
-    /**
-     * 季后赛期间每2小时同步季后赛数据（4-6月）
-     */
-    public void syncPlayoffData() {
-        try {
-            // 动态计算当前赛季
-            String season = getCurrentSeason();
-            log.info("========== 季后赛数据同步开始: {} ==========", season);
-
-            // 调用季后赛数据同步
-            Map<String, Object> result = nbaDataService.fetchAndImportPlayoffData(season);
-            Integer imported = (Integer) result.get("imported");
-            if (imported != null && imported > 0) {
-                log.info("季后赛数据同步完成: 导入{}组对阵", imported);
-            }
-
-            log.info("========== 季后赛数据同步结束 ==========");
-        } catch (Exception e) {
-            log.warn("季后赛数据同步失败: {}", e.getMessage());
-        }
-    }
 
     /**
      * 获取当前赛季（10月前为上赛季，10月后为本赛季）
@@ -154,8 +130,14 @@ public class NbaLiveSyncService {
         if ("empty".equals(sourceStatus) && !newsArray.isEmpty()) {
             return SyncExecResult.failed("状态empty但有数据，协议错误");
         }
-        if (!"ok".equals(sourceStatus) && !"empty".equals(sourceStatus)) {
+        if (!"ok".equals(sourceStatus) && !"empty".equals(sourceStatus)
+                && !"partial".equals(sourceStatus)) {
             return SyncExecResult.failed("未知状态: " + sourceStatus);
+        }
+
+        if ("partial".equals(sourceStatus)) {
+            return SyncExecResult.partial(newsArray.length(), 0, 0,
+                    "部分新闻源失败: " + providerSummary);
         }
 
         if (newsArray.isEmpty()) {
@@ -175,7 +157,14 @@ public class NbaLiveSyncService {
 
     @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
     public SyncExecResult syncNbaNewsWithResult(Long jobId) {
+        return syncNbaNewsWithResult(jobId, (progress, stage) -> {});
+    }
+
+    @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
+    public SyncExecResult syncNbaNewsWithResult(
+            Long jobId, java.util.function.BiConsumer<Integer, String> progress) {
         try {
+            progress.accept(10, "FETCHING");
             PythonJsonResult fetched = fetchNewsData(jobId);
             if (fetched.failure() != null) {
                 return fetched.failure();
@@ -186,15 +175,16 @@ public class NbaLiveSyncService {
                 return parsed;
             }
             if (parsed.fetched() == 0) {
+                progress.accept(90, "RETAINING");
+                gameNewsService.cleanupOldNews(100);
                 return parsed;
             }
 
+            progress.accept(55, "DEDUPLICATING");
             JSONArray newsArray = data.getJSONArray("news");
-            int added = 0;
-            for (int i = 0; i < newsArray.length(); i++) {
-                JSONObject newsItem = newsArray.getJSONObject(i);
-                added += createNewsFromESPN(newsItem);
-            }
+            progress.accept(70, "PERSISTING");
+            NewsPersistenceService.PersistResult persisted = newsPersistenceService.persist(newsArray);
+            int added = persisted.inserted();
 
             if (added > 0) {
                 log.info("NBA新闻同步完成: 新增{}条新闻", added);
@@ -208,10 +198,14 @@ public class NbaLiveSyncService {
                 }
             }
 
-            gameNewsService.cleanupOldNews(100);
+            progress.accept(90, "RETAINING");
             postService.cleanupOldPosts(100);
 
-            return SyncExecResult.success(newsArray.length(), added, 0);
+            if (parsed.partial()) {
+                return SyncExecResult.partial(
+                        persisted.fetched(), added, 0, parsed.error());
+            }
+            return SyncExecResult.success(persisted.fetched(), added, 0);
 
         } catch (Exception e) {
             log.error("NBA新闻同步失败", e);
@@ -492,8 +486,17 @@ public class NbaLiveSyncService {
             int awayScore = game.optInt("awayScore", 0);
             String status = game.optString("status", "FINISHED");
 
-            // 检查是否已存在
+            // 检查是否已存在；历史记录缺少比赛类型时顺便补齐
             if (matchRecordRepository.existsByHomeTeamAndAwayTeamAndMatchDate(homeTeam, awayTeam, matchDate)) {
+                MatchRecord existing = matchRecordRepository
+                        .findByHomeTeamAndAwayTeamAndMatchDate(homeTeam, awayTeam, matchDate)
+                        .orElse(null);
+                if (existing != null
+                        && (existing.getGameType() == null || existing.getGameType().isBlank())) {
+                    existing.setGameType(MatchGameTypeResolver.resolve(
+                            game.optString("gameType", null), nbaGameId, matchDate));
+                    matchRecordRepository.save(existing);
+                }
                 return;
             }
 
@@ -506,6 +509,8 @@ public class NbaLiveSyncService {
             record.setSeason(getCurrentSeason());
             record.setStatus(status);
             record.setNbaGameId(nbaGameId);
+            record.setGameType(MatchGameTypeResolver.resolve(
+                    game.optString("gameType", null), nbaGameId, matchDate));
 
             matchRecordRepository.save(record);
             log.info("保存比赛记录: {} vs {}, {}-{}, {}", homeTeam, awayTeam, homeScore, awayScore, matchDate);
@@ -545,10 +550,37 @@ public class NbaLiveSyncService {
 
     private PythonJsonResult fetchNewsData(Long jobId) {
         int timeoutSeconds = pythonTimeoutProperties.getLiveSeconds();
-        PythonScriptRunner.PythonResult result = jobId != null
-                ? pythonScriptRunner.runForJob("nba_data_fetcher.py", new String[]{"news", "20"}, timeoutSeconds, jobId)
-                : pythonScriptRunner.run("nba_data_fetcher.py", new String[]{"news", "20"}, timeoutSeconds);
-        return parsePythonJsonResult(result, "新闻", timeoutSeconds);
+        Path knownFile = null;
+        try {
+            knownFile = createKnownNewsFile();
+            String[] args = {"news", "40", knownFile.toString()};
+            PythonScriptRunner.PythonResult result = jobId != null
+                    ? pythonScriptRunner.runForJob("nba_data_fetcher.py", args, timeoutSeconds, jobId)
+                    : pythonScriptRunner.run("nba_data_fetcher.py", args, timeoutSeconds);
+            return parsePythonJsonResult(result, "新闻", timeoutSeconds);
+        } catch (IOException e) {
+            return PythonJsonResult.failed(SyncExecResult.failed(
+                    "KNOWN_NEWS_EXPORT_FAILED", "导出已知新闻集合失败"));
+        } finally {
+            if (knownFile != null) {
+                try {
+                    Files.deleteIfExists(knownFile);
+                } catch (IOException e) {
+                    log.warn("删除新闻增量临时文件失败: {}", knownFile, e);
+                }
+            }
+        }
+    }
+
+    private Path createKnownNewsFile() throws IOException {
+        List<String> sourceUrls = gameNewsRepository.findAllSourceUrls();
+        List<String> titles = gameNewsRepository.findAllKnownTitles();
+        JSONObject known = new JSONObject();
+        known.put("urls", sourceUrls == null ? List.of() : sourceUrls);
+        known.put("titles", titles == null ? List.of() : titles);
+        Path file = Files.createTempFile("nba-known-news-", ".json");
+        Files.writeString(file, known.toString(), StandardCharsets.UTF_8);
+        return file;
     }
 
     /**
@@ -634,30 +666,17 @@ public class NbaLiveSyncService {
                 return parsed;
             }
             if (parsed.fetched() == 0) {
+                gameNewsService.cleanupOldNews(100);
                 return parsed;
             }
 
             JSONArray games = data.getJSONArray("todayGames");
-            int updated = 0;
-            for (int i = 0; i < games.length(); i++) {
-                JSONObject game = games.getJSONObject(i);
-                String homeTeam = game.optString("homeTeam", "");
-                String awayTeam = game.optString("awayTeam", "");
-                int homeScore = game.optInt("homeScore", 0);
-                int awayScore = game.optInt("awayScore", 0);
-                String status = game.optString("status", "SCHEDULED");
-                String gameId = game.optString("gameId", null);
-                String category = game.optString("category", "game");
-                String source = game.optString("source", null);
-
-                LocalDateTime startTime = smartDataService.parseGameStartTimePublic(game);
-                updated += smartDataService.upsertGameNews(homeTeam, awayTeam, homeScore, awayScore,
-                        status, gameId, category, source, startTime);
-
-                updateMatchRecord(homeTeam, awayTeam, homeScore, awayScore, status, gameId);
-            }
-
-            int backfilled = backfillNbaGameId();
+            NbaLiveSyncService transactionalSelf = applicationContext == null
+                    ? null : applicationContext.getBean(NbaLiveSyncService.class);
+            TodayGamesPersistResult persisted = transactionalSelf == null
+                    ? persistTodayGames(games) : transactionalSelf.persistTodayGames(games);
+            int updated = persisted.updated();
+            int backfilled = persisted.backfilled();
 
             if (updated > 0 || backfilled > 0) {
                 log.info("今日比赛同步完成: 更新{}条记录, 补充{}条nbaGameId", updated, backfilled);
@@ -682,6 +701,31 @@ public class NbaLiveSyncService {
             log.error("今日比赛同步失败", e);
             return SyncExecResult.failed("SYNC_ERROR", "今日比赛同步失败，请查看服务端任务日志");
         }
+    }
+
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public TodayGamesPersistResult persistTodayGames(JSONArray games) {
+        int updated = 0;
+        for (int i = 0; i < games.length(); i++) {
+            JSONObject game = games.getJSONObject(i);
+            String homeTeam = game.optString("homeTeam", "");
+            String awayTeam = game.optString("awayTeam", "");
+            int homeScore = game.optInt("homeScore", 0);
+            int awayScore = game.optInt("awayScore", 0);
+            String status = game.optString("status", "SCHEDULED");
+            String gameId = game.optString("gameId", null);
+            String category = game.optString("category", "game");
+            String source = game.optString("source", null);
+
+            LocalDateTime startTime = smartDataService.parseGameStartTimePublic(game);
+            updated += smartDataService.upsertGameNews(homeTeam, awayTeam, homeScore, awayScore,
+                    status, gameId, category, source, startTime);
+            updateMatchRecord(homeTeam, awayTeam, homeScore, awayScore, status, gameId);
+        }
+
+        int backfilled = backfillNbaGameId();
+        gameNewsService.cleanupOldNews(100);
+        return new TodayGamesPersistResult(updated, backfilled);
     }
 
     /**
@@ -785,6 +829,8 @@ public class NbaLiveSyncService {
         return normalized.length() > 200 ? normalized.substring(0, 200) : normalized;
     }
 
+    public record TodayGamesPersistResult(int updated, int backfilled) {}
+
     private record PythonJsonResult(JSONObject data, SyncExecResult failure) {
         private static PythonJsonResult success(JSONObject data) {
             return new PythonJsonResult(data, null);
@@ -882,8 +928,13 @@ public class NbaLiveSyncService {
                 record.setAwayScore(awayScore);
             }
             record.setStatus(status);
-            if (gameId != null && !gameId.isEmpty() && record.getNbaGameId() == null) {
+            if (gameId != null && !gameId.isEmpty()
+                    && (record.getNbaGameId() == null || record.getNbaGameId().isBlank())) {
                 record.setNbaGameId(gameId);
+            }
+            if (record.getGameType() == null || record.getGameType().isBlank()) {
+                LocalDate matchDate = record.getMatchDate() == null ? today : record.getMatchDate();
+                record.setGameType(MatchGameTypeResolver.resolve(null, gameId, matchDate));
             }
             matchRecordRepository.save(record);
 
@@ -900,6 +951,10 @@ public class NbaLiveSyncService {
                     byGameId.setHomeScore(homeScore);
                     byGameId.setAwayScore(awayScore);
                     byGameId.setStatus(status);
+                    if (byGameId.getGameType() == null || byGameId.getGameType().isBlank()) {
+                        LocalDate matchDate = byGameId.getMatchDate() == null ? today : byGameId.getMatchDate();
+                        byGameId.setGameType(MatchGameTypeResolver.resolve(null, gameId, matchDate));
+                    }
                     matchRecordRepository.save(byGameId);
                     return;
                 }
@@ -913,6 +968,7 @@ public class NbaLiveSyncService {
             newRecord.setSeason(getCurrentSeason());
             newRecord.setStatus(status);
             newRecord.setNbaGameId(gameId);
+            newRecord.setGameType(MatchGameTypeResolver.resolve(null, gameId, today));
             matchRecordRepository.save(newRecord);
         }
     }

@@ -1,20 +1,90 @@
 server:
   port: 8080
+  # 响应压缩——最终口径（第 9 轮收口，R8 P1-1 与 R9-1 已合并裁决）：
+  #
+  # 【决定】API JSON（application/json）**不在 Java 侧压缩**；静态资源（HTML/CSS/JS）压缩。
+  #
+  # 【依据一：服务端 CPU 实测】backend/scripts/measure_gzip_cpu.py 用 GetProcessTimes
+  # 只统计 java 进程 CPU（排除发压端解压成本），同一负载下 gzip vs identity：
+  #     历史榜单 292KB : 4.24 → 7.05 ms/请求（1.66x），吞吐 955 → 646 RPS（-32%）
+  #     投篮热区 133KB : 2.52 → 4.34 ms/请求（1.72x），吞吐 1604 → 1090 RPS（-32%）
+  #     新闻列表 17.5KB: 1.53 → 1.31 ms/请求（0.86x，几乎中性）
+  # 即：对 ≥100KB 的大 JSON，压缩是**真实且显著的服务端成本**（吞吐降三成），
+  # 而非测试方的测量误差。
+  #
+  # 【依据二：失效范围】R9-1 的 A/B 负载端点是 /api/posts?page=0&size=20（小响应）。
+  # 修复前 min-response-size 对 API 完全失效 ⇒ 连 98B~1.3KB 的响应都在压缩
+  # （98B 被压成 115B，越压越大）。SmallResponseLengthFilter 补上 Content-Length 后
+  # 阈值才真正生效，小响应已不再被压缩——这也解释了该端点为何曾“压缩 CPU 引发超时”。
+  #
+  # 【依据三：回退成本不对称】带宽收益可用反向代理（Nginx gzip，见 README「反向代理建议」）
+  # 零 java CPU 拿到；而 CPU 一旦被压缩吃掉，直接表现为容量下降与超时。
+  # 本部署为单机 dev/演示（localhost/LAN 带宽不稀缺），故取 CPU 优先。
+  #
+  # 【如需恢复 Java 侧 JSON 压缩】把 application/json 加回 mime-types 即可，
+  # 但必须先用 measure_gzip_cpu.py 复测上述大端点，并按实测下调 README 容量口径。
+  #
+  # 注意：SmallResponseLengthFilter 仍然保留——它为 API 响应补 Content-Length
+  # （避免无谓 chunked、并覆盖 /error 派发的 403/500 错误体），
+  # 且在压缩面若被重新开启时能保证阈值语义正确（不会再出现“小响应越压越大”）。
+  compression:
+    enabled: true
+    mime-types: text/html,text/css,text/javascript,application/javascript
+    min-response-size: 2048
   servlet:
     encoding:
       charset: UTF-8
       enabled: true
       force: true
       force-response: true
+  tomcat:
+    # 压测报告 §十 10.3/10.6：慢客户端能把单请求拖到 59.5s，且过载时请求无界排队。
+    # 注意：connection-timeout 在 NIO 下只约束"读取请求行/请求头"阶段的空闲；
+    # 请求体（body）读取阶段的空闲由 socket soTimeout 控制，而 Spring Boot 不暴露该属性，
+    # 因此在 TomcatConnectorTuningConfig 用 AbstractEndpoint.setSoTimeout 显式设置
+    # （见该类的类注释：实测 connection-timeout=30s 时 body 阶段 80s 仍不断开）。
+    connection-timeout: ${TOMCAT_CONNECTION_TIMEOUT_MS:30000}
+    keep-alive-timeout: ${TOMCAT_KEEPALIVE_TIMEOUT_MS:15000}
+    # 慢请求体耗尽线程的连接器级封顶（第 4 轮压测 P5 / jstack 裁决）：
+    # 响应完成后 Tomcat 要吞掉未读完的请求体（endRequest→swallow），慢客户端滴水
+    # 可让该阶段无限延长——jstack 实测 220 慢体时 200/200 工作线程全部卡在
+    # Http11Processor.endRequest，守卫计时在过滤器链返回时已取消、覆盖不到这里。
+    # 默认 2MB 的吞量上限对 1.28KB/s 的滴水毫无约束；收紧到 8KB 后，吞满即
+    # 放弃并关闭连接，endRequest 阶段的线程占用被封顶在 ~8KB/滴水速率。
+    # 对正常请求无影响：正常请求的 body 在 servlet 阶段已读完，endRequest 无剩余可吞；
+    # 中断上传的错误响应极端情况下可能因断连不可达（换取线程保护，取舍见修复报告）。
+    max-swallow-size: 8KB
+    # 过载保护：连接数与请求队列设上界，超出后由 BulkheadFilter/连接层快速失败
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:2000}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:200}
+    threads:
+      max: ${TOMCAT_MAX_THREADS:200}
+      min-spare: ${TOMCAT_MIN_SPARE_THREADS:20}
 
 spring:
+  mvc:
+    async:
+      request-timeout: ${RAG_ASYNC_TIMEOUT_MS:600000}
   application:
     name: nba-manager-backend
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 3MB
   datasource:
     url: jdbc:mysql://localhost:3306/nba_manager?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8&useUnicode=true
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:changeme}
+    hikari:
+      # 第 8 轮 P0-4：默认 10 连接是 500 并发下 bulkhead 大量 429 的推手之一
+      # （第 5 轮 X-E：93232 个 429）。20 + connection-timeout 3s：
+      # 池耗尽时 3s 快速失败进入 bulkhead/重试，而不是长阻塞。
+      # MySQL 默认 wait_timeout=28800s 远大于 max-lifetime 默认 30min，无需对齐调整。
+      maximum-pool-size: ${HIKARI_MAX_POOL:20}
+      minimum-idle: ${HIKARI_MIN_IDLE:5}
+      connection-timeout: 3000
+      pool-name: nba-manager-hikari
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -29,15 +99,63 @@ spring:
       hibernate:
         format_sql: true
         dialect: org.hibernate.dialect.MySQLDialect
+  flyway:
+    # 已启用：非幂等的遗留迁移（V1-V3）归档至 db/legacy/，
+    # 现存迁移均为幂等（CREATE TABLE IF NOT EXISTS / INFORMATION_SCHEMA 守卫式 ALTER），
+    # 对已有库（表结构由 ddl-auto 建立）首次启动会自动 baseline 后应用增量。
+    # V1-V3 已在历史库中应用过但已从 classpath 移除，需忽略 missing 校验
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+    baseline-description: "schema previously managed by JPA ddl-auto"
+    ignore-migration-patterns: "*:missing"
 
 app:
+  # 入口并发隔离（压测报告 §十 10.3：>1000 RPS 后无界排队、仍返回 200）
+  # 阈值按"健康 in-flight <= ~300"的实测值留出余量；0 表示关闭该侧限制。
+  bulkhead:
+    enabled: ${BULKHEAD_ENABLED:true}
+    per-client-max-concurrent: ${BULKHEAD_PER_CLIENT_MAX:100}
+    # 必须小于 server.tomcat.threads.max（默认 200）：请求"在途数"受工作线程数约束，
+    # 全局阈值若 ≥ 线程数则永远不会成为第一个约束，等于虚设（第 5 轮实测：
+    # 线程池被慢客户端占满后，本应 1ms 返回的 429 也要排队 29.7s）。
+    # 200 - 180 = 20 线程余量，保证拒绝响应与正常流量始终有线程可用；
+    # 若调整 threads.max，请同步保持 本值 < threads.max - 20。
+    global-max-concurrent: ${BULKHEAD_GLOBAL_MAX:180}
+  http:
+    # 慢请求总时长上限（压测报告 §十 10.6：慢客户端可把单请求拖到 59.5s）。
+    # socket 级超时对"持续极慢发送"无效（每 50ms 有新数据，"空闲"维度永不触发），
+    # 故改为按总时长封顶：超限即中断处理线程并回 408。SSE(/api/rag/stream) 豁免。
+    # 普通接口用 30s；RAG/Copilot 有自己的长超时（read 600s/60s），用宽限 120s——
+    # 实测完全豁免会让过载请求在 Python 侧无界排队（RAG 进程内存 3.4GB→6GB）。
+    # 任一档设 0 表示关闭该档。
+    max-request-millis: ${HTTP_MAX_REQUEST_MILLIS:30000}
+    long-request-millis: ${HTTP_LONG_REQUEST_MILLIS:120000}
+    # connector socket 读空闲超时（覆盖请求体读取阶段，connection-timeout 管不到）
+    socket-so-timeout-ms: ${TOMCAT_SOCKET_SO_TIMEOUT_MS:30000}
+  rag:
+    # RAG Python 常驻服务地址（Java 会在其未运行时以子进程拉起并按此端口监听）
+    server-url: ${RAG_SERVER_URL:http://127.0.0.1:18999}
+    timeout:
+      connect-millis: ${RAG_CONNECT_TIMEOUT_MS:10000}
+      read-millis: ${RAG_READ_TIMEOUT_MS:600000}
+  copilot:
+    # NBA Copilot Python 服务地址（Java 在本机服务未运行时自动拉起）
+    base-url: ${COPILOT_BASE_URL:http://127.0.0.1:18998/api/nba-copilot}
   jwt:
     secret: ${JWT_SECRET:change-this-to-a-random-secret-at-least-256-bits}
     expiration-ms: 86400000
   cache:
     ttl-seconds: 1800
+    # 球员列表短 TTL（压测报告 §十 10.3 建议 3：无缓存的列表读在高并发下成为排队点）
+    player-list-ttl-seconds: ${PLAYER_LIST_TTL_SECONDS:60}
+    # 帖子列表短 TTL（同上）：缓存的是"用户无关基座"，likedByMe 由调用方按当前用户覆盖。
+    # 写路径（发帖/改帖/删帖/评论/点赞/收藏/改用户名头像）都已显式失效，TTL 仅作兜底。
+    post-list-ttl-seconds: ${POST_LIST_TTL_SECONDS:60}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*,http://[::1]:*,https://*.trycloudflare.com}
+  security:
+    trusted-proxies: ${TRUSTED_PROXY_IPS:}
   websocket:
     allowed-origins: ${WS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*,https://*.trycloudflare.com}
   chat:
@@ -46,3 +164,15 @@ app:
     cleanup-batch-size: ${CHAT_CLEANUP_BATCH_SIZE:1000}
     cleanup-cron: ${CHAT_CLEANUP_CRON:0 0 3 * * ?}
     cleanup-max-batches: ${CHAT_CLEANUP_MAX_BATCHES:500}
+  sync:
+    cron:
+      full-sync: ${SYNC_CRON_FULL:0 0 3 * * ?}
+    zone: ${SYNC_ZONE:Asia/Shanghai}
+  python:
+    executable: ${PYTHON_EXECUTABLE:}
+    timeout:
+      live-seconds: ${PYTHON_TIMEOUT_LIVE_SECONDS:900}
+      detail-seconds: ${PYTHON_TIMEOUT_DETAIL_SECONDS:600}
+      playoff-seconds: ${PYTHON_TIMEOUT_PLAYOFF_SECONDS:1800}
+      translation-seconds: ${PYTHON_TIMEOUT_TRANSLATION_SECONDS:1800}
+      bulk-seconds: ${PYTHON_TIMEOUT_BULK_SECONDS:3600}

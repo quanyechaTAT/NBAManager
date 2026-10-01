@@ -1,15 +1,12 @@
 package com.nbamanager.service;
 
+import com.nbamanager.config.PythonTimeoutProperties;
 import com.nbamanager.repository.GameNewsRepository;
 import com.nbamanager.web.dto.GameNewsDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
@@ -37,6 +34,8 @@ public class SmartDataService {
     private final GameNewsRepository gameNewsRepository;
     private final GameNewsService gameNewsService;
     private final MatchDetailService matchDetailService;
+    private final PythonScriptRunner pythonScriptRunner;
+    private final PythonTimeoutProperties pythonTimeoutProperties;
 
     /**
      * 获取今日赛事（实时从API获取）
@@ -154,42 +153,6 @@ public class SmartDataService {
         };
     }
 
-    @Cacheable(value = "news", key = "'list:' + #pageable.pageNumber + ':' + #pageable.pageSize")
-    public Page<GameNewsDto> getNewsWithCache(String keyword, Long userId, Pageable pageable) {
-        return gameNewsService.list(keyword, userId, pageable);
-    }
-
-    /**
-     * 强制刷新新闻（从API获取）
-     */
-    @CacheEvict(value = "news", allEntries = true)
-    public int refreshNewsFromApi() {
-        try {
-            JSONObject data = fetchNewsFromApi();
-            if (data == null || !data.has("news")) {
-                return 0;
-            }
-
-            JSONArray newsArray = data.getJSONArray("news");
-            int added = 0;
-            for (int i = 0; i < newsArray.length(); i++) {
-                JSONObject newsItem = newsArray.getJSONObject(i);
-                // 这里需要调用NbaLiveSyncService的createNewsFromESPN方法
-                // 但由于循环依赖，我们直接在这里处理
-                added += createNewsFromJson(newsItem);
-            }
-
-            // 清理旧新闻
-            gameNewsService.cleanupOldNews(100);
-
-            log.info("从API刷新新闻完成: 新增{}条", added);
-            return added;
-        } catch (Exception e) {
-            log.error("从API刷新新闻失败: {}", e.getMessage());
-            return 0;
-        }
-    }
-
     /**
      * 获取比赛详情（实时从API获取）
      */
@@ -220,10 +183,6 @@ public class SmartDataService {
         return executePythonScript("today");
     }
 
-    private JSONObject fetchNewsFromApi() {
-        return executePythonScript("news", "20");
-    }
-
     private JSONObject fetchBoxScoreFromApi(String gameId) {
         return executePythonScript("boxscore", gameId);
     }
@@ -234,74 +193,18 @@ public class SmartDataService {
 
     private JSONObject executePythonScript(String... args) {
         try {
-            String scriptPath = findScriptPath();
-            File scriptFile = new File(scriptPath);
-            String absolutePath = scriptFile.getAbsolutePath();
-            String workingDir = scriptFile.getParentFile().getAbsolutePath();
-
-            // 获取Python可执行文件（优先使用虚拟环境）
-            String pythonExec = getPythonExecutable();
-
-            List<String> command = new ArrayList<>();
-            command.add(pythonExec);
-            command.add(absolutePath);
-            for (String arg : args) {
-                command.add(arg);
-            }
-
-            log.info("执行Python脚本: {} {} 参数: {}", pythonExec, absolutePath, String.join(" ", args));
-
-            ProcessBuilder pb = new ProcessBuilder(command);
-            pb.redirectErrorStream(false);
-            pb.directory(new File(workingDir));
-            pb.environment().put("PYTHONIOENCODING", "utf-8");
-
-            // 代理配置
-            String proxyHost = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_HOST");
-            String proxyPort = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_PORT");
-            if (proxyHost != null && !proxyHost.isEmpty()) {
-                pb.environment().put("NBA_PROXY_HOST", proxyHost);
-            }
-            if (proxyPort != null && !proxyPort.isEmpty()) {
-                pb.environment().put("NBA_PROXY_PORT", proxyPort);
-            }
-
-            Process process = pb.start();
-
-            // 读取stdout
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-            }
-
-            // 读取stderr
-            StringBuilder errorOutput = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    errorOutput.append(line).append("\n");
-                }
-            }
-
-            boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                log.error("Python脚本执行超时(30s)");
+            int timeoutSeconds = isDetailAction(args)
+                    ? pythonTimeoutProperties.getDetailSeconds()
+                    : pythonTimeoutProperties.getLiveSeconds();
+            PythonScriptRunner.PythonResult result = pythonScriptRunner.run(
+                    "nba_data_fetcher.py", args, timeoutSeconds);
+            if (!result.success()) {
+                log.error("Python脚本执行失败, exitCode={}, timedOut={}, error={}",
+                        result.exitCode(), result.timedOut(), result.stderr().trim());
                 return null;
             }
 
-            int exitCode = process.exitValue();
-            if (exitCode != 0) {
-                log.error("Python脚本执行失败, exitCode={}, error={}", exitCode, errorOutput.toString().trim());
-                return null;
-            }
-
-            String jsonStr = output.toString().trim();
+            String jsonStr = result.stdout().trim();
             if (jsonStr.isEmpty()) {
                 return null;
             }
@@ -311,6 +214,10 @@ public class SmartDataService {
             log.error("执行Python脚本失败: {}", e.getMessage());
             return null;
         }
+    }
+
+    private boolean isDetailAction(String[] args) {
+        return args.length > 0 && ("boxscore".equals(args[0]) || "quarters".equals(args[0]));
     }
 
     private String findScriptPath() {
@@ -493,80 +400,4 @@ public class SmartDataService {
         }
     }
 
-    /**
-     * 如果新数据是中文版本而旧的是英文版本，升级为中文版本。
-     * 本系统面向中文用户，优先保留中文内容。
-     */
-    private void upgradeToChinese(com.nbamanager.domain.GameNews old, String headline, String description, String content) {
-        if (headline == null || headline.isEmpty()) return;
-        if (old.getTitle() != null && old.getTitle().equals(headline)) return;
-        boolean newHasChinese = headline.chars().anyMatch(c -> c >= 0x4E00 && c <= 0x9FFF);
-        boolean oldHasChinese = old.getTitle() != null && old.getTitle().chars().anyMatch(c -> c >= 0x4E00 && c <= 0x9FFF);
-        if (newHasChinese && !oldHasChinese) {
-            log.info("升级为中文版本: {} → {}", old.getTitle(), headline);
-            old.setTitle(headline);
-            if (description != null && !description.isEmpty()) {
-                old.setSummary(description.length() > 300 ? description.substring(0, 297) + "..." : description);
-            }
-            if (content != null && !content.isEmpty()) {
-                old.setContent(content);
-            }
-            gameNewsRepository.save(old);
-        }
-    }
-
-    private int createNewsFromJson(JSONObject newsItem) {
-        String headline = newsItem.optString("headline", "");
-        String description = newsItem.optString("description", "");
-        String content = newsItem.optString("content", description);
-        String imageUrl = newsItem.optString("imageUrl", "");
-        String sourceUrl = newsItem.optString("sourceUrl", "");
-        String category = newsItem.optString("category", "general");
-        String homeTeam = newsItem.optString("homeTeam", "");
-        String awayTeam = newsItem.optString("awayTeam", "");
-        String nbaGameId = newsItem.optString("nbaGameId", "");
-
-        // 按 nbaGameId 查重
-        if (nbaGameId != null && !nbaGameId.isEmpty()) {
-            List<com.nbamanager.domain.GameNews> byGameId = gameNewsRepository.findByNbaGameId(nbaGameId.trim());
-            if (!byGameId.isEmpty()) {
-                // 如果新数据是中文版本，尝试升级
-                upgradeToChinese(byGameId.get(0), headline, description, content);
-                return 0;
-            }
-        }
-        // 按 sourceUrl 查重
-        if (sourceUrl != null && !sourceUrl.isEmpty()) {
-            List<com.nbamanager.domain.GameNews> existing = gameNewsRepository.findByTitleOrSourceUrl(headline, sourceUrl);
-            if (!existing.isEmpty()) {
-                upgradeToChinese(existing.get(0), headline, description, content);
-                return 0;
-            }
-        }
-
-        LocalDateTime now = LocalDateTime.now();
-        log.info("创建新闻: title={}, nbaGameId={}, category={}", headline, nbaGameId, category);
-        com.nbamanager.domain.GameNews news = new com.nbamanager.domain.GameNews();
-        news.setTitle(headline);
-        news.setSummary(description.length() > 300 ? description.substring(0, 297) + "..." : description);
-        news.setContent(content);
-        // 只有真正的比赛才设置主客队，一般新闻留空避免显示"待定 vs 待定"
-        boolean hasRealTeams = !homeTeam.isEmpty() && !awayTeam.isEmpty()
-                && !"待定".equals(homeTeam) && !"待定".equals(awayTeam);
-        news.setHomeTeam(hasRealTeams ? homeTeam : "");
-        news.setAwayTeam(hasRealTeams ? awayTeam : "");
-        // 优先使用真实比赛时间，避免用 now() 导致比赛被错误归入今天
-        LocalDateTime gameStartTime = parseGameStartTime(newsItem);
-        news.setGameStartTime(gameStartTime);
-        news.setGameEndTime(gameStartTime.plusHours(2));
-        news.setCreateTime(now);
-        news.setStatus("FINISHED");
-        news.setNbaGameId(nbaGameId.isEmpty() ? null : nbaGameId);
-        news.setCategory(category);
-        news.setSourceUrl(sourceUrl);
-        news.setImageUrl(imageUrl);
-
-        gameNewsRepository.save(news);
-        return 1;
-    }
 }

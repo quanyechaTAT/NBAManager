@@ -218,8 +218,21 @@ function handleSelectionChange(selection: Record<string, unknown>[]) {
 .data-table-panel {
   background: var(--bg-card);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
+  border-radius: 14px;
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+
+.data-table-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.5), transparent);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 2;
 }
 
 /* --- 头部 --- */
@@ -240,8 +253,9 @@ function handleSelectionChange(selection: Record<string, unknown>[]) {
 .data-table-panel__title {
   font-family: var(--font-heading);
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--text-primary);
+  letter-spacing: -0.2px;
 }
 
 .data-table-panel__total {

@@ -711,5 +711,5 @@ watch(search, () => {
 }
 [data-theme="light"] .emoji-item:hover { background: #FAF9F7; }
 [data-theme="light"] .emoji-tab:hover { background: #F5F3F0; }
-[data-theme="light"] .emoji-tab.active { background: rgba(232, 93, 38, 0.1); }
+[data-theme="light"] .emoji-tab.active { background: rgba(34, 211, 238, 0.1); }
 </style>

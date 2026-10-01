@@ -62,7 +62,7 @@ interface StatItem {
   awayValue: string
 }
 
-const props = defineProps<{
+defineProps<{
   items: StatItem[]
 }>()
 
@@ -215,7 +215,7 @@ function awayBarWidth(item: StatItem): number {
 }
 
 .away-fill {
-  background: var(--gi-away, #F97316);
+  background: var(--gi-away, #22D3EE);
 }
 
 @media (max-width: 600px) {

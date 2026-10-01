@@ -29,6 +29,7 @@ public class HistoricalDataSyncService {
 
     // 同步状态锁
     private final AtomicBoolean syncing = new AtomicBoolean(false);
+    private final HistoricalStatsCache historicalStatsCache;
 
     /**
      * 同步指定赛季的常规赛数据
@@ -73,6 +74,7 @@ public class HistoricalDataSyncService {
 
             // 3. 更新同步状态
             seasonService.updateSyncStatus(season, "COMPLETED", playerCount, teamCount);
+            historicalStatsCache.evictAll();
 
             log.info("{} 赛季数据同步完成: {} 名球员, {} 支球队", season, playerCount, teamCount);
 
@@ -117,6 +119,7 @@ public class HistoricalDataSyncService {
                 throw new PartialSyncException(String.format("历史赛季数据不完整: %s, 球员%d条, 球队%d条", season, playerCount, teamCount));
             }
             seasonService.updateSyncStatus(season, "COMPLETED", playerCount, teamCount);
+            historicalStatsCache.evictAll();
             log.info("同步完成: {} 赛季, 球员{}条, 球队{}条", season, playerCount, teamCount);
         } catch (PartialSyncException e) {
             // 部分失败：状态已在上方写入 PARTIAL，不再覆盖

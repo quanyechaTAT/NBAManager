@@ -12,6 +12,11 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     allowedHosts: true,
+    watch: {
+      // WSL 访问 Windows 挂载盘（/mnt/*）时 inotify 收不到变更事件，需要轮询
+      usePolling: process.env.VITE_POLLING === '1',
+      interval: 600,
+    },
     proxy: {
       '/ws': {
         target: 'http://localhost:8080',
@@ -49,6 +54,9 @@ export default defineConfig({
     },
   },
   build: {
+    // 安全报告 §十五 M7：生产构建不产出 source map（默认本就为 false，这里显式钉死，
+    // 防止未来有人打开后把前端源码带进部署产物）
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks: {

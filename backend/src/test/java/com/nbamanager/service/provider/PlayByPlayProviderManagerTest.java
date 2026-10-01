@@ -83,6 +83,31 @@ class PlayByPlayProviderManagerTest {
     }
 
     @Test
+    void fetch_treatsEmptySuccessfulPayloadAsFailureAndFallsBack() {
+        PlayByPlayFetchOptions options = PlayByPlayFetchOptions.defaults();
+        PlayByPlayFetchResult emptyResult = PlayByPlayFetchResult.success(
+                ProviderType.NBA_PLAY_BY_PLAY, List.of(), "{\"playByPlay\":[]}", 100);
+        PlayByPlayEvent event = createTestEvent(1, "5:30", "3PT", "Stephen Curry");
+        PlayByPlayFetchResult fallbackResult = PlayByPlayFetchResult.success(
+                ProviderType.ESPN_PLAY_BY_PLAY, List.of(event), "{}", 200);
+
+        when(nbaProvider.type()).thenReturn(ProviderType.NBA_PLAY_BY_PLAY);
+        when(nbaProvider.supports(GAME_ID)).thenReturn(true);
+        when(nbaProvider.fetch(eq(GAME_ID), any(PlayByPlayFetchOptions.class))).thenReturn(emptyResult);
+        when(espnProvider.type()).thenReturn(ProviderType.ESPN_PLAY_BY_PLAY);
+        when(espnProvider.supports(GAME_ID)).thenReturn(true);
+        when(espnProvider.fetch(eq(GAME_ID), any(PlayByPlayFetchOptions.class))).thenReturn(fallbackResult);
+
+        PlayByPlayProviderManager manager = new PlayByPlayProviderManager(List.of(nbaProvider, espnProvider));
+
+        PlayByPlayFetchResult result = manager.fetch(GAME_ID, options);
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.source()).isEqualTo(ProviderType.ESPN_PLAY_BY_PLAY);
+        verify(espnProvider).fetch(eq(GAME_ID), any(PlayByPlayFetchOptions.class));
+    }
+
+    @Test
     void fetch_returnsFailureWhenAllFail() {
         PlayByPlayFetchOptions options = PlayByPlayFetchOptions.defaults();
 

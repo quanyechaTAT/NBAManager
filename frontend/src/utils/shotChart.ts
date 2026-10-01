@@ -62,13 +62,13 @@ export function classifyShotZone(shot: ShotData): ShotZone {
 }
 
 export const ZONE_LABELS: Record<ShotZone, string> = {
-  'restricted': '篮下 0-3ft',
-  'paint': '近距离 3-10ft',
-  'mid-range': '中距离 10-16ft',
-  'long-two': '长两分 16ft+',
-  'three-left': '三分 左侧',
-  'three-right': '三分 右侧',
-  'three-top': '三分 正面'
+  'restricted': '合理冲撞区 (RA 0-3ft)',
+  'paint': '非冲撞禁区 (Paint 3-10ft)',
+  'mid-range': '中距离 (Mid 10-16ft)',
+  'long-two': '长两分 (Long 2 16ft+)',
+  'three-left': '左侧三分 (Left 3PT)',
+  'three-right': '右侧三分 (Right 3PT)',
+  'three-top': '弧顶三分 (Above Break 3PT)'
 }
 
 export const ZONE_ORDER: ShotZone[] = ['restricted', 'paint', 'mid-range', 'long-two', 'three-left', 'three-right', 'three-top']

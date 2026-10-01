@@ -7,11 +7,15 @@ import com.nbamanager.repository.PlayerRepository;
 import com.nbamanager.repository.TeamRepository;
 import com.nbamanager.web.dto.PlayerDto;
 import com.nbamanager.web.dto.PlayerRequest;
+import com.nbamanager.web.support.PageRequestSanitizer;
+import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,9 +26,45 @@ public class PlayerService {
 
     private final PlayerRepository playerRepository;
     private final TeamRepository teamRepository;
+    private final PlayerListCache playerListCache;
 
+    /**
+     * 球员列表允许的排序字段。前端球员列表默认按得分排序，导出按 name 排序，
+     * 其他字段一律拒绝（未知字段过去会经 PropertyReferenceException 变成 500）。
+     */
+    private static final Set<String> ALLOWED_SORTS = Set.of(
+            "id", "name", "nameEn", "position", "jerseyNumber",
+            "gamesPlayed", "minutesPerGame", "pointsPerGame", "reboundsPerGame",
+            "assistsPerGame", "stealsPerGame", "blocksPerGame", "turnoversPerGame",
+            "fieldGoalPct", "threePointPct", "freeThrowPct",
+            "efficiency", "trueShootingPct", "usagePct");
+    private static final Map<String, String> SORT_ALIASES = Map.of(
+            "ppg", "pointsPerGame",
+            "rpg", "reboundsPerGame",
+            "apg", "assistsPerGame");
+    private static final Sort DEFAULT_SORT = Sort.by(Sort.Direction.ASC, "name");
+
+    /**
+     * 球员列表。
+     *
+     * 性能（压测报告 §十 10.3 建议 3）：该列表是 50 并发下最慢的读路径——原本没有缓存
+     * （只有 {@link #get(Long)} 按 id 缓存），每次请求要 findAll + count 两条查询，
+     * 在默认 10 连接的 Hikari 池下很快成为排队点；实测 50 并发 p99 250-800ms。
+     * 现由 {@link PlayerListCache} 以短 TTL 承接；该类注释说明了为什么不直接缓存 Page。
+     */
     @Transactional(readOnly = true)
     public Page<PlayerDto> list(String keyword, Long teamId, String position, Pageable pageable) {
+        Pageable safePageable = PageRequestSanitizer.sanitize(
+                pageable, ALLOWED_SORTS, SORT_ALIASES, DEFAULT_SORT);
+        PlayerListCache.PagePayload payload =
+                playerListCache.load(keyword, teamId, position, safePageable);
+        return new org.springframework.data.domain.PageImpl<>(
+                payload.content(), safePageable, payload.totalElements());
+    }
+
+    /** 实际执行列表查询（缓存未命中时由 {@link PlayerListCache} 调用）。 */
+    public PlayerListCache.PagePayload queryPage(String keyword, Long teamId, String position,
+                                                 Pageable safePageable) {
         Page<Player> page;
 
         boolean hasKeyword = keyword != null && !keyword.isBlank();
@@ -34,24 +74,26 @@ public class PlayerService {
         String ps = hasPos ? position.trim() : null;
 
         if (hasKeyword && hasTeam && hasPos) {
-            page = playerRepository.findByNameOrNameEnContainingIgnoreCaseAndTeamIdAndPositionIgnoreCase(kw, teamId, ps, pageable);
+            page = playerRepository.findByNameOrNameEnContainingIgnoreCaseAndTeamIdAndPositionIgnoreCase(kw, teamId, ps, safePageable);
         } else if (hasKeyword && hasTeam) {
-            page = playerRepository.findByNameOrNameEnContainingIgnoreCaseAndTeamId(kw, teamId, pageable);
+            page = playerRepository.findByNameOrNameEnContainingIgnoreCaseAndTeamId(kw, teamId, safePageable);
         } else if (hasKeyword && hasPos) {
-            page = playerRepository.findByNameOrNameEnContainingIgnoreCaseAndPositionIgnoreCase(kw, ps, pageable);
+            page = playerRepository.findByNameOrNameEnContainingIgnoreCaseAndPositionIgnoreCase(kw, ps, safePageable);
         } else if (hasTeam && hasPos) {
-            page = playerRepository.findByTeamIdAndPositionIgnoreCase(teamId, ps, pageable);
+            page = playerRepository.findByTeamIdAndPositionIgnoreCase(teamId, ps, safePageable);
         } else if (hasKeyword) {
-            page = playerRepository.findByNameOrNameEnContainingIgnoreCase(kw, pageable);
+            page = playerRepository.findByNameOrNameEnContainingIgnoreCase(kw, safePageable);
         } else if (hasTeam) {
-            page = playerRepository.findByTeamId(teamId, pageable);
+            page = playerRepository.findByTeamId(teamId, safePageable);
         } else if (hasPos) {
-            page = playerRepository.findByPositionIgnoreCase(ps, pageable);
+            page = playerRepository.findByPositionIgnoreCase(ps, safePageable);
         } else {
-            page = playerRepository.findAll(pageable);
+            page = playerRepository.findAll(safePageable);
         }
 
-        return page.map(this::toDto);
+        return new PlayerListCache.PagePayload(
+                page.getContent().stream().map(this::toDto).collect(java.util.stream.Collectors.toList()),
+                page.getTotalElements());
     }
 
     @Cacheable(value = "players", key = "#id")
@@ -61,7 +103,7 @@ public class PlayerService {
         return toDto(p);
     }
 
-    @CacheEvict(value = {"players", "dashboard"}, allEntries = true)
+    @CacheEvict(value = {"players", "playerList", "dashboard"}, allEntries = true)
     @Transactional
     public PlayerDto create(PlayerRequest req) {
         Team team = teamRepository.findById(req.teamId()).orElseThrow(() -> teamNotFound(req.teamId()));
@@ -70,7 +112,7 @@ public class PlayerService {
         return toDto(playerRepository.save(p));
     }
 
-    @CacheEvict(value = {"players", "dashboard"}, allEntries = true)
+    @CacheEvict(value = {"players", "playerList", "dashboard"}, allEntries = true)
     @Transactional
     public PlayerDto update(Long id, PlayerRequest req) {
         Player p = playerRepository.findById(id).orElseThrow(() -> notFound(id));
@@ -79,7 +121,7 @@ public class PlayerService {
         return toDto(playerRepository.save(p));
     }
 
-    @CacheEvict(value = {"players", "dashboard"}, allEntries = true)
+    @CacheEvict(value = {"players", "playerList", "dashboard"}, allEntries = true)
     @Transactional
     public void delete(Long id) {
         if (!playerRepository.existsById(id)) {

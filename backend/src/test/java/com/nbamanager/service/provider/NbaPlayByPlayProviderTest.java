@@ -1,9 +1,17 @@
 package com.nbamanager.service.provider;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import com.nbamanager.config.PythonTimeoutProperties;
 import com.nbamanager.domain.provider.PlayByPlayEvent;
+import com.nbamanager.domain.provider.PlayByPlayFetchOptions;
+import com.nbamanager.domain.provider.PlayByPlayFetchResult;
 import com.nbamanager.domain.provider.ProviderType;
+import com.nbamanager.domain.provider.ReplayProviderOutcome;
+import com.nbamanager.domain.provider.ReplayProviderQuality;
+import com.nbamanager.service.PythonScriptRunner;
 import java.util.List;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -16,10 +24,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class NbaPlayByPlayProviderTest {
 
     private NbaPlayByPlayProvider provider;
+    private PythonScriptRunner pythonScriptRunner;
 
     @BeforeEach
     void setUp() {
-        provider = new NbaPlayByPlayProvider();
+        pythonScriptRunner = mock(PythonScriptRunner.class);
+        PythonTimeoutProperties timeoutProperties = new PythonTimeoutProperties();
+        timeoutProperties.setDetailSeconds(120);
+        provider = new NbaPlayByPlayProvider(
+                pythonScriptRunner, timeoutProperties);
     }
 
     @Test
@@ -45,6 +58,116 @@ class NbaPlayByPlayProviderTest {
     @Test
     void supports_returnsFalseForBlankString() {
         assertThat(provider.supports("   ")).isFalse();
+    }
+
+    @Test
+    void supports_rejectsEspnAndMalformedIds() {
+        assertThat(provider.supports("401881722")).isFalse();
+        assertThat(provider.supports("004250022X")).isFalse();
+        assertThat(provider.supports("002500226")).isFalse();
+        assertThat(provider.supports("1022500226")).isFalse();
+    }
+
+    @Test
+    void fetch_parsesTypedSuccessEnvelope() {
+        when(pythonScriptRunner.run(
+                "nba_data_fetcher.py", new String[]{"playbyplay", "0042500405"}, 120))
+                .thenReturn(pythonResult(successEnvelope("NBA_PLAY_BY_PLAY", "FULL")));
+
+        PlayByPlayFetchResult result = provider.fetch(
+                "0042500405", PlayByPlayFetchOptions.defaults());
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.outcome()).isEqualTo(ReplayProviderOutcome.SUCCESS);
+        assertThat(result.quality()).isEqualTo(ReplayProviderQuality.FULL);
+        assertThat(result.providerSource()).isEqualTo("NBA_PLAY_BY_PLAY");
+        assertThat(result.events()).hasSize(1);
+    }
+
+    @Test
+    void fetch_rejectsTypedSuccessWithNoEvents() {
+        when(pythonScriptRunner.run(
+                "nba_data_fetcher.py", new String[]{"playbyplay", "0042500405"}, 120))
+                .thenReturn(pythonResult(envelope("SUCCESS", "FULL", "NBA_PLAY_BY_PLAY", new JSONArray(),
+                        null, null, false, 0)));
+
+        PlayByPlayFetchResult result = provider.fetch(
+                "0042500405", PlayByPlayFetchOptions.defaults());
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.outcome()).isEqualTo(ReplayProviderOutcome.ERROR);
+        assertThat(result.errorCode()).isEqualTo("INVALID_PROVIDER_CONTRACT");
+    }
+
+    @Test
+    void fetch_treatsTypedEmptyAsFailure() {
+        when(pythonScriptRunner.run(
+                "nba_data_fetcher.py", new String[]{"playbyplay", "0042500405"}, 120))
+                .thenReturn(pythonResult(envelope("EMPTY", "UNAVAILABLE", "NBA_PLAY_BY_PLAY", new JSONArray(),
+                        null, null, false, 0)));
+
+        PlayByPlayFetchResult result = provider.fetch(
+                "0042500405", PlayByPlayFetchOptions.defaults());
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.outcome()).isEqualTo(ReplayProviderOutcome.EMPTY);
+        assertThat(result.quality()).isEqualTo(ReplayProviderQuality.UNAVAILABLE);
+        assertThat(result.events()).isEmpty();
+    }
+
+    @Test
+    void fetch_preservesTypedErrorDetails() {
+        when(pythonScriptRunner.run(
+                "nba_data_fetcher.py", new String[]{"playbyplay", "0042500405"}, 120))
+                .thenReturn(pythonResult(envelope("ERROR", "UNAVAILABLE", "NBA_PLAY_BY_PLAY", new JSONArray(),
+                        "NBA_API_ERROR", "upstream timed out", true, 0)));
+
+        PlayByPlayFetchResult result = provider.fetch(
+                "0042500405", PlayByPlayFetchOptions.defaults());
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.outcome()).isEqualTo(ReplayProviderOutcome.ERROR);
+        assertThat(result.errorCode()).isEqualTo("NBA_API_ERROR");
+        assertThat(result.errorMessage()).isEqualTo("upstream timed out");
+        assertThat(result.retryable()).isTrue();
+    }
+
+    @Test
+    void fetch_acceptsLegacyNonEmptyPayloadAsPartial() {
+        JSONObject legacy = new JSONObject().put("playByPlay", events());
+        when(pythonScriptRunner.run(
+                "nba_data_fetcher.py", new String[]{"playbyplay", "0042500405"}, 120))
+                .thenReturn(pythonResult(legacy.toString()));
+
+        PlayByPlayFetchResult result = provider.fetch(
+                "0042500405", PlayByPlayFetchOptions.defaults());
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.outcome()).isEqualTo(ReplayProviderOutcome.SUCCESS);
+        assertThat(result.quality()).isEqualTo(ReplayProviderQuality.PARTIAL);
+        assertThat(result.events()).hasSize(1);
+    }
+
+    @Test
+    void fetch_rejectsLegacyEmptyPayload() {
+        when(pythonScriptRunner.run(
+                "nba_data_fetcher.py", new String[]{"playbyplay", "0042500405"}, 120))
+                .thenReturn(pythonResult(new JSONObject().put("playByPlay", new JSONArray()).toString()));
+
+        PlayByPlayFetchResult result = provider.fetch(
+                "0042500405", PlayByPlayFetchOptions.defaults());
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.outcome()).isEqualTo(ReplayProviderOutcome.EMPTY);
+    }
+
+    @Test
+    void fetch_doesNotInvokeScriptForUnsupportedId() {
+        PlayByPlayFetchResult result = provider.fetch(
+                "401881722", PlayByPlayFetchOptions.defaults());
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errorCode()).isEqualTo("UNSUPPORTED_GAME_ID");
     }
 
     @Test
@@ -274,5 +397,39 @@ class NbaPlayByPlayProviderTest {
         JSONArray arr = new JSONArray();
         List<PlayByPlayEvent> events = provider.parseEvents(arr, "0022500226");
         assertThat(events).isEmpty();
+    }
+
+    private PythonScriptRunner.PythonResult pythonResult(String stdout) {
+        return new PythonScriptRunner.PythonResult(0, stdout, "", false, 10);
+    }
+
+    private String successEnvelope(String source, String quality) {
+        return envelope("SUCCESS", quality, source, events(), null, null, false, 1);
+    }
+
+    private String envelope(String outcome, String quality, String source, JSONArray events,
+                            String errorCode, String errorMessage, boolean retryable, int eventCount) {
+        JSONObject metadata = new JSONObject()
+                .put("schemaVersion", "replay-provider/v1")
+                .put("outcome", outcome)
+                .put("quality", quality)
+                .put("source", source)
+                .put("eventCount", eventCount)
+                .put("errorCode", errorCode == null ? JSONObject.NULL : errorCode)
+                .put("errorMessage", errorMessage == null ? JSONObject.NULL : errorMessage)
+                .put("retryable", retryable);
+        metadata.put("events", events);
+        metadata.put("playByPlay", events);
+        return metadata.toString();
+    }
+
+    private JSONArray events() {
+        return new JSONArray().put(new JSONObject()
+                .put("period", 1)
+                .put("gameClock", "10:00")
+                .put("description", "Made shot")
+                .put("eventType", "Jump Shot")
+                .put("homeScore", 2)
+                .put("awayScore", 0));
     }
 }

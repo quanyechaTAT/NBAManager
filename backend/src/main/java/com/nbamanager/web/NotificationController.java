@@ -40,8 +40,8 @@ public class NotificationController {
 
     @PutMapping("/{id}/read")
     @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
-    public void markAsRead(@PathVariable Long id) {
-        notificationService.markAsRead(id);
+    public void markAsRead(@PathVariable Long id, @AuthenticationPrincipal UserPrincipal user) {
+        notificationService.markAsRead(id, user.getId(), user.getRole().name().equals("ADMIN"));
     }
 
     @PutMapping("/read-all")
@@ -52,8 +52,8 @@ public class NotificationController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
-    public void delete(@PathVariable Long id) {
-        notificationService.delete(id);
+    public void delete(@PathVariable Long id, @AuthenticationPrincipal UserPrincipal user) {
+        notificationService.delete(id, user.getId(), user.getRole().name().equals("ADMIN"));
     }
 
     @DeleteMapping("/clear-read")

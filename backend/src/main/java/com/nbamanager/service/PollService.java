@@ -59,12 +59,13 @@ public class PollService {
 
     @Transactional
     public PollDto vote(Long pollId, Long userId, Integer optionIndex) {
-        Poll poll = pollRepository.findById(pollId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "投票不存在"));
-
-        if (optionIndex < 0 || optionIndex > 3) {
+        // 参数校验前置（双保险的第一层）：非法参数 400 与资源存在性无关
+        if (optionIndex == null || optionIndex < 0 || optionIndex > 3) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "无效的选项索引");
         }
+
+        Poll poll = pollRepository.findById(pollId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "投票不存在"));
 
         if (pollVoteRepository.existsByPollIdAndUserId(pollId, userId)) {
             throw new ApiException(HttpStatus.CONFLICT, "你已经投过票了");

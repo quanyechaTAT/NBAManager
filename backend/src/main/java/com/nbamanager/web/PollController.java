@@ -37,11 +37,20 @@ public class PollController {
         return pollService.create(user.getId(), request);
     }
 
+    /**
+     * 投票（安全报告 §十五 M4）：请求体缺 optionIndex 时必须 400，
+     * 而不是让 null 进入服务层拆箱成 NPE → 500。
+     */
     @PostMapping("/{id}/vote")
     @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
     public PollDto vote(@PathVariable Long id,
                         @AuthenticationPrincipal UserPrincipal user,
                         @RequestBody java.util.Map<String, Integer> body) {
-        return pollService.vote(id, user.getId(), body.get("optionIndex"));
+        Integer optionIndex = body == null ? null : body.get("optionIndex");
+        if (optionIndex == null) {
+            throw new com.nbamanager.exception.ApiException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "缺少 optionIndex");
+        }
+        return pollService.vote(id, user.getId(), optionIndex);
     }
 }

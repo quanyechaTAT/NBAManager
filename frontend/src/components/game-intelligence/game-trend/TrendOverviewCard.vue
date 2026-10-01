@@ -89,8 +89,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import WinProbabilityCard from './WinProbabilityCard.vue'
-import type { TrendEventKind, TrendMetrics, TrendModel, TrendPoint } from './types'
-import { clockToSeconds, displayDescription, eventKind, inferPoints, periodLabel } from './trendUtils'
+import type { TrendEventKind, TrendMetrics, TrendModel } from './types'
+import { clockToSeconds, displayDescription, periodLabel } from './trendUtils'
 
 const props = defineProps<{
   model: TrendModel

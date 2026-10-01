@@ -41,7 +41,9 @@ export function changeUsernameApi(body: ChangeUsernameBody) {
 export function uploadAvatarApi(file: File) {
   const form = new FormData()
   form.append('file', file)
-  return request.post<{ avatarUrl: string }>('/profile/avatar', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
+  return request.post<{ avatarUrl: string }>('/profile/avatar', form)
+}
+
+export function resetAvatarApi() {
+  return request.delete<{ avatarUrl: null }>('/profile/avatar')
 }

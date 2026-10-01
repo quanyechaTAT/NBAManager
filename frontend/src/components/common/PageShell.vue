@@ -17,7 +17,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  maxWidth: '1400px',
+  maxWidth: '1440px',
   animated: true
 })
 
@@ -31,67 +31,60 @@ const innerStyle = computed(() => ({
 <style scoped>
 .page {
   position: relative;
-  min-height: calc(100vh - 60px);
+  min-height: calc(100vh - var(--nav-height, 60px));
 }
 
 .page--animated {
-  animation: pageFadeIn 0.4s ease-out forwards;
-}
-
-@keyframes pageFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  animation: courtside-rise var(--duration-reveal, 0.45s) var(--ease-out-expo, ease) both;
 }
 
 .page-inner {
   position: relative;
-  padding-top: 24px;
-  padding-bottom: 32px;
+  padding-top: 28px;
+  padding-bottom: 40px;
+  z-index: 1;
 }
 
-/* 呼吸光效 */
+/* 顶部细橙光边 — Courtside signature */
 .page-inner::before {
   content: '';
   position: absolute;
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 300px;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--accent-glow), transparent);
-  opacity: 0;
-  animation: breatheLight 4s ease-in-out infinite;
+  width: min(420px, 56vw);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.7), transparent);
+  opacity: 0.75;
   pointer-events: none;
-  z-index: 10;
+  z-index: 2;
 }
 
-@keyframes breatheLight {
-  0%, 100% { opacity: 0; width: 200px; }
-  50% { opacity: 0.6; width: 400px; }
-}
-
-/* 角落装饰光点 */
+/* 角落轻氛围，避免霓虹过载 */
 .page-inner::after {
   content: '';
   position: absolute;
-  top: 0;
-  right: 0;
-  width: 100px;
-  height: 100px;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.1) 0%, transparent 70%);
+  top: -40px;
+  right: -20px;
+  width: 180px;
+  height: 180px;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.08) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
-  animation: cornerGlow 6s ease-in-out infinite alternate;
 }
 
-@keyframes cornerGlow {
-  0% { opacity: 0.3; transform: scale(0.8); }
-  100% { opacity: 0.6; transform: scale(1.2); }
+@media (max-width: 768px) {
+  .page-inner {
+    padding-top: 20px;
+    padding-bottom: 28px;
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page--animated {
+    animation: none;
+  }
 }
 </style>

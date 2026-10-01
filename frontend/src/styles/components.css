@@ -59,7 +59,10 @@
   border: 1px solid var(--border-light);
   border-radius: var(--radius-xl);
   padding: 20px;
-  transition: all var(--duration-normal) var(--ease-smooth);
+  transition:
+    transform var(--duration-lift, 0.22s) var(--ease-out-quart, ease),
+    box-shadow var(--duration-lift, 0.22s) var(--ease-out-quart, ease),
+    border-color var(--duration-normal) var(--ease-smooth);
   position: relative;
   overflow: hidden;
 }
@@ -72,14 +75,22 @@
   right: 0;
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  opacity: 0;
+  opacity: 0.35;
   transition: opacity var(--duration-normal) var(--ease-smooth);
 }
 
+.metric-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.035), transparent 42%);
+  pointer-events: none;
+}
+
 .metric-card:hover {
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-md), 0 10px 28px rgba(34, 211, 238, 0.08);
   border-color: var(--border-medium);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
 }
 
 .metric-card:hover::before {

@@ -35,6 +35,11 @@ withDefaults(defineProps<Props>(), {
   justify-content: center;
   padding: 60px 24px;
   text-align: center;
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius-xl);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(34, 211, 238, 0.06), transparent 55%),
+    var(--bg-card);
 }
 
 .empty-state__icon {
@@ -42,11 +47,13 @@ withDefaults(defineProps<Props>(), {
   height: 80px;
   border-radius: 50%;
   background: var(--bg-hover);
+  border: 1px solid var(--border-light);
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 20px;
   color: var(--text-muted);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .empty-state__icon span {

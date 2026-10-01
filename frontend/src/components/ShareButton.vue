@@ -161,17 +161,17 @@ function shareToWeibo() {
   --el-button-bg-color: rgba(var(--bg-card-rgb), 0.78) !important;
   --el-button-border-color: rgba(var(--border-light-rgb), 0.95) !important;
   --el-button-text-color: var(--text-secondary) !important;
-  --el-button-hover-bg-color: rgba(232, 93, 38, 0.12) !important;
-  --el-button-hover-border-color: rgba(232, 93, 38, 0.45) !important;
+  --el-button-hover-bg-color: rgba(34, 211, 238, 0.12) !important;
+  --el-button-hover-border-color: rgba(34, 211, 238, 0.45) !important;
   --el-button-hover-text-color: var(--accent-light) !important;
-  --el-button-active-bg-color: rgba(232, 93, 38, 0.18) !important;
-  --el-button-active-border-color: rgba(232, 93, 38, 0.6) !important;
+  --el-button-active-bg-color: rgba(34, 211, 238, 0.18) !important;
+  --el-button-active-border-color: rgba(34, 211, 238, 0.6) !important;
   --el-button-active-text-color: var(--accent-light) !important;
   min-height: 34px !important;
   padding: 7px 14px !important;
   border: 1px solid rgba(var(--border-light-rgb), 0.95) !important;
   border-radius: var(--radius-md) !important;
-  background: linear-gradient(180deg, rgba(30, 41, 59, 0.72), rgba(15, 23, 42, 0.88)) !important;
+  background: linear-gradient(180deg, rgba(27, 30, 37, 0.72), rgba(14, 16, 19, 0.88)) !important;
   color: var(--text-secondary) !important;
   font-size: 12px !important;
   font-weight: 600 !important;
@@ -182,10 +182,10 @@ function shareToWeibo() {
 
 .share-trigger:hover,
 .share-trigger:focus {
-  border-color: rgba(232, 93, 38, 0.45) !important;
-  background: linear-gradient(180deg, rgba(232, 93, 38, 0.16), rgba(232, 93, 38, 0.08)) !important;
+  border-color: rgba(34, 211, 238, 0.45) !important;
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.16), rgba(34, 211, 238, 0.08)) !important;
   color: var(--accent-light) !important;
-  box-shadow: 0 0 0 3px rgba(232, 93, 38, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
 }
 
 [data-theme="light"] .share-trigger {
@@ -290,7 +290,7 @@ function shareToWeibo() {
 }
 
 .share-option-icon--system {
-  background: rgba(232, 93, 38, 0.12);
+  background: rgba(34, 211, 238, 0.12);
   color: var(--accent);
 }
 
@@ -306,7 +306,7 @@ function shareToWeibo() {
 
 .share-option:hover .share-option-icon,
 .share-option:focus-visible .share-option-icon {
-  color: #fff;
+  color: var(--accent-contrast, #04202A);
   background: var(--accent);
 }
 

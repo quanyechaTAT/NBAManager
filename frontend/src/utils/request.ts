@@ -3,7 +3,7 @@ import { clearAuthStorage, getToken } from '@/utils/authStorage'
 
 const request = axios.create({
   baseURL: '/api',
-  timeout: 60000,  // 60秒超时，支持RAG查询等耗时操作
+  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS || 1200000),
 })
 
 request.interceptors.request.use((config) => {

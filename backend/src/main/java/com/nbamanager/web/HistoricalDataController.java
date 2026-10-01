@@ -7,6 +7,7 @@ import com.nbamanager.repository.PlayerSeasonStatsRepository;
 import com.nbamanager.repository.TeamSeasonStatsRepository;
 import com.nbamanager.service.HistoricalDataSyncService;
 import com.nbamanager.service.SeasonManagementService;
+import com.nbamanager.web.support.PageRequestSanitizer;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,7 @@ public class HistoricalDataController {
     private final SeasonManagementService seasonService;
     private final PlayerSeasonStatsRepository playerStatsRepo;
     private final TeamSeasonStatsRepository teamStatsRepo;
+    private final com.nbamanager.service.HistoricalStatsCache historicalStatsCache;
 
     /**
      * 获取可用赛季列表
@@ -154,7 +156,18 @@ public class HistoricalDataController {
     }
 
     /**
-     * 获取指定赛季球员数据
+     * 获取指定赛季球员数据。
+     *
+     * 第 9 轮 P0-2 修复：此前本方法直接调 {@code playerStatsRepo.findTop*}，
+     * 而 30 行注入的 {@code historicalStatsCache} 只在 evict 侧被用到——
+     * {@code HistoricalStatsCache.topPlayers} 零调用点，缓存从未生效（死代码），
+     * 该端点因此相对基线劣化（599.9 RPS/p95 49.2ms → 363.4 RPS/p95 100.7ms）。
+     *
+     * 现统一走缓存：{@code queryTopPlayers} 内部已实现与本方法原先完全相同的 5 分支 switch，
+     * 缓存键 = {@code season|sortBy|limit}，因此不需要新增任何查询逻辑。
+     * limit 校验保留在前（缓存键含 limit，超限必须在进缓存前就 400）。
+     * {@code HistoricalDataControllerCacheWiringTest} 锁定"必须经由缓存入口"这件事，
+     * 防止日后再次退化为死代码。
      */
     @GetMapping("/players")
     public ResponseEntity<List<PlayerSeasonStats>> getPlayers(
@@ -162,25 +175,13 @@ public class HistoricalDataController {
             @RequestParam(defaultValue = "pointsPerGame") String sortBy,
             @RequestParam(defaultValue = "50") int limit) {
 
-        PageRequest page = PageRequest.of(0, limit);
-        List<PlayerSeasonStats> players;
+        // 该接口是"榜单前 N"，不支持翻页，因此用 MAX_TOP_N 而非分页 size 上限；
+        // limit=2147483647 曾会把全表拉进内存。超限返回 400，不静默夹紧。
+        int safeLimit = PageRequestSanitizer.requireTopN(limit, "limit");
 
-        switch (sortBy) {
-            case "reboundsPerGame":
-                players = playerStatsRepo.findTopRebounders(season, page);
-                break;
-            case "assistsPerGame":
-                players = playerStatsRepo.findTopAssisters(season, page);
-                break;
-            case "stealsPerGame":
-                players = playerStatsRepo.findTopStealers(season, page);
-                break;
-            case "blocksPerGame":
-                players = playerStatsRepo.findTopBlockers(season, page);
-                break;
-            default:
-                players = playerStatsRepo.findTopScorers(season, page);
-        }
+        // 赛季榜单是静态数据（仅同步任务写入），命中缓存时省掉这条 500 行查询；
+        // 同步完成路径调 evictAll() 主动失效（见 HistoricalDataSyncService）。
+        List<PlayerSeasonStats> players = historicalStatsCache.topPlayers(season, sortBy, safeLimit);
 
         return ResponseEntity.ok(players);
     }

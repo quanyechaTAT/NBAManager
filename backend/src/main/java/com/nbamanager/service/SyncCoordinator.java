@@ -77,10 +77,42 @@ public class SyncCoordinator {
             initialDelayString = "${app.sync.recovery-initial-delay-ms:60000}")
     public void recoverStaleJobs() {
         LocalDateTime cutoff = LocalDateTime.now().minusSeconds(staleJobTimeoutSeconds);
-        int interrupted = syncJobRepository.markStaleRunningAsInterrupted(cutoff);
-        if (interrupted > 0) {
-            log.warn("标记 {} 个心跳超时任务为 INTERRUPTED", interrupted);
+        // 批量 UPDATE 与作业状态机的行级更新可能死锁（MySQL 提示 try restarting transaction），
+        // 属瞬时冲突：退避重试后放弃本轮，下个周期自然会再扫
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                int interrupted = syncJobRepository.markStaleRunningAsInterrupted(cutoff);
+                if (interrupted > 0) {
+                    log.warn("标记 {} 个心跳超时任务为 INTERRUPTED", interrupted);
+                }
+                return;
+            } catch (Exception e) {
+                if (isDeadlock(e) && attempt < 3) {
+                    log.warn("recoverStaleJobs 遇到死锁，第 {} 次重试: {}", attempt, e.getMessage());
+                    try {
+                        Thread.sleep(200L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                    continue;
+                }
+                log.warn("恢复僵尸任务失败（下个周期重试）: {}", e.getMessage());
+                return;
+            }
         }
+    }
+
+    /** 沿异常链查找 MySQL 死锁标记 */
+    private boolean isDeadlock(Throwable e) {
+        while (e != null) {
+            if (e instanceof org.springframework.dao.DeadlockLoserDataAccessException
+                    || String.valueOf(e.getMessage()).contains("Deadlock")) {
+                return true;
+            }
+            e = e.getCause();
+        }
+        return false;
     }
 
     /**
@@ -115,6 +147,28 @@ public class SyncCoordinator {
      * Submit full sync with trigger type
      */
     public SyncSubmission submitFullSync(String triggerType, String requestedBy) {
+        SyncJob activeFullSync = syncJobRepository.findActiveByModule("FULL_SYNC").orElse(null);
+        if (activeFullSync != null) {
+            return new SyncSubmission(activeFullSync, true);
+        }
+        String submitToken = java.util.UUID.randomUUID().toString();
+        boolean gateAcquired;
+        try {
+            gateAcquired = syncLockService.tryAcquire(
+                    "nba:sync:submit", submitToken, java.time.Duration.ofSeconds(15));
+        } catch (Exception e) {
+            throw new SyncJobConflictException(
+                    org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                    "SYNC_LOCK_UNAVAILABLE", "Redis unavailable; cannot acquire submission gate");
+        }
+        if (!gateAcquired) {
+            throw new SyncJobConflictException("SYNC_JOB_CONFLICT", "Submission gate is busy; retry later");
+        }
+        try {
+        SyncJob secondCheck = syncJobRepository.findActiveByModule("FULL_SYNC").orElse(null);
+        if (secondCheck != null) {
+            return new SyncSubmission(secondCheck, true);
+        }
         // Check for active tasks
         List<String> activeModules = findActiveModules();
         if (!activeModules.isEmpty()) {
@@ -124,6 +178,9 @@ public class SyncCoordinator {
         SyncJobResponse response = submitJob("FULL_SYNC", triggerType, requestedBy);
         SyncJob job = syncJobRepository.findById(response.jobId()).orElseThrow();
         return new SyncSubmission(job, false);
+        } finally {
+            syncLockService.release("nba:sync:submit", submitToken);
+        }
     }
 
     /**
@@ -159,7 +216,7 @@ public class SyncCoordinator {
             }
 
             // Check for full sync conflicts
-            ensureNoActiveFullSync();
+            ensureNoActiveFullSyncOnly();
 
             // Create and dispatch
             SyncJobResponse response = submitJob(command.module(), command.triggerType(), command.requestedBy());
@@ -167,6 +224,13 @@ public class SyncCoordinator {
             return new SyncSubmission(job, false);
         } finally {
             syncLockService.release("nba:sync:submit", submitToken);
+        }
+    }
+
+    private void ensureNoActiveFullSyncOnly() {
+        if (syncJobRepository.findActiveByModule("FULL_SYNC").isPresent()) {
+            throw new SyncJobConflictException(
+                    "SYNC_JOB_CONFLICT", "FULL_SYNC is active; module submission is blocked");
         }
     }
 
@@ -357,9 +421,9 @@ public class SyncCoordinator {
                 try {
                     boolean renewed = renewLock(lockKey, lockUuid, ttlMs);
                     if (renewed) {
-                        if ("nba:sync:lock:MANUAL".equals(lockKey)) {
-                            jobStateService.heartbeat(jobId);
-                        }
+                        // 心跳与锁续期同频：长时间无进度更新的任务（如 bulk 抓取）
+                        // 也需要心跳，否则 recoverStaleJobs 会按 stale-job-timeout 误杀
+                        jobStateService.heartbeat(jobId);
                         return; // 续期成功，本轮结束
                     }
                     // 锁值不匹配 → 锁已过期或被抢占，无需重试

@@ -18,8 +18,11 @@ export interface GameNewsPayload {
 }
 
 /** 分页获取赛事资讯 */
-export function fetchNews(params: { q?: string; page: number; size: number }) {
-  return request.get<PageResponse<GameNews>>('/news', { params })
+export function fetchNews(params: { q?: string; page: number; size: number; cacheNonce?: number }) {
+  const { cacheNonce, ...query } = params
+  return request.get<PageResponse<GameNews>>('/news', {
+    params: cacheNonce ? { ...query, _ts: cacheNonce } : query,
+  })
 }
 
 /** 获取单条资讯详情 */

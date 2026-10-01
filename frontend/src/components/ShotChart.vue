@@ -211,7 +211,6 @@ const threePointPath = computed(() => {
 
   // Arc intersection with corner line
   const dx = Math.sqrt(Math.max(0, r * r - (cornerTopY - cy) * (cornerTopY - cy)))
-  const arcLeftX = cx - dx
   const arcRightX = cx + dx
 
   // Single path: left baseline → left corner end → arc → right corner end → right baseline

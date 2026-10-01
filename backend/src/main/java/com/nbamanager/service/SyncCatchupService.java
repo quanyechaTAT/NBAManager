@@ -41,13 +41,15 @@ public class SyncCatchupService {
         String token = UUID.randomUUID().toString();
         if (!lockService.tryAcquire("nba:sync:catchup", token,
                 java.time.Duration.ofSeconds(catchupGuardTtlSeconds))) {
+            catchupPending.set(true);
+            pendingRequestedBy.set(event.username());
             log.debug("补偿检查被跳过，另一个检查正在进行");
             return;
         }
 
         try {
             ZonedDateTime now = event.loggedInAt();
-            boolean anyMissed = false;
+            boolean retryNeeded = false;
 
             // Check if full sync is due
             for (SyncDefinition definition : registry.scheduledDefinitions()) {
@@ -55,20 +57,23 @@ public class SyncCatchupService {
                         definition.module(), "SUCCESS");
                 boolean due = latest.isEmpty() || definition.isDue(toZoned(latest.get().getFinishedAt()), now);
                 if (due) {
-                    anyMissed = true;
                     log.info("检测到遗漏调度: module={}, 用户={}", definition.module(), event.username());
                     try {
                         coordinator.submit(SyncCommand.loginCatchup(definition.module(), event.username()));
                     } catch (SyncJobConflictException e) {
+                        retryNeeded = true;
                         log.debug("补偿提交被跳过: module={}, reason={}", definition.module(), e.getMessage());
                     }
                 }
             }
 
             // If any module is missed but couldn't be submitted, mark for retry
-            if (anyMissed) {
+            if (retryNeeded) {
                 catchupPending.set(true);
                 pendingRequestedBy.set(event.username());
+            } else {
+                catchupPending.set(false);
+                pendingRequestedBy.set(null);
             }
         } finally {
             lockService.release("nba:sync:catchup", token);
@@ -89,16 +94,25 @@ public class SyncCatchupService {
 
         try {
             ZonedDateTime now = ZonedDateTime.now(ZoneId.of("Asia/Shanghai"));
+            boolean retryNeeded = false;
             for (SyncDefinition definition : registry.scheduledDefinitions()) {
                 Optional<SyncJob> latest = repository.findTopByModuleAndStatusOrderByFinishedAtDesc(
                         definition.module(), "SUCCESS");
                 boolean due = latest.isEmpty() || definition.isDue(toZoned(latest.get().getFinishedAt()), now);
                 if (due) {
-                    coordinator.submit(SyncCommand.loginCatchup(definition.module(), username));
+                    try {
+                        coordinator.submit(SyncCommand.loginCatchup(definition.module(), username));
+                    } catch (SyncJobConflictException e) {
+                        retryNeeded = true;
+                        log.debug("Catchup retry deferred: module={}, reason={}",
+                                definition.module(), e.getMessage());
+                    }
                 }
             }
-            catchupPending.set(false);
-            pendingRequestedBy.set(null);
+            catchupPending.set(retryNeeded);
+            if (!retryNeeded) {
+                pendingRequestedBy.set(null);
+            }
         } catch (SyncJobConflictException e) {
             log.debug("补偿重试被跳过: {}", e.getMessage());
         } finally {

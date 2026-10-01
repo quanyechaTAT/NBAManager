@@ -294,7 +294,7 @@ function goToPlayer(player: BoxScorePlayer) {
   justify-content: center;
   border-radius: 8px;
   background: rgba(148, 163, 184, 0.1);
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 800;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -346,8 +346,8 @@ function goToPlayer(player: BoxScorePlayer) {
 }
 
 .avatar.side-away {
-  background: rgba(249, 115, 22, 0.15);
-  color: #fdba74;
+  background: rgba(34, 211, 238, 0.15);
+  color: #A5F3FC;
 }
 
 /* ---------- identity ---------- */
@@ -544,7 +544,7 @@ function goToPlayer(player: BoxScorePlayer) {
 }
 
 .empty-icon {
-  color: #475569;
+  color: var(--text-secondary);
   margin-bottom: 14px;
 }
 
@@ -557,7 +557,7 @@ function goToPlayer(player: BoxScorePlayer) {
 .empty-desc {
   max-width: 320px;
   margin-top: 6px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.6;
 }

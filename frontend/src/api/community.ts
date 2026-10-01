@@ -5,6 +5,7 @@ export interface Post {
   id: number
   userId: number
   username?: string
+  avatarUrl?: string | null
   title: string
   content: string
   category: string
@@ -25,6 +26,7 @@ export interface Comment {
   postId: number
   userId: number
   username: string
+  avatarUrl?: string | null
   parentId: number | null
   content: string
   likeCount: number
@@ -49,8 +51,17 @@ export interface CommentRequest {
   gameId?: string
 }
 
-export function fetchPosts(params: { page: number; size: number; category?: string; q?: string; sort?: string }) {
+export function fetchPosts(params: { page: number; size: number; category?: string; q?: string; tag?: string; sort?: string }) {
   return request.get<PageResponse<Post>>('/posts', { params })
+}
+
+export interface Topic {
+  name: string
+  postCount: number
+}
+
+export function fetchTopics(params: { category?: string; limit?: number }) {
+  return request.get<Topic[]>('/posts/topics', { params })
 }
 
 export function fetchHotPosts(params: { page: number; size: number }) {

@@ -1,5 +1,6 @@
 package com.nbamanager.service;
 
+import com.nbamanager.config.PythonTimeoutProperties;
 import com.nbamanager.domain.MatchRecord;
 import com.nbamanager.domain.Player;
 import com.nbamanager.domain.PlayerCareerStats;
@@ -10,10 +11,13 @@ import com.nbamanager.repository.MatchRecordRepository;
 import com.nbamanager.repository.PlayerCareerStatsRepository;
 import com.nbamanager.repository.PlayerGameLogRepository;
 import com.nbamanager.repository.PlayerRepository;
+import com.nbamanager.repository.PlayerSeasonStatsRepository;
 import com.nbamanager.repository.TeamRepository;
 import com.nbamanager.web.dto.PlayerCareerStatsDto;
 import com.nbamanager.web.dto.PlayerDetailDto;
 import com.nbamanager.web.dto.PlayerGameLogDto;
+import com.nbamanager.web.support.PageRequestSanitizer;
+import com.nbamanager.web.dto.LeagueAveragesDto;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
@@ -40,6 +44,7 @@ import org.json.JSONObject;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,6 +59,12 @@ public class PlayerDetailService {
             .build();
     private static final DateTimeFormatter ESPN_DATE = DateTimeFormatter.BASIC_ISO_DATE;
     private static final DateTimeFormatter NBA_LOG_DATE = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH);
+    /**
+     * 比赛日志分页参数：无用户可视排序字段（仓储方法已固定 matchDate 倒序），
+     * 因此白名单为空——只校验 page/size 边界，sort 一律拒绝。
+     */
+    private static final java.util.Set<String> GAMELOG_ALLOWED_SORTS = java.util.Set.of();
+
     private static final Map<String, String> ESPN_TEAM_NAMES = Map.ofEntries(
             Map.entry("ATL", "老鹰"), Map.entry("BOS", "凯尔特人"), Map.entry("BKN", "篮网"),
             Map.entry("CHA", "黄蜂"), Map.entry("CHI", "公牛"), Map.entry("CLE", "骑士"),
@@ -71,6 +82,9 @@ public class PlayerDetailService {
     private final PlayerCareerStatsRepository playerCareerStatsRepository;
     private final TeamRepository teamRepository;
     private final MatchRecordRepository matchRecordRepository;
+    private final PlayerSeasonStatsRepository playerSeasonStatsRepository;
+    private final PythonScriptRunner pythonScriptRunner;
+    private final PythonTimeoutProperties pythonTimeoutProperties;
 
     @Cacheable(value = "playerDetail", key = "#playerId")
     @Transactional(readOnly = true)
@@ -117,6 +131,27 @@ public class PlayerDetailService {
                 p.getDefensiveRating());
     }
 
+    @Cacheable(value = "leagueAverages", key = "#season")
+    @Transactional(readOnly = true)
+    public LeagueAveragesDto getLeagueAverages(String season) {
+        var agg = playerSeasonStatsRepository.findLeagueAggregate(season);
+        if (agg == null || agg.getPlayerCount() == null || agg.getPlayerCount() == 0) {
+            return LeagueAveragesDto.empty();
+        }
+        return new LeagueAveragesDto(
+                nz(agg.getAvgPoints()), nz(agg.getAvgRebounds()), nz(agg.getAvgAssists()),
+                nz(agg.getAvgSteals()), nz(agg.getAvgBlocks()), nz(agg.getAvgFieldGoalPct()),
+                nz(agg.getAvgThreePointPct()),
+                nz(agg.getMaxPoints()), nz(agg.getMaxRebounds()), nz(agg.getMaxAssists()),
+                nz(agg.getMaxSteals()), nz(agg.getMaxBlocks()), nz(agg.getMaxFieldGoalPct()),
+                nz(agg.getMaxThreePointPct()),
+                agg.getPlayerCount());
+    }
+
+    private static java.math.BigDecimal nz(java.math.BigDecimal v) {
+        return v != null ? v : java.math.BigDecimal.ZERO;
+    }
+
     @Cacheable(value = "playerCareer", key = "#playerId")
     @Transactional
     public List<PlayerCareerStatsDto> getCareerStats(Long playerId) {
@@ -141,13 +176,16 @@ public class PlayerDetailService {
 
     @Transactional(readOnly = true)
     public Page<PlayerGameLogDto> getGameLog(Long playerId, String season, Pageable pageable) {
+        // page/size 边界与非法 sort 统一在此拦截（此前非法 sort 会在 JPA 层变成 500）
+        Pageable safePageable = PageRequestSanitizer.sanitize(
+                pageable, GAMELOG_ALLOWED_SORTS, java.util.Map.of(), null);
         // 获取球员信息（兼容nbaPlayerId查找）
         Player player = playerRepository.findById(playerId).orElse(null);
         if (player == null) {
             player = playerRepository.findByNbaPlayerId(playerId);
         }
         if (player == null || player.getTeam() == null) {
-            return Page.empty(pageable);
+            return Page.empty(safePageable);
         }
 
         String teamName = player.getTeam().getName();
@@ -166,22 +204,22 @@ public class PlayerDetailService {
                     .collect(Collectors.toList());
 
             // 手动分页
-            int start = (int) pageable.getOffset();
-            int end = Math.min(start + pageable.getPageSize(), gameLogList.size());
+            int start = (int) safePageable.getOffset();
+            int end = Math.min(start + safePageable.getPageSize(), gameLogList.size());
             List<PlayerGameLogDto> pageContent = start < gameLogList.size()
                     ? gameLogList.subList(start, end)
                     : List.of();
 
             return new org.springframework.data.domain.PageImpl<>(
-                    pageContent, pageable, gameLogList.size());
+                    pageContent, safePageable, gameLogList.size());
         }
 
         // 没有球队比赛记录，回退到球员个人数据（过滤掉没上场的比赛）
         Page<PlayerGameLog> page;
         if (season != null && !season.isBlank()) {
-            page = playerGameLogRepository.findByPlayerIdAndSeasonOrderByMatchDateDesc(playerId, season, pageable);
+            page = playerGameLogRepository.findByPlayerIdAndSeasonOrderByMatchDateDesc(playerId, season, safePageable);
         } else {
-            page = playerGameLogRepository.findByPlayerIdOrderByMatchDateDesc(playerId, pageable);
+            page = playerGameLogRepository.findByPlayerIdOrderByMatchDateDesc(playerId, safePageable);
         }
 
         // 如果数据库没有数据，从Python脚本获取
@@ -189,9 +227,9 @@ public class PlayerDetailService {
             Long nbaPlayerId = player.getNbaPlayerId() != null ? player.getNbaPlayerId() : playerId;
             fetchFromPython("player_gamelog", String.valueOf(nbaPlayerId), playerId);
             if (season != null && !season.isBlank()) {
-                page = playerGameLogRepository.findByPlayerIdAndSeasonOrderByMatchDateDesc(playerId, season, pageable);
+                page = playerGameLogRepository.findByPlayerIdAndSeasonOrderByMatchDateDesc(playerId, season, safePageable);
             } else {
-                page = playerGameLogRepository.findByPlayerIdOrderByMatchDateDesc(playerId, pageable);
+                page = playerGameLogRepository.findByPlayerIdOrderByMatchDateDesc(playerId, safePageable);
             }
         }
 
@@ -256,78 +294,19 @@ public class PlayerDetailService {
      */
     private void fetchFromPython(String dataType, String nbaPlayerId, Long dbPlayerId) {
         try {
-            String scriptPath = findScriptPath();
-            File scriptFile = new File(scriptPath);
-            File outputDir = scriptFile.getParentFile();
             log.info("调用Python脚本获取{}数据, nbaPlayerId={}, dbPlayerId={}", dataType, nbaPlayerId, dbPlayerId);
-
-            ProcessBuilder pb = new ProcessBuilder("python", scriptPath, dataType, nbaPlayerId);
-            pb.redirectErrorStream(false);
-            pb.directory(outputDir);
-            pb.environment().put("PYTHONIOENCODING", "utf-8");
-            // 代理配置（可选）
-            String proxyHost = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_HOST");
-            String proxyPort = com.nbamanager.config.EnvFileReader.get("NBA_PROXY_PORT");
-            if (proxyHost != null && !proxyHost.isEmpty()) {
-                pb.environment().put("NBA_PROXY_HOST", proxyHost);
-            }
-            if (proxyPort != null && !proxyPort.isEmpty()) {
-                pb.environment().put("NBA_PROXY_PORT", proxyPort);
-            }
-
-            // 传递翻译API配置
-            String mimoApiKey = com.nbamanager.config.EnvFileReader.get("MIMO_API_KEY");
-            String mimoBaseUrl = com.nbamanager.config.EnvFileReader.get("MIMO_BASE_URL");
-            if (mimoApiKey != null && !mimoApiKey.isEmpty()) {
-                pb.environment().put("MIMO_API_KEY", mimoApiKey);
-            }
-            if (mimoBaseUrl != null && !mimoBaseUrl.isEmpty()) {
-                pb.environment().put("MIMO_BASE_URL", mimoBaseUrl);
-            }
-
-            // 删除旧的输出文件
-            File outputFile = new File(outputDir, "output.json");
-            if (outputFile.exists()) {
-                outputFile.delete();
-            }
-
-            Process process = pb.start();
-
-            // 读取stdout（避免缓冲区满导致死锁）
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-            }
-
-            // 读取错误输出（用于日志）
-            StringBuilder errorOutput = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    errorOutput.append(line).append("\n");
-                }
-            }
-
-            int exitCode = process.waitFor();
-            if (exitCode != 0) {
-                log.error("Python脚本执行失败, exitCode={}, error={}", exitCode, errorOutput.toString());
+            PythonScriptRunner.PythonResult result = pythonScriptRunner.run(
+                    "nba_data_fetcher.py", new String[]{dataType, nbaPlayerId},
+                    pythonTimeoutProperties.getDetailSeconds());
+            if (!result.success()) {
+                log.error("Python脚本执行失败, exitCode={}, timedOut={}, error={}",
+                        result.exitCode(), result.timedOut(), result.stderr());
                 return;
             }
 
-            // 从文件读取JSON（与NbaDataSyncService保持一致，避免编码问题）
-            if (!outputFile.exists()) {
-                log.error("Python脚本输出文件不存在: {}", outputFile.getAbsolutePath());
-                return;
-            }
-
-            String jsonStr = new String(java.nio.file.Files.readAllBytes(outputFile.toPath()), StandardCharsets.UTF_8);
+            String jsonStr = result.stdout().trim();
             if (jsonStr.isEmpty()) {
-                log.error("Python脚本输出文件为空");
+                log.error("Python脚本输出为空");
                 return;
             }
 

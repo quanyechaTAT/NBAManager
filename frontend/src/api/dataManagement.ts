@@ -93,12 +93,12 @@ export function syncAllModules() {
 
 /** 查询任务状态 */
 export function getJob(jobId: number) {
-  return request.get<SyncJobResponse>(`/admin/jobs/${jobId}`)
+  return request.get<SyncJobDetailResponse>(`/admin/jobs/${jobId}`)
 }
 
 /** 最近任务列表 */
 export function getRecentJobs() {
-  return request.get<SyncJobResponse[]>('/admin/jobs')
+  return request.get<SyncJobPageResponse>('/admin/jobs', { params: { page: 0, size: 100 } })
 }
 
 /** 模块最新任务 */

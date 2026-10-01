@@ -2,10 +2,13 @@ package com.nbamanager.web;
 
 import com.nbamanager.security.UserPrincipal;
 import com.nbamanager.service.GameNewsService;
-import com.nbamanager.service.SmartDataService;
+import com.nbamanager.service.SyncCommand;
+import com.nbamanager.service.SyncCoordinator;
+import com.nbamanager.service.SyncSubmission;
 import com.nbamanager.web.dto.GameNewsDto;
 import com.nbamanager.web.dto.GameNewsRequest;
 import com.nbamanager.web.dto.PageResponse;
+import com.nbamanager.web.dto.SyncJobResponse;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +16,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -31,13 +35,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class GameNewsController {
 
     private final GameNewsService gameNewsService;
-    private final SmartDataService smartDataService;
+    private final SyncCoordinator syncCoordinator;
 
     /** 分页列表 */
     @GetMapping
     public PageResponse<GameNewsDto> list(
             @RequestParam(required = false) String q,
-            @PageableDefault(size = 10, sort = "gameStartTime", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(size = 10, sort = "createTime", direction = Sort.Direction.DESC) Pageable pageable) {
         return PageResponse.from(gameNewsService.list(q, getCurrentUserId(), pageable));
     }
 
@@ -73,9 +77,14 @@ public class GameNewsController {
     /** 强制刷新新闻（从API获取） */
     @PostMapping("/refresh")
     @PreAuthorize("hasRole('ADMIN')")
-    public java.util.Map<String, Object> refreshNews() {
-        int added = smartDataService.refreshNewsFromApi();
-        return java.util.Map.of("added", added, "message", "新闻刷新完成");
+    public org.springframework.http.ResponseEntity<SyncJobResponse> refreshNews(
+            @AuthenticationPrincipal UserPrincipal user) {
+        SyncSubmission submission = syncCoordinator.submit(
+                SyncCommand.manual("NEWS", user.getUsername()));
+        SyncJobResponse response = SyncJobResponse.from(submission.job(), submission.reused());
+        return submission.reused()
+                ? org.springframework.http.ResponseEntity.ok(response)
+                : org.springframework.http.ResponseEntity.accepted().body(response);
     }
 
     /** 新增赛事资讯（仅管理员） */

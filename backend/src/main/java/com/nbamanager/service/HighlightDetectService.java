@@ -1,12 +1,15 @@
 package com.nbamanager.service;
 
 import com.nbamanager.domain.GameHighlight;
+import com.nbamanager.domain.PlayByPlay;
 import com.nbamanager.domain.provider.PlayByPlayEvent;
 import com.nbamanager.repository.GameHighlightRepository;
 import jakarta.transaction.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -20,7 +23,22 @@ public class HighlightDetectService {
 
     @Transactional
     public List<GameHighlight> detect(String gameId, List<PlayByPlayEvent> events) {
+        return detect(gameId, events, List.of());
+    }
+
+    @Transactional
+    public List<GameHighlight> detect(String gameId, List<PlayByPlayEvent> events,
+                                      List<PlayByPlay> persistedFacts) {
         repository.deleteByGameId(gameId);
+
+        Map<Integer, Long> eventIdsByOrder = new HashMap<>();
+        if (persistedFacts != null) {
+            for (PlayByPlay fact : persistedFacts) {
+                if (fact != null && fact.getEventOrder() != null && fact.getId() != null) {
+                    eventIdsByOrder.put(fact.getEventOrder(), fact.getId());
+                }
+            }
+        }
 
         List<GameHighlight> highlights = new ArrayList<>();
         for (PlayByPlayEvent event : events) {
@@ -32,7 +50,7 @@ public class HighlightDetectService {
 
             GameHighlight highlight = new GameHighlight();
             highlight.setGameId(gameId);
-            highlight.setEventId(null); // sourceEventId is not a numeric ID
+            highlight.setEventId(eventIdsByOrder.get(event.eventOrder()));
             highlight.setPeriod(event.period());
             highlight.setGameClock(event.gameClock());
             highlight.setHighlightType(type);

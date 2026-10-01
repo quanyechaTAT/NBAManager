@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import SockJS from 'sockjs-client/dist/sockjs.min.js'
 import { Client, type IMessage } from '@stomp/stompjs'
 import { useAuthStore } from '@/stores/auth'
+import { useIdentityStore } from '@/stores/identity'
 import {
   fetchChatHistory,
   fetchChatPresence,
@@ -30,6 +31,7 @@ export interface LocalChatMessage {
 
 export function useGameChat(gameId: () => string) {
   const auth = useAuthStore()
+  const identityStore = useIdentityStore()
   const messages = ref<LocalChatMessage[]>([])
   const presence = ref<ChatPresenceResponse | null>(null)
   const connected = ref(false)
@@ -132,12 +134,17 @@ export function useGameChat(gameId: () => string) {
         : member
     ))
     presence.value = { ...data, members }
-    const avatarByUser = new Map(members.map(member => [member.userId, member.avatarUrl]))
-    messages.value = messages.value.map(message => (
-      avatarByUser.has(message.userId)
-        ? { ...message, avatarUrl: avatarByUser.get(message.userId) ?? null }
-        : message
-    ))
+    // 同时更新消息的用户名和头像
+    const identityByUser = new Map(members.map(member => [member.userId, member]))
+    messages.value = messages.value.map(message => {
+      const member = identityByUser.get(message.userId)
+      if (!member) return message
+      return {
+        ...message,
+        username: member.username || message.username,
+        avatarUrl: member.avatarUrl ?? message.avatarUrl,
+      }
+    })
   }
 
   function getCurrentUserId(): number | null {
@@ -150,21 +157,30 @@ export function useGameChat(gameId: () => string) {
   }
 
   function applyOwnAvatar(avatarUrl: string | null) {
-    if (!avatarUrl) return
-    const currentUserId = getCurrentUserId()
-    messages.value = messages.value.map(message => (
-      message.userId === currentUserId || message.username === auth.username
-        ? { ...message, avatarUrl }
-        : message
-    ))
+    applyIdentityUpdate(getCurrentUserId(), auth.username ?? undefined, avatarUrl ?? undefined)
+  }
+
+  function applyIdentityUpdate(userId: number | null, username?: string, avatarUrl?: string) {
+    if (userId == null) return
+    messages.value = messages.value.map(message => {
+      if (message.userId !== userId) return message
+      return {
+        ...message,
+        ...(username ? { username } : {}),
+        ...(avatarUrl !== undefined ? { avatarUrl } : {}),
+      }
+    })
     if (presence.value) {
       presence.value = {
         ...presence.value,
-        members: presence.value.members.map(member => (
-          member.userId === currentUserId || member.username === auth.username
-            ? { ...member, avatarUrl }
-            : member
-        )),
+        members: presence.value.members.map(member => {
+          if (member.userId !== userId) return member
+          return {
+            ...member,
+            ...(username ? { username } : {}),
+            ...(avatarUrl !== undefined ? { avatarUrl } : {}),
+          }
+        }),
       }
     }
   }
@@ -393,6 +409,13 @@ export function useGameChat(gameId: () => string) {
 
   watch(() => auth.avatarUrl, avatarUrl => applyOwnAvatar(avatarUrl), { immediate: true })
 
+  // 监听身份 store 变化，实时更新聊天消息用户名和头像
+  watch(() => identityStore.revision, () => {
+    for (const identity of identityStore.identities.values()) {
+      applyIdentityUpdate(identity.userId, identity.username, identity.avatarUrl ?? undefined)
+    }
+  })
+
   onMounted(async () => {
     const gid = gameId()
     if (gid && auth.token) {
@@ -420,5 +443,6 @@ export function useGameChat(gameId: () => string) {
     retryMessage,
     connect,
     disconnect,
+    applyIdentityUpdate,
   }
 }

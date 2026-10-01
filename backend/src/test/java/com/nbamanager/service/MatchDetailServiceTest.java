@@ -1,8 +1,12 @@
 package com.nbamanager.service;
 
+import com.nbamanager.config.PythonTimeoutProperties;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.nbamanager.domain.GameBoxScore;
@@ -14,11 +18,13 @@ import com.nbamanager.repository.MatchRecordRepository;
 import com.nbamanager.repository.PlayByPlayRepository;
 import com.nbamanager.repository.PlayerRepository;
 import com.nbamanager.web.dto.BoxScoreDto;
+import com.nbamanager.web.dto.PlayByPlayDto;
 import com.nbamanager.web.dto.QuarterScoreDto;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -45,6 +51,15 @@ class MatchDetailServiceTest {
     @Mock
     private PlayerRepository playerRepository;
 
+    @Mock
+    private com.nbamanager.service.PythonScriptRunner pythonScriptRunner;
+
+    @BeforeEach
+    void setUpPythonFailure() {
+        lenient().when(pythonScriptRunner.run(anyString(), any(String[].class), anyInt()))
+                .thenReturn(new PythonScriptRunner.PythonResult(-1, "", "Python unavailable", false, 1));
+    }
+
     @Test
     void getBoxScore_populatesScoresFromMatchRecord() {
         String gameId = "0022500001";
@@ -68,16 +83,41 @@ class MatchDetailServiceTest {
                 gameIdMappingService,
                 matchRecordRepository,
                 gameNewsRepository,
-                playerRepository);
+                pythonScriptRunner,
+                playerRepository,
+                new PythonTimeoutProperties());
 
         BoxScoreDto result = service.getBoxScore(gameId);
 
         assertThat(result.homeScore()).isEqualTo(112);
         assertThat(result.awayScore()).isEqualTo(105);
+        verifyNoInteractions(pythonScriptRunner);
     }
 
     @Test
-    void getQuarterScores_fallsBackToScoreboardWhenPlayByPlayAllZeros() {
+    void getPlayByPlay_whenFactsAreMissingDoesNotCollectFromPublicGet() {
+        String gameId = "0022500099";
+        when(gameIdMappingService.getNbaGameId(gameId)).thenReturn(gameId);
+        when(playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId)).thenReturn(List.of());
+
+        MatchDetailService service = new MatchDetailService(
+                gameBoxScoreRepository,
+                playByPlayRepository,
+                gameIdMappingService,
+                matchRecordRepository,
+                gameNewsRepository,
+                pythonScriptRunner,
+                playerRepository,
+                new PythonTimeoutProperties());
+
+        List<PlayByPlayDto> result = service.getPlayByPlay(gameId, null);
+
+        assertThat(result).isEmpty();
+        verifyNoInteractions(pythonScriptRunner);
+    }
+
+    @Test
+    void getQuarterScores_whenPersistedFactsAreInvalidDoesNotCallPythonFromGet() {
         String gameId = "0022500002";
 
         // PlayByPlay数据全是0:0
@@ -98,7 +138,6 @@ class MatchDetailServiceTest {
         when(gameIdMappingService.getNbaGameId(gameId)).thenReturn(gameId);
         when(playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId))
                 .thenReturn(List.of(pbp));
-        when(matchRecordRepository.findByNbaGameId(gameId)).thenReturn(Optional.of(match));
 
         MatchDetailService service = new MatchDetailService(
                 gameBoxScoreRepository,
@@ -106,18 +145,35 @@ class MatchDetailServiceTest {
                 gameIdMappingService,
                 matchRecordRepository,
                 gameNewsRepository,
-                playerRepository);
+                pythonScriptRunner,
+                playerRepository,
+                new PythonTimeoutProperties());
 
-        // Play-by-Play全是0:0应该被判定为无效，会尝试fallback到ScoreboardV3
-        // 由于Python脚本在测试中不可用，结果可能为空
         List<QuarterScoreDto> result = service.getQuarterScores(gameId);
 
-        // 验证不会返回全是0:0的错误结果（要么有效数据，要么空）
-        if (!result.isEmpty()) {
-            boolean allZero = result.stream().allMatch(s -> s.homeScore() == 0 && s.awayScore() == 0);
-            assertThat(allZero).isFalse();
-        }
-        // 空结果也是可接受的（Python脚本不可用时）
+        assertThat(result).isEmpty();
+        verifyNoInteractions(pythonScriptRunner);
+    }
+
+    @Test
+    void getQuarterScores_forEspnSummerGameDoesNotCallPythonFromPublicGet() {
+        String gameId = "401881845";
+        when(gameIdMappingService.getNbaGameId(gameId)).thenReturn(gameId);
+        when(playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId)).thenReturn(List.of());
+        MatchDetailService service = new MatchDetailService(
+                gameBoxScoreRepository,
+                playByPlayRepository,
+                gameIdMappingService,
+                matchRecordRepository,
+                gameNewsRepository,
+                pythonScriptRunner,
+                playerRepository,
+                new PythonTimeoutProperties());
+
+        List<QuarterScoreDto> result = service.getQuarterScores(gameId);
+
+        assertThat(result).isEmpty();
+        verifyNoInteractions(pythonScriptRunner);
     }
 
     @Test
@@ -148,15 +204,15 @@ class MatchDetailServiceTest {
         when(gameIdMappingService.getNbaGameId(gameId)).thenReturn(gameId);
         when(playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId))
                 .thenReturn(List.of(pbp1, pbp2));
-        when(matchRecordRepository.findByNbaGameId(gameId)).thenReturn(Optional.of(match));
-
         MatchDetailService service = new MatchDetailService(
                 gameBoxScoreRepository,
                 playByPlayRepository,
                 gameIdMappingService,
                 matchRecordRepository,
                 gameNewsRepository,
-                playerRepository);
+                pythonScriptRunner,
+                playerRepository,
+                new PythonTimeoutProperties());
 
         List<QuarterScoreDto> result = service.getQuarterScores(gameId);
 
@@ -198,15 +254,15 @@ class MatchDetailServiceTest {
         when(gameIdMappingService.getNbaGameId(gameId)).thenReturn(gameId);
         when(playByPlayRepository.findByGameIdOrderByEventOrderAsc(gameId))
                 .thenReturn(List.of(pbp1, pbp2));
-        when(matchRecordRepository.findByNbaGameId(gameId)).thenReturn(Optional.of(match));
-
         MatchDetailService service = new MatchDetailService(
                 gameBoxScoreRepository,
                 playByPlayRepository,
                 gameIdMappingService,
                 matchRecordRepository,
                 gameNewsRepository,
-                playerRepository);
+                pythonScriptRunner,
+                playerRepository,
+                new PythonTimeoutProperties());
 
         List<QuarterScoreDto> result = service.getQuarterScores(gameId);
 

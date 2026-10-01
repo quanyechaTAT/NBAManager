@@ -35,6 +35,12 @@ public class CommentController {
         return commentService.listByPost(postId, userId);
     }
 
+    /** 由评论 id 反查所属帖子 id：COMMENT_LIKE 通知（relatedId=commentId）跳转用。 */
+    @GetMapping("/{id}/post-id")
+    public java.util.Map<String, Long> getPostId(@PathVariable Long id) {
+        return java.util.Map.of("postId", commentService.getTarget(id).postId());
+    }
+
     @GetMapping("/game/{gameId}")
     public List<CommentDto> listByGame(@PathVariable String gameId) {
         Long userId = getCurrentUserId();

@@ -1,0 +1,228 @@
+/* ===== Courtside Motion System =====
+ * Signature: restrained arena polish — orange edge light, soft lift, staged reveal.
+ * Prefer one orchestrated entrance + precise micro-interactions over scattered effects.
+ */
+
+:root {
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --duration-reveal: 0.45s;
+  --duration-lift: 0.22s;
+  --duration-nav: 0.18s;
+  --nav-height: 60px;
+  --mobile-nav-height: 64px;
+  --surface-glass: rgba(18, 20, 25, 0.78);
+  --surface-glass-border: rgba(255, 255, 255, 0.08);
+  --surface-shine: linear-gradient(135deg, rgba(255, 255, 255, 0.06), transparent 40%);
+  --accent-edge: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.85), transparent);
+}
+
+[data-theme="light"] {
+  --surface-glass: rgba(255, 255, 255, 0.82);
+  --surface-glass-border: rgba(15, 23, 42, 0.08);
+  --surface-shine: linear-gradient(135deg, rgba(255, 255, 255, 0.9), transparent 45%);
+  --accent-edge: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.55), transparent);
+}
+
+/* ===== Page transitions ===== */
+/* 离场 0.1s / 入场 0.28s：压缩 out-in 空窗，切页不留明显空白 */
+.page-fade-slide-enter-active {
+  transition:
+    opacity 0.28s var(--ease-out-expo),
+    transform 0.28s var(--ease-out-expo);
+}
+
+.page-fade-slide-leave-active {
+  transition:
+    opacity 0.1s var(--ease-smooth),
+    transform 0.1s var(--ease-smooth);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.page-fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(14px) scale(0.992);
+}
+
+.page-fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.995);
+}
+
+/* ===== Reveal utilities ===== */
+@keyframes courtside-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes courtside-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes courtside-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes courtside-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes courtside-pulse-soft {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.9; }
+}
+
+@keyframes courtside-edge-sweep {
+  0% { transform: translateX(-120%); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+
+.reveal-rise {
+  animation: courtside-rise var(--duration-reveal) var(--ease-out-expo) both;
+}
+
+.reveal-fade {
+  animation: courtside-fade var(--duration-reveal) var(--ease-out-quart) both;
+}
+
+.reveal-scale {
+  animation: courtside-scale-in var(--duration-reveal) var(--ease-out-expo) both;
+}
+
+.stagger-children > * {
+  animation: courtside-rise var(--duration-reveal) var(--ease-out-expo) both;
+}
+
+.stagger-children > *:nth-child(1) { animation-delay: 0.02s; }
+.stagger-children > *:nth-child(2) { animation-delay: 0.07s; }
+.stagger-children > *:nth-child(3) { animation-delay: 0.12s; }
+.stagger-children > *:nth-child(4) { animation-delay: 0.17s; }
+.stagger-children > *:nth-child(5) { animation-delay: 0.22s; }
+.stagger-children > *:nth-child(6) { animation-delay: 0.27s; }
+.stagger-children > *:nth-child(7) { animation-delay: 0.32s; }
+.stagger-children > *:nth-child(8) { animation-delay: 0.37s; }
+.stagger-children > *:nth-child(9) { animation-delay: 0.42s; }
+.stagger-children > *:nth-child(10) { animation-delay: 0.47s; }
+
+/* ===== Premium surface helpers ===== */
+.surface-premium {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition:
+    transform var(--duration-lift) var(--ease-out-quart),
+    box-shadow var(--duration-lift) var(--ease-out-quart),
+    border-color var(--duration-lift) var(--ease-smooth);
+}
+
+.surface-premium::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: var(--accent-edge);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.surface-premium::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--surface-shine);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.surface-premium:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-medium);
+}
+
+.interactive-lift {
+  transition:
+    transform var(--duration-lift) var(--ease-out-quart),
+    box-shadow var(--duration-lift) var(--ease-out-quart),
+    border-color var(--duration-nav) var(--ease-smooth),
+    background-color var(--duration-nav) var(--ease-smooth),
+    color var(--duration-nav) var(--ease-smooth);
+}
+
+.interactive-lift:hover {
+  transform: translateY(-2px);
+}
+
+.interactive-lift:active {
+  transform: translateY(0) scale(0.985);
+}
+
+/* ===== Skeleton shimmer ===== */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-hover) 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    var(--bg-hover) 100%
+  );
+  background-size: 200% 100%;
+  animation: courtside-shimmer 1.4s linear infinite;
+}
+
+[data-theme="light"] .skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    #F1EFEA 0%,
+    #FAF9F7 50%,
+    #F1EFEA 100%
+  );
+  background-size: 200% 100%;
+}
+
+/* ===== Focus ring ===== */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ===== Reduced motion ===== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .page-fade-slide-enter-from,
+  .page-fade-slide-leave-to,
+  .reveal-rise,
+  .reveal-scale,
+  .stagger-children > * {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

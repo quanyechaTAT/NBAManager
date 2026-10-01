@@ -1,6 +1,7 @@
 package com.nbamanager.web.dto;
 
 import com.nbamanager.domain.MatchRecord;
+import com.nbamanager.service.MatchGameTypeResolver;
 import java.time.LocalDate;
 
 public record MatchRecordDto(
@@ -12,7 +13,8 @@ public record MatchRecordDto(
         LocalDate matchDate,
         String season,
         String status,
-        String nbaGameId
+        String nbaGameId,
+        String gameType
 ) {
     public static MatchRecordDto from(MatchRecord m) {
         return new MatchRecordDto(
@@ -24,7 +26,9 @@ public record MatchRecordDto(
                 m.getMatchDate(),
                 m.getSeason(),
                 m.getStatus(),
-                m.getNbaGameId()
+                m.getNbaGameId(),
+                MatchGameTypeResolver.resolve(
+                        m.getGameType(), m.getNbaGameId(), m.getMatchDate())
         );
     }
 }

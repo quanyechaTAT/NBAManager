@@ -1,45 +1,31 @@
 <template>
   <div class="page-wrapper">
     <div class="page-inner">
-      <el-card shadow="never" class="card slide-up-enter">
-        <div class="section-head">
-          <div>
-            <h2>选秀数据库</h2>
-            <p>浏览和管理 NBA 历年选秀数据记录。</p>
-          </div>
-          <div class="head-actions">
-            <SyncButton v-if="auth.isAdmin" module="draft" label="同步选秀" @sync-success="load" />
-            <el-button v-if="auth.isAdmin" type="primary" @click="openCreate">新建选秀记录</el-button>
-          </div>
+      <div class="draft-content">
+        <SportsHeader
+          eyebrow="NBA DRAFT CLASS ARCHIVE"
+          title="历届选秀星河殿堂"
+          subtitle="重温历届选秀顺位、乐透区新秀与黄金一代球员的生涯起点"
+        />
+
+        <!-- 紧凑统计摘要 -->
+        <div class="stats-inline">
+          <span class="stat"><strong>{{ totalPicks }}</strong>本届新秀总数</span>
+          <span class="stat"><strong>{{ round1Count }}</strong>首轮新秀 (R1)</span>
+          <span class="stat"><strong>{{ round2Count }}</strong>次轮新秀 (R2)</span>
+          <span class="stat"><strong>{{ topPickTeam }}</strong>囤签大户球队</span>
         </div>
 
-        <!-- 统计卡片 -->
-        <div class="stats-row stagger-in">
-          <div class="mini-stat">
-            <span class="mini-stat-value">{{ totalPicks }}</span>
-            <span class="mini-stat-label">总选秀数</span>
-          </div>
-          <div class="mini-stat">
-            <span class="mini-stat-value">{{ round1Count }}</span>
-            <span class="mini-stat-label">第一轮</span>
-          </div>
-          <div class="mini-stat">
-            <span class="mini-stat-value">{{ round2Count }}</span>
-            <span class="mini-stat-label">第二轮</span>
-          </div>
-          <div class="mini-stat">
-            <span class="mini-stat-value">{{ topPickTeam }}</span>
-            <span class="mini-stat-label">最多选秀球队</span>
-          </div>
-        </div>
-
-        <!-- 年份选择器 -->
+        <!-- 统一工具栏 -->
         <div class="toolbar">
           <span class="toolbar-label">选秀年份</span>
           <el-select v-model="selectedYear" style="width: 140px" @change="load">
             <el-option v-for="y in yearOptions" :key="y" :label="y + ' 年'" :value="y" />
           </el-select>
-          <el-button type="primary" plain @click="load">刷新</el-button>
+          <el-button plain @click="load">刷新</el-button>
+          <span class="toolbar-spacer" />
+          <SyncButton v-if="auth.isAdmin" module="draft" label="同步选秀" @sync-success="load" />
+          <el-button v-if="auth.isAdmin" type="primary" @click="openCreate">新建选秀记录</el-button>
         </div>
 
         <!-- 第一轮 -->
@@ -49,10 +35,14 @@
             <span class="round-title">第一轮选秀</span>
             <span class="round-count">{{ round1.length }} 人</span>
           </div>
-          <el-table :data="round1" border stripe v-loading="loading" class="draft-table">
-            <el-table-column label="顺位" width="80" align="center">
+          <el-table :data="round1" stripe v-loading="loading" class="draft-table">
+            <el-table-column label="顺位" width="105" align="center">
               <template #default="{ row }">
-                <span class="pick-number" :class="{ 'lottery-pick': row.pickNumber <= 14 }">{{ row.pickNumber }}</span>
+                <span v-if="row.pickNumber === 1" class="pick-badge pick-top1">#1 状元</span>
+                <span v-else-if="row.pickNumber === 2" class="pick-badge pick-top2">#2 榜眼</span>
+                <span v-else-if="row.pickNumber === 3" class="pick-badge pick-top3">#3 探花</span>
+                <span v-else-if="row.pickNumber <= 14" class="pick-badge pick-lottery">#{{ row.pickNumber }}</span>
+                <span v-else class="pick-number">#{{ row.pickNumber }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="playerName" label="球员" min-width="160">
@@ -69,16 +59,38 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column prop="teamName" label="选中球队" min-width="140" />
-            <el-table-column prop="notes" label="备注" min-width="160">
+            <el-table-column label="选中球队" min-width="150">
               <template #default="{ row }">
-                <span class="text-muted">{{ row.notes || '—' }}</span>
+                <div class="pick-team-cell">
+                  <img v-if="getTeamLogo(row.teamName)" :src="getTeamLogo(row.teamName)" class="pick-team-logo" alt="" />
+                  <span>{{ row.teamName }}</span>
+                </div>
               </template>
             </el-table-column>
-            <el-table-column v-if="auth.isAdmin" label="操作" width="160" fixed="right">
+            <el-table-column prop="notes" label="备注" min-width="160">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-                <el-button link type="danger" @click="onDelete(row)">删除</el-button>
+                <span class="text-muted">{{ displayNotes(row.notes) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="auth.isAdmin" label="操作" width="110" fixed="right" align="center">
+              <template #default="{ row }">
+                <el-tooltip content="编辑" placement="top">
+                  <button class="row-action-btn" type="button" aria-label="编辑选秀记录" @click="openEdit(row)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                  </button>
+                </el-tooltip>
+                <el-dropdown trigger="click" @command="(cmd: string | number | object) => cmd === 'delete' && onDelete(row)">
+                  <button class="row-action-btn" type="button" aria-label="更多操作">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+                  </button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="delete">
+                        <span class="dropdown-danger">删除记录</span>
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
           </el-table>
@@ -91,10 +103,10 @@
             <span class="round-title">第二轮选秀</span>
             <span class="round-count">{{ round2.length }} 人</span>
           </div>
-          <el-table :data="round2" border stripe class="draft-table">
+          <el-table :data="round2" stripe class="draft-table">
             <el-table-column label="顺位" width="80" align="center">
               <template #default="{ row }">
-                <span class="pick-number">{{ row.pickNumber }}</span>
+                <span class="pick-number">#{{ row.pickNumber }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="playerName" label="球员" min-width="160">
@@ -111,23 +123,81 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column prop="teamName" label="选中球队" min-width="140" />
-            <el-table-column prop="notes" label="备注" min-width="160">
+            <el-table-column label="选中球队" min-width="150">
               <template #default="{ row }">
-                <span class="text-muted">{{ row.notes || '—' }}</span>
+                <div class="pick-team-cell">
+                  <img v-if="getTeamLogo(row.teamName)" :src="getTeamLogo(row.teamName)" class="pick-team-logo" alt="" />
+                  <span>{{ row.teamName }}</span>
+                </div>
               </template>
             </el-table-column>
-            <el-table-column v-if="auth.isAdmin" label="操作" width="160" fixed="right">
+            <el-table-column prop="notes" label="备注" min-width="160">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-                <el-button link type="danger" @click="onDelete(row)">删除</el-button>
+                <span class="text-muted">{{ displayNotes(row.notes) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="auth.isAdmin" label="操作" width="110" fixed="right" align="center">
+              <template #default="{ row }">
+                <el-tooltip content="编辑" placement="top">
+                  <button class="row-action-btn" type="button" aria-label="编辑选秀记录" @click="openEdit(row)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                  </button>
+                </el-tooltip>
+                <el-dropdown trigger="click" @command="(cmd: string | number | object) => cmd === 'delete' && onDelete(row)">
+                  <button class="row-action-btn" type="button" aria-label="更多操作">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+                  </button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="delete">
+                        <span class="dropdown-danger">删除记录</span>
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
           </el-table>
         </div>
 
+        <!-- 手机端：顺位、球员、球队优先，避免横向表格遮住关键信息。 -->
+        <div class="draft-mobile-list">
+          <section v-for="round in mobileRounds" :key="round.number" v-show="round.picks.length" class="draft-mobile-round">
+            <div class="round-header">
+              <span class="round-badge" :class="round.number === 1 ? 'round-1' : 'round-2'">R{{ round.number }}</span>
+              <span class="round-title">{{ round.label }}</span>
+              <span class="round-count">{{ round.picks.length }} 人</span>
+            </div>
+            <article v-for="row in round.picks" :key="row.id" class="draft-pick-card">
+              <div class="draft-pick-card__top">
+                <span class="draft-pick-card__number">第 {{ row.pickNumber }} 顺位</span>
+                <span class="draft-pick-card__team">
+                  <img v-if="getTeamLogo(row.teamName)" :src="getTeamLogo(row.teamName)" alt="" />
+                  {{ row.teamName }}
+                </span>
+              </div>
+              <div class="draft-pick-card__player">
+                <span class="player-avatar-sm">
+                  <img v-if="row.nbaPlayerId" :src="getHeadshotUrl(row.nbaPlayerId)" :alt="row.playerName" class="headshot-sm" loading="lazy" @error="onHeadshotError" />
+                  <span class="player-avatar-placeholder" :style="row.nbaPlayerId ? { display: 'none' } : undefined">{{ row.playerName?.charAt(0) }}</span>
+                </span>
+                <span class="draft-pick-card__name">
+                  <button v-if="row.nbaPlayerId" type="button" @click="goPlayerDetail(row.nbaPlayerId)">{{ row.playerName }}</button>
+                  <strong v-else>{{ row.playerName }}</strong>
+                  <small v-if="row.playerNameEn">{{ row.playerNameEn }}</small>
+                </span>
+              </div>
+              <p v-if="displayNotes(row.notes) !== '—'" class="draft-pick-card__note">{{ displayNotes(row.notes) }}</p>
+              <div v-if="auth.isAdmin" class="draft-pick-card__actions">
+                <button type="button" @click="openEdit(row)">编辑</button>
+                <button type="button" class="is-danger" @click="onDelete(row)">删除</button>
+              </div>
+            </article>
+          </section>
+        </div>
+
         <AppEmpty v-if="!loading && rows.length === 0" description="暂无选秀数据" />
-      </el-card>
+      </div>
 
       <!-- 新建/编辑弹窗 -->
       <el-dialog v-model="dialogVisible" :title="editingId ? '编辑选秀记录' : '新建选秀记录'" width="580px" destroy-on-close class="dialog-light" :append-to-body="true" :center="true">
@@ -174,8 +244,17 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { fetchDraftPicks, createDraftPick, updateDraftPick, deleteDraftPick } from '@/api/draft'
 import AppEmpty from '@/components/common/AppEmpty.vue'
+import SportsHeader from '@/components/common/SportsHeader.vue'
 import type { DraftPick } from '@/api/types'
+import { getTeamLogo } from '@/utils/teamLogos'
 import SyncButton from '@/components/common/SyncButton.vue'
+
+/** 备注展示：与顺位机械重复的默认文案归一为 — */
+function displayNotes(notes: string | null | undefined): string {
+  if (!notes) return '—'
+  if (/^选秀顺位第\d+位$/.test(notes.trim())) return '—'
+  return notes
+}
 
 const router = useRouter()
 
@@ -184,8 +263,6 @@ const loading = ref(false)
 const saving = ref(false)
 const rows = ref<DraftPick[]>([])
 const selectedYear = ref(new Date().getFullYear())
-const positionOptions = ['控卫', '分卫', '小前锋', '大前锋', '中锋']
-
 const currentYear = new Date().getFullYear()
 const yearOptions = computed(() => {
   const years: number[] = []
@@ -195,6 +272,10 @@ const yearOptions = computed(() => {
 
 const round1 = computed(() => rows.value.filter(r => r.round === 1).sort((a, b) => a.pickNumber - b.pickNumber))
 const round2 = computed(() => rows.value.filter(r => r.round === 2).sort((a, b) => a.pickNumber - b.pickNumber))
+const mobileRounds = computed(() => [
+  { number: 1, label: '第一轮选秀', picks: round1.value },
+  { number: 2, label: '第二轮选秀', picks: round2.value },
+])
 const totalPicks = computed(() => rows.value.length)
 const round1Count = computed(() => round1.value.length)
 const round2Count = computed(() => round2.value.length)
@@ -322,8 +403,65 @@ onMounted(() => load())
 </script>
 
 <style scoped>
+/* 紧凑统计摘要 */
+.stats-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+}
+.stats-inline .stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.stats-inline .stat strong {
+  font-family: var(--font-heading);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 工具栏布局 */
+.toolbar-spacer { flex: 1; }
+
+/* 行内操作按钮 */
+.row-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin: 0 2px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.row-action-btn:hover,
+.row-action-btn:focus-visible {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+.row-action-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.dropdown-danger { color: var(--danger); }
+
 .page-wrapper {
-  max-width: 1200px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 0 24px;
   min-height: calc(100vh - 108px);
@@ -360,16 +498,6 @@ onMounted(() => load())
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border-light);
   position: relative;
-}
-.section-head::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  width: 40px;
-  height: 2px;
-  background: var(--accent);
-  border-radius: 1px;
 }
 .section-head h2 {
   margin: 0 0 6px;
@@ -450,6 +578,38 @@ onMounted(() => load())
 .round-section {
   margin-bottom: 8px;
 }
+.draft-mobile-list { display: none; }
+.draft-pick-card { background: var(--bg-card); }
+@media (max-width: 768px) {
+  .page-wrapper { padding: 0 16px; }
+  .round-section { display: none; }
+  .draft-mobile-list { display: block; }
+  .draft-mobile-round { margin-bottom: 24px; }
+  .draft-pick-card {
+    margin-bottom: 10px;
+    padding: 14px 16px;
+    border: 1px solid var(--border-light);
+    border-radius: 12px;
+  }
+  .draft-pick-card__top,
+  .draft-pick-card__team,
+  .draft-pick-card__player,
+  .draft-pick-card__actions { display: flex; align-items: center; }
+  .draft-pick-card__top { justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  .draft-pick-card__number { color: var(--accent); font-size: 12px; font-weight: 800; white-space: nowrap; }
+  .draft-pick-card__team { gap: 6px; min-width: 0; color: var(--text-secondary); font-size: 12px; text-align: right; }
+  .draft-pick-card__team img { width: 22px; height: 22px; object-fit: contain; }
+  .draft-pick-card__player { gap: 12px; }
+  .draft-pick-card__player .player-avatar-sm { width: 44px; height: 44px; }
+  .draft-pick-card__name { display: grid; gap: 2px; min-width: 0; }
+  .draft-pick-card__name button { padding: 0; border: 0; background: none; color: var(--text-primary); font: inherit; font-weight: 700; text-align: left; cursor: pointer; }
+  .draft-pick-card__name strong { color: var(--text-primary); font-size: 14px; }
+  .draft-pick-card__name small { color: var(--text-muted); font-size: 11px; }
+  .draft-pick-card__note { margin: 10px 0 0; color: var(--text-secondary); font-size: 12px; }
+  .draft-pick-card__actions { justify-content: flex-end; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-light); }
+  .draft-pick-card__actions button { min-width: 44px; min-height: 36px; padding: 0 10px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-hover); color: var(--text-primary); cursor: pointer; }
+  .draft-pick-card__actions .is-danger { color: var(--danger); }
+}
 .round-header {
   display: flex;
   align-items: center;
@@ -467,7 +627,7 @@ onMounted(() => load())
 }
 .round-1 {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast, #04202A);
 }
 .round-2 {
   background: var(--bg-hover);
@@ -491,6 +651,52 @@ onMounted(() => load())
   font-family: var(--font-heading);
   font-weight: 700;
   color: var(--text-secondary);
+}
+.pick-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  font-variant-numeric: tabular-nums;
+}
+.pick-top1 {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(245, 158, 11, 0.08));
+  color: #F59E0B;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.2);
+}
+.pick-top2 {
+  background: linear-gradient(135deg, rgba(148, 163, 184, 0.22), rgba(148, 163, 184, 0.08));
+  color: #94A3B8;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+}
+.pick-top3 {
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.22), rgba(217, 119, 6, 0.08));
+  color: #D97706;
+  border: 1px solid rgba(217, 119, 6, 0.45);
+}
+.pick-lottery {
+  background: var(--bg-hover);
+  color: var(--accent);
+  border: 1px solid var(--border-light);
+}
+
+/* 选中球队单元格 */
+.pick-team-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pick-team-logo {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 .lottery-pick {
   color: var(--accent);

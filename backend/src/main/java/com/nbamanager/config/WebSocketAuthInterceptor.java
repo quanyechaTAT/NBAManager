@@ -40,7 +40,9 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                 String token = authHeader.substring(7);
                 try {
                     String username = jwtService.extractUsername(token);
-                    if (username != null && jwtService.isTokenValid(token, username)) {
+                    if (username != null && jwtService.isTokenValid(
+                            token, username, com.nbamanager.security.JwtService.pwdMarkerOf(
+                                    userDetailsService.loadUserByUsername(username).getPassword()))) {
                         UserPrincipal userPrincipal = (UserPrincipal) userDetailsService.loadUserByUsername(username);
                         UsernamePasswordAuthenticationToken auth =
                                 new UsernamePasswordAuthenticationToken(userPrincipal, null, userPrincipal.getAuthorities());

@@ -1,6 +1,7 @@
 package com.nbamanager.service;
 
 import com.nbamanager.domain.GameTurningPoint;
+import com.nbamanager.domain.PlayByPlay;
 import com.nbamanager.domain.provider.PlayByPlayEvent;
 import com.nbamanager.repository.GameTurningPointRepository;
 import java.time.LocalDateTime;
@@ -10,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.json.JSONArray;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +27,12 @@ public class TurningPointDetectService {
 
     @Transactional
     public List<GameTurningPoint> detect(String gameId, List<PlayByPlayEvent> events) {
+        return detect(gameId, events, List.of());
+    }
+
+    @Transactional
+    public List<GameTurningPoint> detect(String gameId, List<PlayByPlayEvent> events,
+                                         List<PlayByPlay> persistedFacts) {
         repository.deleteByGameId(gameId);
 
         if (events == null || events.size() < 4) {
@@ -47,9 +55,36 @@ public class TurningPointDetectService {
         // Re-sort by event order for display
         result.sort(Comparator.comparingInt(GameTurningPoint::getStartEventOrder));
 
+        attachEventReferences(result, persistedFacts);
         repository.saveAll(result);
         log.info("Detected {} turning points for gameId={}", result.size(), gameId);
         return result;
+    }
+
+    private void attachEventReferences(List<GameTurningPoint> points, List<PlayByPlay> persistedFacts) {
+        if (points == null || points.isEmpty() || persistedFacts == null || persistedFacts.isEmpty()) {
+            return;
+        }
+        Map<Integer, Long> idsByOrder = new HashMap<>();
+        for (PlayByPlay fact : persistedFacts) {
+            if (fact != null && fact.getEventOrder() != null && fact.getId() != null) {
+                idsByOrder.put(fact.getEventOrder(), fact.getId());
+            }
+        }
+        for (GameTurningPoint point : points) {
+            Long endId = idsByOrder.get(point.getEndEventOrder());
+            point.setEventId(endId);
+            JSONArray cited = new JSONArray();
+            int start = point.getStartEventOrder() == null ? Integer.MIN_VALUE : point.getStartEventOrder();
+            int end = point.getEndEventOrder() == null ? start : point.getEndEventOrder();
+            idsByOrder.entrySet().stream()
+                    .filter(entry -> entry.getKey() >= start && entry.getKey() <= end)
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach(entry -> cited.put(entry.getValue()));
+            if (cited.length() > 0) {
+                point.setCitedEventIdsJson(cited.toString());
+            }
+        }
     }
 
     // --- Run Detection (sliding window) ---

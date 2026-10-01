@@ -10,12 +10,11 @@
 
     <div class="page-inner">
       <el-card shadow="never" class="card slide-up-enter">
-        <div class="section-head">
-          <div>
-            <h2>历史数据</h2>
-            <p>赛季数据总览，查看联盟各项数据领袖与球队排名。</p>
-          </div>
-        </div>
+        <SportsHeader
+          eyebrow="NBA HISTORICAL ARCHIVES"
+          title="历史长卷与数据丰碑"
+          subtitle="重温数十年辉煌赛季，探寻联盟各项数据王座与历史战绩沉淀"
+        />
 
         <!-- 赛季选择器 -->
         <div class="toolbar">
@@ -40,16 +39,33 @@
           </el-button>
         </div>
 
+        <!-- 窄屏按类别阅读，避免五组榜单挤在同一行 -->
+        <div class="leader-category-tabs" role="tablist" aria-label="数据领袖类别">
+          <button
+            v-for="cat in leaderCategories"
+            :key="cat.key"
+            type="button"
+            role="tab"
+            :aria-selected="activeLeaderCategory === cat.key"
+            :class="{ 'is-active': activeLeaderCategory === cat.key }"
+            @click="activeLeaderCategory = cat.key"
+          >{{ cat.label }}</button>
+        </div>
         <!-- 数据领袖卡片 -->
         <div class="leaders-grid stagger-in">
-          <div class="leader-card" v-for="cat in leaderCategories" :key="cat.key">
+          <div class="leader-card" v-for="cat in leaderCategories" :key="cat.key" :class="{ 'is-active': activeLeaderCategory === cat.key }">
             <div class="leader-card-header">
-              <span class="leader-icon">{{ cat.icon }}</span>
+              <span class="leader-icon" v-html="cat.icon" />
               <span class="leader-title">{{ cat.label }}</span>
               <span class="leader-unit">{{ cat.unit }}</span>
             </div>
             <div class="leader-list">
               <div v-for="(p, i) in cat.players" :key="p.id" class="leader-row">
+                <span
+                  class="leader-row-bar"
+                  :style="{ width: leaderBarWidth(cat, p) + '%' }"
+                  aria-hidden="true"
+                />
                 <span class="leader-rank" :class="{ 'rank-top3': i < 3 }">{{ i + 1 }}</span>
                 <router-link :to="{ path: '/players/detail', query: { id: p.nbaPlayerId || p.id, returnTo: '/history' } }" class="leader-name leader-link">{{ p.playerName || p.name }}</router-link>
                 <router-link :to="{ path: '/teams/detail', query: { name: p.teamName } }" class="leader-team leader-link">{{ p.teamName }}</router-link>
@@ -64,8 +80,8 @@
         <div class="chart-section">
           <div class="section-head" style="margin-top: 32px;">
             <div>
-              <h2>球队战绩概览</h2>
-              <p>按胜场数排序的全联盟球队战绩柱状图。</p>
+              <h2>全联盟胜场分布对比</h2>
+              <p>横向对比联盟各队常规赛胜场与胜率梯度分布</p>
             </div>
           </div>
           <div class="chart-container">
@@ -78,17 +94,18 @@
         <div class="standings-section">
           <div class="section-head" style="margin-top: 32px;">
             <div>
-              <h2>完整战绩表</h2>
-              <p>全联盟球队胜负场、胜率和排名。</p>
+              <h2>赛季完整战绩排位表</h2>
+              <p>全联盟胜负场次、胜率及胜场差（GB）综合数据统计</p>
             </div>
           </div>
+          <p class="mobile-scroll-hint">左右滑动可查看完整战绩</p>
           <el-table :data="standingsData" border stripe v-loading="teamsLoading" class="standings-table">
-            <el-table-column label="排名" width="70" align="center">
+            <el-table-column label="排名" width="70" align="center" fixed="left">
               <template #default="{ $index }">
                 <span class="standings-rank" :class="{ 'rank-gold': $index < 3 }">{{ $index + 1 }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="球队" min-width="160">
+            <el-table-column label="球队" min-width="160" fixed="left">
               <template #default="{ row }">
                 <router-link :to="{ path: '/teams/detail', query: { name: row.teamName || row.name } }" class="standings-team-link">
                   <img v-if="getTeamLogo(row.teamName || row.name)" :src="getTeamLogo(row.teamName || row.name)" class="standings-logo" alt="" />
@@ -96,20 +113,20 @@
                 </router-link>
               </template>
             </el-table-column>
-            <el-table-column prop="conference" label="分区" width="80" align="center" />
-            <el-table-column prop="wins" label="胜" width="70" align="center" sortable />
-            <el-table-column prop="losses" label="负" width="70" align="center" sortable />
-            <el-table-column label="胜率" width="90" align="center" sortable :sort-method="(a: any, b: any) => winPctNum(a.wins, a.losses) - winPctNum(b.wins, b.losses)">
+            <el-table-column prop="conference" label="分区 CONF" width="96" align="center" />
+            <el-table-column prop="wins" label="胜 W" width="76" align="center" sortable />
+            <el-table-column prop="losses" label="负 L" width="76" align="center" sortable />
+            <el-table-column label="胜率 PCT" width="96" align="center" sortable :sort-method="(a: any, b: any) => winPctNum(a.wins, a.losses) - winPctNum(b.wins, b.losses)">
               <template #default="{ row }">
                 <span class="win-pct" :class="{ 'win-pct-high': winPctNum(row.wins, row.losses) >= 0.6 }">{{ winPct(row.wins, row.losses) }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="胜场差" width="90" align="center">
+            <el-table-column label="胜场差 GB" width="96" align="center">
               <template #default="{ row }">
                 {{ gamesBehind(row.wins, row.losses) }}
               </template>
             </el-table-column>
-            <el-table-column label="胜场条" min-width="160">
+            <el-table-column label="胜场阶梯 WIN RATIO" min-width="170">
               <template #default="{ row }">
                 <div class="win-bar-wrap">
                   <div class="win-bar" :style="{ width: winBarWidth(row.wins, row.losses) }"></div>
@@ -125,7 +142,6 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -140,10 +156,11 @@ import { useAuthStore } from '@/stores/auth'
 import type { Player, Team } from '@/api/types'
 import { useChartTheme } from '@/composables/useChartTheme'
 import AppEmpty from '@/components/common/AppEmpty.vue'
+import SportsHeader from '@/components/common/SportsHeader.vue'
+import { fetchAllPages } from '@/utils/fetchAllPages'
 
 use([CanvasRenderer, BarChart, GridComponent, TooltipComponent, LegendComponent])
 
-const router = useRouter()
 const auth = useAuthStore()
 const { colors, tooltipStyle, legendStyle, xAxisStyle, yAxisStyle } = useChartTheme()
 const teamsLoading = ref(false)
@@ -159,26 +176,12 @@ const isHistoricalMode = ref(false)
 const currentSeason = ref('')
 const availableSeasons = ref<string[]>([])
 const selectedSeason = ref('')
+const activeLeaderCategory = ref('ppg')
 
 // 格式化赛季标签
 function formatSeasonLabel(season: string): string {
   const parts = season.split('-')
   return `${parts[0]}-${parts[1]} 赛季`
-}
-
-// 根据球队名获取球队ID
-function getTeamIdByName(teamName: string): number | undefined {
-  // 先从 teamOptions 中查找
-  const option = teamOptions.value.find(t => t.name === teamName)
-  if (option?.id) return option.id
-
-  // 如果是历史数据模式，从 teams 中查找
-  if (isHistoricalMode.value) {
-    const team = teams.value.find((t: any) => t.teamName === teamName || t.name === teamName)
-    if (team?.id) return team.id
-  }
-
-  return undefined
 }
 
 const leaderCategories = computed(() => {
@@ -191,32 +194,45 @@ const leaderCategories = computed(() => {
   // 历史数据和当前数据使用相同的字段名
   return [
     {
-      key: 'ppg', icon: '🏀', label: '得分王', unit: 'PPG',
+      key: 'ppg', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>', label: '得分王', unit: 'PPG',
       players: sorted('pointsPerGame'),
       getValue: (p: any) => (p.pointsPerGame || 0).toFixed(1),
+      getRaw: (p: any) => p.pointsPerGame || 0,
     },
     {
-      key: 'rpg', icon: '🏅', label: '篮板王', unit: 'RPG',
+      key: 'rpg', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15"/><path d="M11 12 5.12 2.2"/><path d="m13 12 5.88-9.8"/><path d="M8 7h8"/><circle cx="12" cy="17" r="5"/><path d="M12 18v-2h-.5"/></svg>', label: '篮板王', unit: 'RPG',
       players: sorted('reboundsPerGame'),
       getValue: (p: any) => (p.reboundsPerGame || 0).toFixed(1),
+      getRaw: (p: any) => p.reboundsPerGame || 0,
     },
     {
-      key: 'apg', icon: '🎯', label: '助攻王', unit: 'APG',
+      key: 'apg', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>', label: '助攻王', unit: 'APG',
       players: sorted('assistsPerGame'),
       getValue: (p: any) => (p.assistsPerGame || 0).toFixed(1),
+      getRaw: (p: any) => p.assistsPerGame || 0,
     },
     {
-      key: 'spg', icon: '🖐️', label: '抢断王', unit: 'SPG',
+      key: 'spg', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>', label: '抢断王', unit: 'SPG',
       players: sorted('stealsPerGame'),
       getValue: (p: any) => (p.stealsPerGame || 0).toFixed(1),
+      getRaw: (p: any) => p.stealsPerGame || 0,
     },
     {
-      key: 'bpg', icon: '🛡️', label: '盖帽王', unit: 'BPG',
+      key: 'bpg', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>', label: '盖帽王', unit: 'BPG',
       players: sorted('blocksPerGame'),
       getValue: (p: any) => (p.blocksPerGame || 0).toFixed(1),
+      getRaw: (p: any) => p.blocksPerGame || 0,
     },
   ]
 })
+
+/** 榜单行背景条宽度：相对该榜第一名数值的比例 */
+function leaderBarWidth(cat: { players: any[]; getRaw: (p: any) => number }, p: any): number {
+  const leader = cat.players[0]
+  const max = leader ? cat.getRaw(leader) : 0
+  if (max <= 0) return 0
+  return Math.min((cat.getRaw(p) / max) * 100, 100)
+}
 
 const standingsData = computed(() => {
   return [...teams.value].sort((a: any, b: any) => b.wins - a.wins || a.losses - b.losses)
@@ -334,6 +350,7 @@ function updateTeamOptionsFromHistorical() {
     const historicalTeams = teams.value.map((t: any) => ({
       id: t.nbaTeamId || t.id,
       name: t.teamName || t.name,
+      city: t.city || t.teamCity || '',
       conference: t.conference,
       wins: t.wins,
       losses: t.losses
@@ -354,13 +371,8 @@ async function loadPlayers() {
       }
       players.value = list
     } else {
-      // 当前赛季模式：从当前赛季API加载
-      const params: Record<string, unknown> = {
-        page: 0,
-        size: 500,
-      }
-      const { data } = await fetchPlayers(params as { page: number; size: number; q?: string; teamId?: number; position?: string })
-      let list = data.content
+      // 当前赛季模式：从当前赛季API加载（size 上限 100，逐页取全量）
+      let list = await fetchAllPages<Player>(p => fetchPlayers({ page: p, size: 100 }).then(r => r.data))
       if (selectedTeam.value) {
         list = list.filter((p: Player) => p.teamName === selectedTeam.value)
       }
@@ -537,7 +549,7 @@ onMounted(async () => {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--purple), var(--accent), var(--cyan));
+  background: linear-gradient(90deg, var(--purple), var(--cyan), var(--accent));
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 
@@ -548,6 +560,8 @@ onMounted(async () => {
   gap: 16px;
   margin-bottom: 8px;
 }
+.leader-category-tabs,
+.mobile-scroll-hint { display: none; }
 .leader-card {
   background: var(--bg-hover);
   border: 1px solid var(--border-light);
@@ -556,9 +570,9 @@ onMounted(async () => {
   transition: all var(--duration-fast) var(--ease-smooth);
 }
 .leader-card:hover {
-  border-color: var(--purple);
+  border-color: var(--accent);
   transform: translateY(-2px);
-  box-shadow: 0 4px 16px var(--purple-glow);
+  box-shadow: 0 4px 16px var(--accent-glow);
 }
 .leader-card-header {
   display: flex;
@@ -566,10 +580,18 @@ onMounted(async () => {
   gap: 8px;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border-light);
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.06), transparent);
+  background: linear-gradient(135deg, var(--accent-lighter), transparent);
 }
 .leader-icon {
-  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background: var(--accent-lighter);
+  color: var(--accent);
+  flex-shrink: 0;
 }
 .leader-title {
   font-family: var(--font-heading);
@@ -594,6 +616,7 @@ onMounted(async () => {
   padding: 6px 0;
 }
 .leader-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -601,8 +624,25 @@ onMounted(async () => {
   font-size: 13px;
   transition: background var(--duration-fast) var(--ease-smooth);
 }
+.leader-row > * {
+  position: relative;
+  z-index: 1;
+}
+.leader-row-bar {
+  position: absolute;
+  left: 6px;
+  top: 3px;
+  bottom: 3px;
+  z-index: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  pointer-events: none;
+}
+.leader-row:nth-child(1) .leader-row-bar {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
 .leader-row:hover {
-  background: rgba(139, 92, 246, 0.04);
+  background: var(--bg-hover);
 }
 .leader-rank {
   width: 22px;
@@ -620,9 +660,9 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 .rank-top3 {
-  background: linear-gradient(135deg, var(--purple), var(--accent));
-  color: #fff;
-  border-color: var(--purple);
+  background: linear-gradient(135deg, var(--accent-light), var(--accent));
+  color: var(--accent-contrast, #04202A);
+  border-color: var(--accent);
 }
 .leader-name {
   flex: 1;
@@ -659,6 +699,51 @@ onMounted(async () => {
   text-align: center;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .leader-category-tabs {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    margin: 16px 0 12px;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  .leader-category-tabs::-webkit-scrollbar { display: none; }
+  .leader-category-tabs button {
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 0 14px;
+    border: 1px solid var(--border-light);
+    border-radius: 999px;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .leader-category-tabs button.is-active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .leaders-grid { display: block; }
+  .leader-card { display: none; }
+  .leader-card.is-active { display: block; }
+  .leader-row { min-height: 40px; }
+}
+
+@media (max-width: 768px) {
+  .mobile-scroll-hint {
+    display: block;
+    margin: 0 0 10px;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .chart-container { overflow-x: auto; }
+  .chart { min-width: 640px; }
 }
 
 /* Chart */

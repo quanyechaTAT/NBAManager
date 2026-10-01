@@ -66,6 +66,6 @@ defineEmits<{ login: [] }>()
 
 .conn-login-btn:hover {
   background: var(--chat-accent, var(--accent));
-  color: #fff;
+  color: var(--accent-contrast, #04202A);
 }
 </style>

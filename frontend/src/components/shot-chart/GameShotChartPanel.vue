@@ -1,14 +1,17 @@
 <template>
   <div class="game-shot-chart" v-loading="loading">
     <!-- 加载中 -->
-    <div v-if="loading" class="panel-loading">正在获取官方投篮坐标...</div>
+    <div v-if="loading" class="panel-loading">
+      <span class="panel-loading__spinner" aria-hidden="true"></span>
+      正在获取官方投篮坐标…
+    </div>
 
     <!-- REAL_SHOT_CHART -->
     <template v-else-if="mode === 'REAL_SHOT_CHART'">
       <!-- 标题栏 -->
       <div class="shot-header">
         <div class="header-left">
-          <span class="header-icon">🏀</span>
+          <span class="header-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="1em" height="1em"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span>
           <span class="header-title">投篮热图</span>
           <span class="header-sub">SHOT CHART</span>
         </div>
@@ -40,7 +43,7 @@
 
     <!-- UNAVAILABLE -->
     <div v-else class="panel-unavailable">
-      <div class="unavail-icon">🏀</div>
+      <div class="unavail-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="1em" height="1em"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></div>
       <div class="unavail-title">官方投篮坐标暂不可用</div>
       <div class="unavail-sub">{{ message || '系统不会生成模拟投篮点，以保证数据真实性。' }}</div>
     </div>
@@ -112,17 +115,28 @@ const sourceLabel = computed(() => {
   display: flex; flex-direction: column; gap: 18px;
   padding: 20px; max-width: 1440px; margin: 0 auto;
   background: rgba(255,255,255,0.012);
-  border: 1px solid rgba(139,92,246,0.08);
+  border: 1px solid var(--border-light);
   border-radius: 14px;
 }
-.panel-loading { text-align: center; padding: 80px 0; color: var(--text-secondary); font-size: 14px; }
+.panel-loading {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  padding: 80px 0; color: var(--text-muted); font-size: 13.5px;
+}
+.panel-loading__spinner {
+  width: 34px; height: 34px;
+  border: 3px solid var(--border-light);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: shotSpin 0.9s linear infinite;
+}
+@keyframes shotSpin { to { transform: rotate(360deg); } }
 
 /* Header */
 .shot-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
 .header-left { display: flex; align-items: center; gap: 8px; }
 .header-icon { font-size: 18px; }
 .header-title { font-size: 15px; font-weight: 800; color: var(--text-primary); }
-.header-sub { font-size: 9px; font-weight: 700; color: #475569; letter-spacing: 2px; text-transform: uppercase; }
+.header-sub { font-size: 9px; font-weight: 700; color: var(--text-dim); letter-spacing: 2px; text-transform: uppercase; }
 .header-filters { display: flex; gap: 8px; }
 
 /* Content: left court + right sidebar */
@@ -137,28 +151,24 @@ const sourceLabel = computed(() => {
   gap: 10px;
   justify-content: center;
   padding: 8px 12px;
-  border: 1px solid rgba(96, 165, 250, 0.12);
+  border: 1px solid var(--border-light);
   border-radius: 14px;
-  background:
-    linear-gradient(180deg, rgba(15, 23, 42, 0.5), rgba(15, 23, 42, 0.2)),
-    rgba(59, 130, 246, 0.04);
+  background: var(--bg-secondary);
 }
-.toolbar-label { font-size: 11px; color: #64748b; font-weight: 600; }
-.shot-source { text-align: center; font-size: 11px; color: #334155; }
+.toolbar-label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+.shot-source { text-align: center; font-size: 11px; color: var(--text-dim); }
 
 /* Segmented filter buttons - 暗色主题 */
 :deep(.el-segmented) {
   --el-segmented-bg-color: transparent;
   --el-segmented-border-color: transparent;
-  --el-segmented-text-color: #9fb0c7;
+  --el-segmented-text-color: var(--text-muted);
   --el-segmented-active-bg-color: transparent;
   --el-segmented-active-text-color: #fff;
   padding: 3px !important;
-  border: 1px solid rgba(96, 165, 250, 0.18) !important;
+  border: 1px solid var(--border-light) !important;
   border-radius: 12px !important;
-  background:
-    linear-gradient(180deg, rgba(15, 23, 42, 0.5), rgba(15, 23, 42, 0.22)),
-    rgba(59, 130, 246, 0.05) !important;
+  background: var(--bg-secondary) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
   backdrop-filter: blur(10px);
 }
@@ -166,7 +176,7 @@ const sourceLabel = computed(() => {
   min-height: 32px !important;
   border-radius: 9px !important;
   padding: 5px 13px !important;
-  color: #9fb0c7 !important;
+  color: var(--text-muted) !important;
   font-size: 12px !important;
   font-weight: 800 !important;
   transition: color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease !important;
@@ -178,15 +188,14 @@ const sourceLabel = computed(() => {
 }
 :deep(.el-segmented__item-selected) {
   border-radius: 9px !important;
-  background:
-    linear-gradient(135deg, rgba(59, 162, 255, 0.96), rgba(37, 99, 235, 0.92)) !important;
+  background: linear-gradient(135deg, var(--accent-light), var(--accent)) !important;
   box-shadow:
-    0 8px 18px rgba(37, 99, 235, 0.22),
+    0 8px 18px rgba(34, 211, 238, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
 }
 :deep(.el-segmented__item:hover:not(.is-active)) {
-  color: #dbeafe !important;
-  background: rgba(96, 165, 250, 0.1) !important;
+  color: var(--text-primary) !important;
+  background: var(--accent-lighter) !important;
 }
 :deep(.el-segmented__item.is-active) {
   color: #fff !important;
@@ -197,38 +206,38 @@ const sourceLabel = computed(() => {
 /* ===== 亮色主题 ===== */
 [data-theme="light"] .game-shot-chart {
   background: #ffffff !important;
-  border-color: #e2e8f0 !important;
+  border-color: #E6E3DD !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
 }
-[data-theme="light"] .header-title { color: #0f172a; }
-[data-theme="light"] .header-sub { color: #64748b; }
+[data-theme="light"] .header-title { color: var(--text-primary); }
+[data-theme="light"] .header-sub { color: var(--text-dim); }
 [data-theme="light"] .shot-toolbar {
-  background: #ffffff !important;
-  border: 1px solid #e2e8f0 !important;
+  background: #FFFFFF !important;
+  border: 1px solid #E6E3DD !important;
   box-shadow: none !important;
 }
-[data-theme="light"] .toolbar-label { color: #334155; font-weight: 700; }
-[data-theme="light"] .shot-source { color: #64748b; }
+[data-theme="light"] .toolbar-label { color: var(--text-secondary); font-weight: 700; }
+[data-theme="light"] .shot-source { color: var(--text-muted); }
 [data-theme="light"] :deep(.el-segmented) {
-  background: #ffffff !important;
-  border: 1px solid #d1d5db !important;
+  background: #FFFFFF !important;
+  border: 1px solid #D2CEC5 !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
   padding: 3px !important;
 }
 [data-theme="light"] :deep(.el-segmented__item) {
-  color: #374151 !important;
+  color: var(--text-secondary) !important;
   font-weight: 600 !important;
 }
 [data-theme="light"] :deep(.el-segmented__item:hover:not(.is-active)) {
-  color: #111827 !important;
-  background: #f3f4f6 !important;
+  color: var(--accent) !important;
+  background: var(--accent-lighter) !important;
 }
 [data-theme="light"] :deep(.el-segmented__item-selected),
 [data-theme="light"] :deep(.el-segmented__item.is-active) {
   background: var(--accent) !important;
-  color: #fff !important;
-  box-shadow: 0 1px 3px rgba(232, 93, 38, 0.3) !important;
+  color: var(--accent-contrast, #04202A) !important;
+  box-shadow: 0 1px 3px rgba(34, 211, 238, 0.3) !important;
 }
 
 :global(html[data-theme="light"]) .game-shot-chart,
@@ -250,27 +259,41 @@ const sourceLabel = computed(() => {
 }
 
 :global(html[data-theme="light"]) .game-shot-chart :deep(.el-segmented__item) {
-  color: #94a3b8 !important;
+  color: var(--text-muted) !important;
   background: transparent !important;
 }
 
 :global(html[data-theme="light"]) .game-shot-chart :deep(.el-segmented__item:hover:not(.is-active)) {
-  color: #2563eb !important;
-  background: #f8fbff !important;
+  color: var(--accent) !important;
+  background: var(--accent-lighter) !important;
 }
 
 :global(html[data-theme="light"]) .game-shot-chart :deep(.el-segmented__item-selected),
 :global(html[data-theme="light"]) .game-shot-chart :deep(.el-segmented__item.is-active) {
-  color: #ffffff !important;
-  background: linear-gradient(135deg, #4aa3ff, #2563eb) !important;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.18) !important;
+  color: var(--accent-contrast, #04202A) !important;
+  background: linear-gradient(135deg, var(--accent-light), var(--accent)) !important;
+  box-shadow: 0 2px 8px rgba(34, 211, 238, 0.18) !important;
 }
 
 /* Unavailable */
-.panel-unavailable { text-align: center; padding: 80px 24px; }
-.unavail-icon { font-size: 36px; margin-bottom: 14px; opacity: 0.35; }
-.unavail-title { font-size: 15px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
-.unavail-sub { font-size: 12px; color: #475569; }
+.panel-unavailable {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  max-width: 420px; margin: 40px auto 48px;
+  padding: 44px 36px 40px;
+  text-align: center;
+  background: var(--bg-card);
+  border: 1px dashed var(--border-medium);
+  border-radius: var(--radius-xl);
+}
+.unavail-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 56px; height: 56px; margin-bottom: 8px;
+  border-radius: 50%;
+  background: var(--accent-lighter);
+  color: var(--accent);
+}
+.unavail-title { font-family: var(--font-heading); font-size: 16px; font-weight: 700; color: var(--text-primary); }
+.unavail-sub { font-size: 13px; line-height: 1.6; color: var(--text-muted); }
 
 @media (max-width: 900px) {
   .shot-content { grid-template-columns: 1fr; }

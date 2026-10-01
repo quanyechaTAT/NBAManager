@@ -16,14 +16,14 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class PlayByPlaySyncScheduler {
 
-    private final PlayByPlayCollectorService collectorService;
+    private final ReplayPreparationService replayPreparationService;
     private final MatchRecordRepository matchRecordRepository;
     private final PlayByPlaySyncLogService syncLogService;
 
     /**
      * Sync finished games: runs every 30 minutes
      * Queries MatchRecord with status="FINISHED" and matchDate after yesterday
-     * For each game with nbaGameId that doesn't have successful sync, call collector
+     * For each game with nbaGameId, delegate to replay preparation single-flight
      */
     @Scheduled(fixedRate = 30 * 60 * 1000)
     public void syncFinishedGames() {
@@ -34,13 +34,13 @@ public class PlayByPlaySyncScheduler {
         int syncedCount = 0;
         for (MatchRecord game : recentGames) {
             String gameId = game.getNbaGameId();
-            if (gameId != null && !gameId.isEmpty() && !syncLogService.hasSuccessfulSync(gameId)) {
+            if (gameId != null && !gameId.isEmpty()) {
                 try {
-                    log.info("Syncing finished game: {}", gameId);
-                    collectorService.collect(gameId);
+                    log.info("Preparing replay for finished game: {}", gameId);
+                    replayPreparationService.prepare(gameId);
                     syncedCount++;
                 } catch (Exception e) {
-                    log.error("Failed to sync finished game {}: {}", gameId, e.getMessage(), e);
+                    log.error("Failed to prepare replay for finished game {}: {}", gameId, e.getMessage(), e);
                 }
             }
         }
@@ -50,7 +50,7 @@ public class PlayByPlaySyncScheduler {
     /**
      * Retry failed syncs: runs daily at 3:00 AM
      * Gets failed logs for retry from syncLogService
-     * For each, call collector.collect(gameId)
+     * For each, delegate to replay preparation single-flight
      */
     @Scheduled(cron = "0 0 3 * * *")
     public void retryFailedSyncs() {
@@ -61,11 +61,12 @@ public class PlayByPlaySyncScheduler {
         for (PlayByPlaySyncLog failedLog : failedLogs) {
             String gameId = failedLog.getGameId();
             try {
-                log.info("Retrying failed sync for game: {} (attempt {})", gameId, failedLog.getAttemptCount() + 1);
-                collectorService.collect(gameId);
+                log.info("Retrying replay preparation for game: {} (attempt {})",
+                        gameId, failedLog.getAttemptCount() + 1);
+                replayPreparationService.prepare(gameId);
                 retriedCount++;
             } catch (Exception e) {
-                log.error("Failed to retry sync for game {}: {}", gameId, e.getMessage(), e);
+                log.error("Failed to retry replay preparation for game {}: {}", gameId, e.getMessage(), e);
             }
         }
         log.info("Failed syncs retry completed. Retried {} games out of {} total", retriedCount, failedLogs.size());
@@ -74,7 +75,7 @@ public class PlayByPlaySyncScheduler {
     /**
      * Recalibrate recent games: runs every 2 hours
      * Gets recent successful logs from last 2 days
-     * For each, call collector.collect(gameId) to recalibrate
+     * For each, delegate to replay preparation single-flight to recalibrate
      */
     @Scheduled(fixedRate = 2 * 60 * 60 * 1000)
     public void recalibrateRecentGames() {
@@ -86,11 +87,11 @@ public class PlayByPlaySyncScheduler {
         for (PlayByPlaySyncLog successLog : recentSuccessLogs) {
             String gameId = successLog.getGameId();
             try {
-                log.info("Recalibrating game: {}", gameId);
-                collectorService.collect(gameId);
+                log.info("Recalibrating replay for game: {}", gameId);
+                replayPreparationService.prepare(gameId);
                 recalibratedCount++;
             } catch (Exception e) {
-                log.error("Failed to recalibrate game {}: {}", gameId, e.getMessage(), e);
+                log.error("Failed to recalibrate replay for game {}: {}", gameId, e.getMessage(), e);
             }
         }
         log.info("Recent games recalibration completed. Recalibrated {} games out of {} total", recalibratedCount, recentSuccessLogs.size());

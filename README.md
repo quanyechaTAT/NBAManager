@@ -1,498 +1,322 @@
-<p align="center">
-  <img src="nba-login.png" alt="NBAManager" width="600" />
-</p>
+# NBAManager v4
 
-<h1 align="center">NBAManager</h1>
+当前版本：`4.0.0`，Git 标签：`v4`。
 
-<p align="center">
-  <strong>全栈 NBA 数据管理与智能分析平台</strong>
-</p>
+面向 NBA 数据浏览、比赛复盘和球迷社区的全栈演示项目。使用 Spring Boot、Vue 3 和 Python，将数据采集、同步任务、可视化、实时聊天及 DeepSeek 问答整合在同一个应用中。
 
-<p align="center">
-  <a href="#功能特性">功能特性</a> •
-  <a href="#技术栈">技术栈</a> •
-  <a href="#快速开始">快速开始</a> •
-  <a href="#项目结构">项目结构</a> •
-  <a href="#api-接口">API</a> •
-  <a href="#环境变量">环境变量</a> •
-  <a href="#许可证">许可证</a>
-</p>
+## 功能
 
----
+| 模块 | 已有能力 |
+| --- | --- |
+| 数据看板 | 球队排名、球员榜单、今日比赛、赛季概览 |
+| 球队与球员 | 球队详情、球员资料、赛季与生涯数据、球员对比、收藏和导出 |
+| 比赛与复盘 | Box Score、逐节比分、Play-by-Play、投篮图、走势、精彩瞬间和转折点 |
+| AI 分析 | 比赛总结、事件解释、事实校验、带来源的 RAG 流式问答 |
+| NBA Copilot | 问题意图分类，路由到 Replay、Stats 或 General 处理器 |
+| 资讯与赛事 | 新闻聚合与翻译、季后赛对阵、选秀、历史赛季查询 |
+| 球迷社区 | 帖子、评论、回复、点赞、投票、通知及比赛聊天室 |
+| 个人中心 | 注册登录、头像和资料管理、关注、收藏、浏览历史 |
+| 管理后台 | 模块与全量同步、任务进度、取消、历史记录、自动调度和登录补偿 |
 
-## 项目简介
+RAG 使用结构化查询、Chroma 向量检索、CrossEncoder 重排和网络来源补充，并在证据不足时限制回答。Copilot 当前使用 Python 意图路由；Stats 处理器仍主要依赖模型知识，查询实时统计时应优先使用数据页面或 RAG。AI 输出的准确性受数据完整度和外部服务可用性影响。
 
-NBAManager 是一个基于 **Spring Boot + Vue 3 + Python** 的全栈 NBA 数据平台，集成了实时数据采集、AI 智能问答（RAG）、比赛回放分析、LangGraph 多智能体系统等能力。
+## 架构与技术栈
 
-核心定位：**不是简单的数据展示，而是一个可交互、可分析、可对话的 NBA 数据产品。**
+```mermaid
+flowchart LR
+    Browser["Vue 3 / TypeScript"] --> API["Spring Boot API"]
+    Browser <-->|STOMP / SockJS| API
+    API --> DB[("MySQL")]
+    API --> Cache[("Redis")]
+    API --> Fetch["Python 数据采集与翻译"]
+    API --> RAG["FastAPI RAG"]
+    API --> Copilot["FastAPI Copilot"]
+    Fetch --> Sources["NBA Stats / NBA CDN / ESPN 等来源"]
+    RAG --> DB
+    RAG --> Vector[("Chroma")]
+    RAG --> LLM["DeepSeek"]
+    Copilot --> LLM
+```
 
----
+| 层级 | 主要技术 |
+| --- | --- |
+| 前端 | Vue 3、TypeScript、Vite 5、Element Plus、Pinia、Vue Router、Axios |
+| 可视化与通信 | ECharts、vue-echarts、STOMP.js、SockJS |
+| Java 后端 | Java 17、Spring Boot 3.2.5、Spring Security、JWT、JPA、Flyway |
+| 存储 | MySQL、Redis、ChromaDB |
+| Python 服务 | Python 3.12、nba_api、FastAPI、Uvicorn、sentence-transformers、PyTorch |
+| 测试 | JUnit / Mockito、Vitest / Vue Test Utils、vue-tsc、Pytest |
 
-## 功能特性
+## 本地运行
 
-### 📊 数据中心
+以下命令从项目根目录开始。准备 Java 17、Node.js 18+、Python 3.12、MySQL 8 和 Redis 6+；Maven 由仓库中的 Wrapper 提供。
 
-| 功能 | 说明 |
-|------|------|
-| **数据仪表盘** | 球队排名概览、得分榜 Top 8、今日比赛实时比分卡片、AI Copilot 快捷入口 |
-| **球队管理** | 30 支 NBA 球队、东西部联盟与分区排名、球队详情（战绩、数据、交锋记录）、关注/收藏 |
-| **球员数据** | 500+ 球员资料（NBA API 同步）、卡片/表格双视图、Excel 导出、生涯趋势图（ECharts 雷达图 + 折线图）、投篮热力图（SVG，真实 NBA API 数据）、球员对比（双雷达 + 数据表）、关注/收藏 |
-| **比赛记录** | 比赛详情：Box Score、逐节比分、Play-by-Play、投篮分布图、实时聊天室（WebSocket） |
-| **伤病报告** | 伤病报告追踪与展示 |
+默认数据库为 `localhost:3306/nba_manager`，Redis 为 `localhost:6379`。MySQL 账户需要相应的建表与更新表结构权限。模型默认在 CPU 上运行；GPU 加速可按本机 PyTorch 环境启用。
 
-### 📰 新闻与社区
-
-| 功能 | 说明 |
-|------|------|
-| **比赛新闻** | 实时比赛新闻（ESPN 数据源）、今日比赛卡片与实时比分、新闻收藏与浏览历史 |
-| **社区互动** | 帖子（讨论/新闻/辩论/预测 + 投票）、评论与回复系统（树形结构、置顶、作者互动标记）、点赞与收藏、热帖排行 |
-| **通知系统** | 点赞/评论/收藏/回复/比赛更新通知、浏览器推送通知支持 |
-| **投票系统** | 社区帖子集成投票功能 |
-
-### 🏆 季后赛与选秀
-
-| 功能 | 说明 |
-|------|------|
-| **季后赛对阵图** | 东西部联盟对称布局、实时比分与系列赛进度、球队 Logo 展示 |
-| **NBA 选秀** | 选秀顺位数据库与管理 |
-| **历史数据** | 近 3 个赛季存储、赛季数据排行、球队表现图表与排名表、赛季切换与球队筛选 |
-
-### 🤖 AI 智能系统
-
-| 功能 | 说明 |
-|------|------|
-| **RAG 智能问答** | ChromaDB 向量数据库 + MIMO LLM、混合检索：向量 + BM25 + CrossEncoder 重排序、SQL 结构化查询优先（球队/球员/比赛/排名）、百度搜索补充（新闻类查询）、证据门控防幻觉机制、SSE 流式输出、对话历史持久化与分享 |
-| **AI 比赛回放** | 基于真实 Play-by-Play 的事件回放、时间轴（Timeline）、走势折线图（Momentum）、精彩瞬间（Highlights）、关键转折点（Turning Points）、MIMO AI 解释生成、事实引用校验（Grounding Validator） |
-| **NBA Copilot** | LangGraph 多智能体架构、Supervisor 路由 + 专业 Agent（Replay/Stats/Player/Team/News/Search/Draft）、MIMO v2.5 Pro 作为 LLM Provider、对话记忆与上下文追问 |
-| **投篮热力图** | 球员级 + 比赛级投篮图、真实 NBA ShotChartDetail API 数据、主队/客队筛选、命中/未中筛选、SVG 半场球场渲染 |
-
-### 👤 用户系统
-
-| 功能 | 说明 |
-|------|------|
-| **认证** | 注册与登录（JWT 认证） |
-| **个人中心** | 关注的球员/球队、收藏的帖子/新闻、浏览历史、头像上传、密码/用户名修改 |
-| **管理后台** | 数据管理中心（同步进度、暂停/取消）、模块化同步（球队/球员/比赛/新闻/季后赛/选秀等）、全量同步与单模块同步 |
-
----
-
-## 技术栈
-
-### 前端
-
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| Vue 3 | ^3.4.21 | 核心框架 |
-| TypeScript | ~5.4.0 | 类型安全 |
-| Vite | ^5.2.8 | 构建工具 |
-| Element Plus | ^2.6.3 | UI 组件库 |
-| ECharts + vue-echarts | ^5.5.0 / ^6.6.9 | 数据可视化 |
-| Pinia | ^2.1.7 | 状态管理 |
-| Vue Router | ^4.3.0 | 路由 |
-| Axios | ^1.6.8 | HTTP 客户端 |
-| STOMP.js + SockJS | ^7.3.0 / ^1.6.1 | WebSocket 实时通信 |
-| XLSX + file-saver | ^0.18.5 / ^2.0.5 | Excel 导出 |
-
-### 后端
-
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| Java | 17 | 运行时 |
-| Spring Boot | 3.2.5 | 应用框架 |
-| Spring Security + JWT | jjwt 0.12.5 | 认证授权 |
-| Spring Data JPA (Hibernate) | — | ORM |
-| Spring WebSocket | — | 实时通信 |
-| Spring Data Redis | — | 缓存 |
-| Lombok | 1.18.32 | 代码简化 |
-| MySQL Connector | runtime | 数据库驱动 |
-
-### AI / RAG / 数据采集
-
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| Python | 3.12+ | 运行时 |
-| FastAPI | >=0.115.0 | RAG/Copilot HTTP 服务 |
-| LangChain (core, openai, chroma, community, huggingface) | >=0.3.0 | RAG 框架 |
-| ChromaDB | >=1.0.0 | 向量数据库 |
-| sentence-transformers | >=3.0.0 | 文本嵌入 |
-| PyTorch | >=2.0.0 | 深度学习后端 |
-| BAAI/bge-reranker-v2-m3 | — | 重排序模型 |
-| richinfoai/ritrieve_zh_v1 | — | 中文嵌入模型 |
-| nba_api | >=1.11.0 | NBA Stats API 客户端 |
-| MIMO v2.5 Pro | — | LLM（小米 MIMO） |
-
-### 基础设施
-
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| MySQL | 8.0+ | 关系型数据库 |
-| Redis | 6.0+ | 缓存 |
-| ChromaDB | — | 向量数据库 |
-| CUDA（可选） | 12.4+ | GPU 加速嵌入/重排序 |
-
----
-
-## 快速开始
-
-### 前置要求
-
-- Java 17+
-- Node.js 18+
-- Python 3.12+
-- MySQL 8.0+
-- Redis 6.0+
-- CUDA 12.4+（可选，RAG GPU 加速）
-
-### 1. 克隆项目
+### 1. 克隆与配置
 
 ```bash
 git clone https://github.com/quanyechaTAT/NBAManager.git
 cd NBAManager
 ```
 
-### 2. 配置环境变量
+PowerShell：
+
+```powershell
+Copy-Item .env.example .env
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+macOS / Linux：
 
 ```bash
 cp .env.example .env
+python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-编辑 `.env` 文件：
+将生成的随机值填入 `JWT_SECRET`，再填写数据库密码；使用 AI 功能时配置自己的 `DEEPSEEK_API_KEY`。完整配置见 [.env.example](.env.example)。
 
-```env
-# 数据库
-DB_USERNAME=root
-DB_PASSWORD=your_password_here
+| 配置 | 用途 |
+| --- | --- |
+| `DB_USERNAME`、`DB_PASSWORD` | Java 与 Python 的数据库凭据 |
+| `DB_HOST`、`DB_PORT`、`DB_NAME` | Python 数据库连接；Java 改用其他数据库地址时，还需配置 `SPRING_DATASOURCE_URL` |
+| `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` | Redis 连接 |
+| `JWT_SECRET` | 自行生成的登录签名密钥，至少 32 字节 |
+| `DEEPSEEK_API_KEY`、`DEEPSEEK_API_BASE` | AI 回答、解释与 LLM 翻译 |
+| `DEEPSEEK_MODEL`、`RAG_LLM_MODEL` | Java/Copilot 与 RAG 的模型配置 |
+| `PYTHON_EXECUTABLE` | 采集与翻译脚本使用的可选 Python 绝对路径；AI 常驻服务优先查找 `backend/scripts/venv312` |
+| `NBA_PROXY_HOST`、`NBA_PROXY_PORT` | 可选的数据采集代理 |
+| `ADMIN_USER`、`ADMIN_PASS` | 新闻维护及性能测量脚本的登录账号，需事先自行创建 |
 
-# MIMO AI（小米大模型）
-MIMO_API_KEY=your_mimo_api_key_here
-MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
+### 2. 安装依赖
 
-# 代理（可选，访问 stats.nba.com）
-NBA_PROXY_HOST=
-NBA_PROXY_PORT=
+PowerShell：
 
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-
-# JWT
-JWT_SECRET=your-random-secret-at-least-256-bits
-
-# 初始账号
-ADMIN_USER=admin
-ADMIN_PASS=your_admin_password_here
-USER_USER=user
-USER_PASS=your_user_password_here
+```powershell
+python -m venv backend/scripts/venv312
+.\backend\scripts\venv312\Scripts\python.exe -m pip install -r backend/scripts/requirements-dev.txt
+Push-Location frontend
+npm ci
+Pop-Location
 ```
 
-### 3. 安装依赖
+macOS / Linux：
 
 ```bash
-# 后端
-cd backend && ./mvnw install -DskipTests && cd ..
-
-# 前端
-cd frontend && npm install && cd ..
-
-# Python（推荐使用虚拟环境）
-cd backend/scripts
-python -m venv venv
-# Windows:
-venv\Scripts\activate
-# macOS/Linux:
-# source venv/bin/activate
-pip install -r requirements.txt
-cd ../..
+python3 -m venv backend/scripts/venv312
+backend/scripts/venv312/bin/python -m pip install -r backend/scripts/requirements-dev.txt
+cd frontend
+npm ci
+cd ..
 ```
 
-### 4. 启动服务
+`requirements-dev.txt` 同时安装运行与测试依赖。只运行服务时可以改为 `requirements.txt`。RAG 首次启动会下载向量和重排模型，模型与向量索引保存在本地忽略目录中。
 
-需要 **4 个终端窗口**：
+### 3. 将配置加载到当前终端
+
+Java 的 `EnvFileReader` 为部分业务代码读取 `.env`，但 Spring 配置占位符还需要系统环境变量。因此，启动后端或手动启动 Python 服务前，需要在**每个相关终端的项目根目录**加载配置。
+
+PowerShell：
+
+```powershell
+Get-Content -LiteralPath .env | ForEach-Object {
+    if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$') {
+        $configName = $Matches[1]
+        $configValue = $Matches[2].Trim().Trim('"').Trim("'")
+        [Environment]::SetEnvironmentVariable($configName, $configValue, 'Process')
+    }
+}
+```
+
+macOS / Linux：
 
 ```bash
-# 终端 1：后端（Spring Boot）
+set -a
+. ./.env
+set +a
+```
+
+### 4. 首次初始化空数据库
+
+当前基础业务表由 JPA 的 `ddl-auto: update` 建立，部分 Flyway 增量脚本依赖这些表已经存在。**全新空库**需要先禁用 Flyway 启动一次，待应用完成启动、基础表建立后按 `Ctrl+C` 退出：
+
+PowerShell：
+
+```powershell
 cd backend
-./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--spring.flyway.enabled=false"
+```
 
-# 终端 2：前端（Vite 开发服务器）
+macOS / Linux：
+
+```bash
+cd backend
+./mvnw spring-boot:run -Dspring-boot.run.arguments=--spring.flyway.enabled=false
+```
+
+已有完整业务表的数据库跳过此步。随后使用下面的正常启动命令，让 Flyway 建立基线并应用增量；不需要手工执行 `db/legacy/` 下的归档 SQL。
+
+### 5. 启动后端与前端
+
+后端终端（已加载环境变量）：
+
+```powershell
+# 从项目根目录进入 backend
+cd backend
+.\mvnw.cmd spring-boot:run
+```
+
+macOS / Linux 将 `.\mvnw.cmd` 换为 `./mvnw`。另开终端启动前端：
+
+```bash
 cd frontend
 npm run dev
-
-# 终端 3：RAG 服务（FastAPI）
-cd backend/scripts
-python -m rag_app.main 8899
-
-# 终端 4（可选）：NBA Copilot 服务
-cd backend/scripts/nba_copilot_app
-python main.py
 ```
 
-### 5. 访问应用
+Java 会尝试启动本机的 RAG 与 Copilot 子进程，无需重复启动。如果要单独调试 Python 服务，在加载配置后执行：
 
-| 服务 | 地址 |
-|------|------|
-| 前端 | http://localhost:5173 |
-| 后端 API | http://localhost:8080 |
-| RAG 服务 | http://localhost:8899 |
-| NBA Copilot | http://localhost:8898 |
+```powershell
+# RAG：在项目根目录执行
+Push-Location backend/scripts
+.\venv312\Scripts\python.exe -m rag_app.main 18999
+Pop-Location
 
-首次启动会自动初始化演示账号（使用 `.env` 中配置的用户名密码）。
+# Copilot：在另一终端的项目根目录执行
+Push-Location backend/scripts/nba_copilot_app
+..\venv312\Scripts\python.exe main.py
+Pop-Location
+```
 
----
+macOS / Linux 使用对应的 `venv312/bin/python` 路径。独立启动时 Copilot 读取 `NBA_COPILOT_PORT`；模板已配置为 `18998`。
+
+| 服务 | 默认访问地址 |
+| --- | --- |
+| 前端 | [http://localhost:5173](http://localhost:5173) |
+| 后端 API | [http://localhost:8080/api/teams](http://localhost:8080/api/teams) |
+| RAG 健康检查 | [http://127.0.0.1:18999/health](http://127.0.0.1:18999/health) |
+| Copilot 健康检查 | [http://127.0.0.1:18998/health](http://127.0.0.1:18998/health) |
+
+### 6. 创建管理员与同步数据
+
+应用当前没有自动创建管理员账号的初始化逻辑。先在前端注册自己的账号，再由数据库管理员将这个**指定账号**提升为管理员：
+
+```sql
+USE nba_manager;
+UPDATE user_accounts SET role = 'ADMIN' WHERE username = 'your_admin_username';
+```
+
+替换为刚注册的用户名，并重新登录；若旧身份缓存尚未过期，稍等或重启后端。进入数据管理中心后，可触发球队、球员、比赛、新闻等模块的同步。新环境的数据完整度取决于首次同步结果，外部接口限流或网络失败时可查看任务详情并重试。
+
+## 构建与测试
+
+### 测试
+
+| 检查 | Windows 命令与目录 |
+| --- | --- |
+| Java 单元测试 | `cd backend` 后执行 `.\mvnw.cmd test` |
+| Python 测试 | 在根目录执行 `.\backend\scripts\venv312\Scripts\python.exe -B -m pytest backend/scripts/tests -q -p no:cacheprovider` |
+| 前端测试 | `cd frontend` 后执行 `npm test` |
+| 前端类型检查 | `cd frontend` 后执行 `npm run typecheck` |
+| 前端构建 | `cd frontend` 后执行 `npm run build` |
+
+macOS / Linux 使用 `./mvnw` 和 `venv312/bin/python`。默认 Maven 测试排除 `ChatCleanupIntegrationTest`。该集成测试需要有权限创建并删除隔离测试库的 MySQL 账户及 Redis，可配置 `TEST_DB_*`、`TEST_REDIS_*` 后执行：
+
+```powershell
+cd backend
+.\mvnw.cmd -Pintegration-test test
+```
+
+### 单个 Java 应用打包
+
+前端源码位于 `frontend/`；`backend/src/main/resources/static/` 是可重新生成的前端部署产物，不纳入版本控制。需要由 Spring Boot 同时提供页面与 API 时，先构建前端再打包后端：
+
+```powershell
+# 从项目根目录执行；这会重新生成后端的 static 部署目录
+Push-Location frontend
+npm run build -- --outDir ../backend/src/main/resources/static --emptyOutDir
+Pop-Location
+Push-Location backend
+.\mvnw.cmd clean package
+java -jar target/nba-manager-backend-4.0.0.jar
+Pop-Location
+```
+
+运行 JAR 的终端也需事先加载环境变量。Python 脚本、虚拟环境、MySQL 和 Redis 仍需部署在应用可访问的位置；Java JAR 不包含 Python 运行环境。也可以独立部署 `frontend/dist/`，由反向代理连接 Java API、上传资源和 WebSocket。
 
 ## 项目结构
 
-```
+```text
 NBAManager/
-├── .env.example                    # 环境变量模板
-├── .env                            # 环境变量（gitignored）
-├── LICENSE                         # MIT License
-├── README.md
-│
-├── backend/                        # Spring Boot 后端
-│   ├── pom.xml                     # Maven 配置
-│   ├── mvnw / mvnw.cmd             # Maven Wrapper
+├── backend/
+│   ├── .mvn/、mvnw、mvnw.cmd       # Maven Wrapper
+│   ├── pom.xml
 │   ├── src/main/java/com/nbamanager/
-│   │   ├── NbaManagerApplication.java    # 入口
-│   │   ├── config/                       # 配置类（7 个）
-│   │   ├── domain/                       # JPA 实体（40+）
-│   │   ├── repository/                   # JPA 仓库（35+）
-│   │   ├── service/                      # 业务逻辑（30+）
-│   │   ├── web/                          # REST 控制器（26 个）
-│   │   ├── security/                     # JWT 认证
-│   │   └── util/                         # 工具类
+│   │   ├── config/、security/       # 配置、认证与权限
+│   │   ├── domain/、repository/     # 数据模型与持久化
+│   │   ├── service/                 # 同步、复盘、社区与 AI 服务
+│   │   └── web/                     # REST / WebSocket 接口及 DTO
 │   ├── src/main/resources/
-│   │   ├── application.yml               # 主配置
-│   │   └── db/migration/                 # SQL 迁移脚本
-│   ├── src/test/                         # 单元测试
-│   └── scripts/                          # Python 服务
-│       ├── nba_data_fetcher.py           # NBA 数据采集（3200+ 行）
-│       ├── rag_app/                      # RAG FastAPI 服务（端口 8899）
-│       ├── nba_copilot_app/              # LangGraph Copilot 服务（端口 8898）
-│       └── requirements.txt              # Python 依赖
-│
-├── frontend/                        # Vue 3 前端
-│   ├── package.json
-│   ├── vite.config.ts               # Vite 配置
-│   └── src/
-│       ├── api/                     # API 调用封装
-│       ├── components/              # 组件
-│       ├── views/                   # 页面视图（18 个）
-│       ├── router/                  # 路由配置
-│       ├── stores/                  # Pinia 状态
-│       └── styles/                  # 全局样式
-│
-└── docs/                            # 文档
-    ├── ai-game-replay-mimo-langgraph-task-plan.md
-    └── superpowers/
-        ├── plans/                   # 实现计划
-        └── specs/                   # 设计规格
+│   │   ├── application.yml
+│   │   └── db/                      # migration 增量脚本与 legacy 归档
+│   ├── src/test/                    # Java 测试
+│   └── scripts/
+│       ├── nba_data_fetcher.py
+│       ├── translator.py
+│       ├── rag_app/                 # 检索、结构化查询、索引与流式 API
+│       ├── nba_copilot_app/          # 意图分类与处理器
+│       ├── tests/
+│       └── requirements*.txt
+├── frontend/
+│   ├── public/                      # 原始图片、图标与 Service Worker
+│   ├── src/                         # 页面、组件、API、状态和测试
+│   └── package.json、package-lock.json
+├── .env.example
+├── .gitignore
+├── LICENSE
+└── README.md
 ```
 
----
+## 接口入口
 
-## API 接口
+完整行为以 [Java Controller 源码](backend/src/main/java/com/nbamanager/web) 为准。需要登录的请求使用 `Authorization: Bearer <token>`，管理接口需要 `ADMIN` 角色。
 
-### 认证
+| 功能 | 接口示例 |
+| --- | --- |
+| 登录与注册 | `POST /api/auth/login`、`POST /api/auth/register` |
+| 球队与球员 | `GET /api/teams`、`GET /api/players` |
+| 比赛详情 | `GET /api/match-detail/{gameId}/boxscore` |
+| 复盘准备与读取 | `POST /api/ai-replay/games/{gameId}/prepare`、`GET /api/ai-replay/games/{gameId}/bootstrap` |
+| AI 比赛总结 | `POST /api/ai-replay/games/{gameId}/summary` |
+| 投篮分布 | `GET /api/shot-chart/player/{playerId}`、`GET /api/shot-chart/game/{gameId}` |
+| RAG | `GET /api/rag/stream`、`GET /api/rag/stats` |
+| Copilot | `POST /api/nba-copilot/chat` |
+| 新闻与社区 | `GET /api/news`、`GET /api/posts` |
+| 同步后台 | `POST /api/admin/sync/{module}`、`GET /api/admin/jobs`、`GET /api/admin/overview` |
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/auth/login` | 用户登录 |
-| POST | `/api/auth/register` | 用户注册 |
+## 部署与使用边界
 
-### 数据
+- Python AI 服务默认绑定 `127.0.0.1`，外部请求经 Java 认证入口访问。跨主机部署时，需要另行配置网络访问控制。
+- 按实际域名设置 `CORS_ALLOWED_ORIGINS`、`WS_ALLOWED_ORIGINS`；只有确实使用可信代理时才设置 `TRUSTED_PROXY_IPS`。
+- 配置独立的数据库密码、JWT 密钥和 API Key，限制数据库权限，并为数据库、上传文件和运行数据安排备份。
+- 当前使用 JPA 自动更新基础表加 Flyway 增量迁移，生产环境应先验证数据库变更；空库初始化方式见上文。
+- RAG 首次加载模型或重建索引可能较慢；模型就绪前的健康检查和回答会受影响。
+- 外部数据并不保证完整或实时，AI 功能依赖可用的 API Key、模型与来源证据。
+- 当前配置仅在 Java 侧压缩静态文本资源；API JSON 压缩可由网关处理。性能上限应在目标部署环境重新测量，工具位于 `backend/scripts/measure_gzip*.py`；运行这些工具前配置自己的 `ADMIN_USER` 和 `ADMIN_PASS`。
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/teams` | 球队列表 |
-| GET | `/api/teams/{id}` | 球队详情 |
-| GET | `/api/players` | 球员列表 |
-| GET | `/api/players/{id}` | 球员详情 |
-| GET | `/api/match-records` | 比赛记录 |
-| GET | `/api/match-detail/{gameId}/boxscore` | Box Score |
-| GET | `/api/match-detail/{gameId}/playbyplay` | Play-by-Play |
-| GET | `/api/match-detail/{gameId}/quarters` | 逐节比分 |
-| GET | `/api/news` | 新闻列表 |
-| GET | `/api/dashboard/overview` | 仪表盘概览 |
+## 仓库内容与贡献
 
-### AI Replay
+提交源码、正式测试、数据库迁移、依赖清单、锁文件和配置模板。以下内容由 [.gitignore](.gitignore) 排除：真实环境配置、用户上传文件、模型和向量库、虚拟环境、依赖目录、编译产物、日志、个人 IDE 配置及本机测试证据。
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/ai-replay/games/{gameId}/timeline` | 比赛时间轴 |
-| GET | `/api/ai-replay/games/{gameId}/momentum` | 走势数据 |
-| GET | `/api/ai-replay/games/{gameId}/highlights` | 精彩瞬间 |
-| GET | `/api/ai-replay/games/{gameId}/turning-points` | 关键转折 |
-| GET | `/api/ai-replay/games/{gameId}/summary` | AI 赛后总结 |
-| POST | `/api/ai-replay/games/{gameId}/events/{eventId}/explain` | AI 事件解释 |
+`frontend/public/` 中的源资源和 Maven Wrapper JAR 需要保留。忽略规则不会移除历史提交中的内容；如果凭据曾经提交过，需要先更换相关凭据。
 
-### 投篮图
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/shot-chart/player/{playerId}` | 球员投篮图 |
-| GET | `/api/shot-chart/game/{gameId}` | 比赛投篮图 |
-
-### 季后赛
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/nba/playoff` | 季后赛对阵图 |
-| POST | `/api/nba/playoff/sync` | 同步季后赛数据 |
-
-### NBA Copilot
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/nba-copilot/chat` | AI 对话 |
-| GET | `/api/nba-copilot/conversations` | 对话列表 |
-
-### RAG
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/rag/stream` | SSE 流式问答 |
-| GET | `/api/rag/stats` | RAG 统计 |
-
-### 社区
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/posts` | 帖子列表 |
-| POST | `/api/posts` | 发帖 |
-| GET | `/api/comments/{postId}` | 评论列表 |
-| POST | `/api/comments` | 发评论 |
-
----
-
-## 环境变量
-
-### 核心变量（`.env`）
-
-| 变量 | 必需 | 说明 |
-|------|------|------|
-| `DB_USERNAME` | ✅ | MySQL 用户名 |
-| `DB_PASSWORD` | ✅ | MySQL 密码 |
-| `MIMO_API_KEY` | ✅ | MIMO AI API 密钥 |
-| `MIMO_BASE_URL` | ❌ | MIMO API 地址（默认：`https://token-plan-cn.xiaomimimo.com/v1`） |
-| `JWT_SECRET` | ✅ | JWT 签名密钥（至少 256 位） |
-| `NBA_PROXY_HOST` | ❌ | NBA API 代理主机 |
-| `NBA_PROXY_PORT` | ❌ | NBA API 代理端口 |
-| `REDIS_HOST` | ❌ | Redis 主机（默认：`localhost`） |
-| `REDIS_PORT` | ❌ | Redis 端口（默认：`6379`） |
-| `REDIS_PASSWORD` | ❌ | Redis 密码 |
-| `ADMIN_USER` | ❌ | 管理员用户名（默认：`admin`） |
-| `ADMIN_PASS` | ❌ | 管理员密码 |
-| `USER_USER` | ❌ | 普通用户名（默认：`user`） |
-| `USER_PASS` | ❌ | 普通用户密码 |
-
-### RAG 专用变量
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `RAG_EMBEDDING_MODEL` | `richinfoai/ritrieve_zh_v1` | 嵌入模型 |
-| `RAG_RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | 重排序模型 |
-| `RAG_LLM_MODEL` | `mimo-v2.5-pro` | LLM 模型 |
-| `RAG_VECTOR_K` | `8` | 向量检索数量 |
-| `RAG_RERANK_TOP_K` | `5` | 重排序后保留数量 |
-| `RAG_DISTANCE_THRESHOLD` | `0.68` | 距离阈值 |
-| `RAG_PORT` | `8899` | RAG 服务端口 |
-| `RAG_WEB_SEARCH_ENABLED` | `true` | 是否启用百度搜索 |
-| `RAG_MEMORY_WINDOW` | `5` | 对话记忆窗口 |
-
-### Copilot 专用变量
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `NBA_MANAGER_API` | `http://localhost:8080` | 后端 API 地址 |
-| `NBA_COPILOT_PORT` | `8898` | Copilot 服务端口 |
-
----
-
-## 运行测试
+欢迎通过 Issue 描述问题或提出建议。提交 Pull Request 时说明改动目的与验证结果，并运行与改动相关的 Java、Python 或前端检查。提交前可用以下命令检查变更范围：
 
 ```bash
-# 后端单元测试
-cd backend && ./mvnw test
-
-# Python 测试
-cd backend/scripts && pytest test_nba_draft_providers.py test_playoff_bracket_mapping.py
-
-# 前端构建验证
-cd frontend && npm run build
+git status --short
+git diff --check
+git diff --cached --stat
 ```
-
----
-
-## 部署
-
-### 构建生产版本
-
-```bash
-# 后端
-cd backend && ./mvnw clean package -DskipTests
-
-# 前端
-cd frontend && npm run build
-# 输出到 frontend/dist/
-```
-
-### 部署建议
-
-- **后端**：`java -jar backend/target/nba-manager-backend-1.0.0.jar --spring.profiles.active=prod`
-- **前端**：将 `frontend/dist/` 部署到 Nginx 或 CDN
-- **Python 服务**：使用 `systemd` 或 `supervisor` 管理 RAG 和 Copilot 进程
-- **数据库**：MySQL 8.0+，建议配置主从复制
-- **缓存**：Redis 6.0+，建议配置持久化
-
----
-
-## 设计规范
-
-- **暗色主题**：默认主题，参考篮球场灯光氛围
-- **亮色主题**：支持切换
-- **设计语言**：`Courtside Intelligence`——专业体育数据媒体风格
-- **响应式**：支持桌面端和移动端
-- **国际化**：球队名/球员名自动翻译为中文（MIMO AI 翻译）
-
----
-
-## 贡献指南
-
-1. Fork 本仓库
-2. 创建特性分支：`git checkout -b feature/your-feature`
-3. 提交更改：`git commit -m 'feat: add your feature'`
-4. 推送分支：`git push origin feature/your-feature`
-5. 创建 Pull Request
-
-### 提交规范
-
-使用 [Conventional Commits](https://www.conventionalcommits.org/)：
-
-- `feat:` 新功能
-- `fix:` 修复
-- `docs:` 文档
-- `style:` 格式
-- `refactor:` 重构
-- `test:` 测试
-- `chore:` 构建/工具
-
----
 
 ## 许可证
 
-[MIT License](LICENSE) © 2026 NBA Manager
-
----
-
-## 致谢
-
-- [nba_api](https://github.com/swar/nba_api) — NBA Stats API Python 客户端
-- [Element Plus](https://element-plus.org/) — Vue 3 UI 组件库
-- [ECharts](https://echarts.apache.org/) — 数据可视化库
-- [Spring Boot](https://spring.io/projects/spring-boot) — Java 应用框架
-- [FastAPI](https://fastapi.tiangolo.com/) — Python Web 框架
-- [LangChain](https://langchain.com/) — LLM 应用框架
-- [ChromaDB](https://www.trychroma.com/) — 向量数据库
-- [MIMO](https://xiaomimimo.com/) — 小米大语言模型
+项目代码采用 [MIT License](LICENSE)。第三方数据、图片和服务的使用需遵守各自的条款。

@@ -8,9 +8,14 @@ export function getAvailableSeasons() {
 }
 
 /**
- * 获取指定赛季球员数据
+ * 获取指定赛季球员数据。
+ *
+ * 后端 limit 上限为 500（超出返回 400，不静默夹紧），因此默认值与上限一致；
+ * 需要更多球员时该接口无法翻页，应改用分页接口或后端扩展。
  */
-export function getPlayersBySeason(season: string, sortBy = 'pointsPerGame', limit = 500) {
+export const HISTORICAL_TOP_N_MAX = 500
+
+export function getPlayersBySeason(season: string, sortBy = 'pointsPerGame', limit = HISTORICAL_TOP_N_MAX) {
   return request.get('/historical/players', {
     params: { season, sortBy, limit }
   }).then(res => res.data)

@@ -157,7 +157,7 @@ function fallbackExplanation(tp: TurningPoint): string {
 }
 
 .tp-card.tp-run { border-left: 3px solid #10b981; }
-.tp-card.tp-overtake { border-left: 3px solid #f97316; }
+.tp-card.tp-overtake { border-left: 3px solid #22D3EE; }
 .tp-card.tp-clutch { border-left: 3px solid #8b5cf6; }
 .tp-card.tp-margin { border-left: 3px solid #3b82f6; }
 .tp-card.impact-high { box-shadow: 0 0 12px rgba(139, 92, 246, 0.15); }
@@ -169,7 +169,7 @@ function fallbackExplanation(tp: TurningPoint): string {
   font-size: 12px; font-weight: 700;
 }
 .type-badge.tp-run { background: rgba(16, 185, 129, 0.14); color: #6ee7b7; }
-.type-badge.tp-overtake { background: rgba(249, 115, 22, 0.14); color: #fdba74; }
+.type-badge.tp-overtake { background: rgba(34, 211, 238, 0.14); color: #A5F3FC; }
 .type-badge.tp-clutch { background: rgba(139, 92, 246, 0.14); color: #c4b5fd; }
 .type-badge.tp-margin { background: rgba(59, 130, 246, 0.14); color: #93c5fd; }
 .type-icon { font-size: 11px; }
@@ -191,8 +191,8 @@ function fallbackExplanation(tp: TurningPoint): string {
   display: flex; align-items: center; gap: 6px; margin-top: 8px;
   font-size: 13px; font-weight: 600; font-family: ui-monospace, monospace;
 }
-.score-from { color: #94a3b8; }
-.score-arrow { color: #64748b; }
+.score-from { color: var(--text-secondary); }
+.score-arrow { color: var(--text-tertiary); }
 .score-to { color: var(--gi-text, #f1f5f9); }
 
 .card-bottom { padding-top: 10px; border-top: 1px solid var(--gi-border, rgba(255, 255, 255, 0.06)); }
@@ -210,7 +210,7 @@ function fallbackExplanation(tp: TurningPoint): string {
   padding: 40px 24px; border: 1px dashed var(--gi-border, rgba(255, 255, 255, 0.08));
   border-radius: 14px; background: rgba(15, 23, 42, 0.34); text-align: center;
 }
-.empty-icon { color: #475569; margin-bottom: 14px; }
+.empty-icon { color: var(--text-secondary); margin-bottom: 14px; }
 .empty-title { color: #e2e8f0; font-size: 15px; font-weight: 700; }
-.empty-desc { max-width: 320px; margin-top: 6px; color: #94a3b8; font-size: 12px; line-height: 1.6; }
+.empty-desc { max-width: 320px; margin-top: 6px; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
 </style>

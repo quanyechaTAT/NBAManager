@@ -41,18 +41,29 @@ const formatScore = (score?: number) => {
   width: 100%;
   background: var(--playoff-card-bg, #ffffff);
   border: 1px solid var(--playoff-card-border, #e5e7eb);
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 2px 8px var(--playoff-card-shadow, rgba(0, 0, 0, 0.06));
-  transition: all 0.25s ease;
-  animation: slideIn 0.3s ease forwards;
-  opacity: 0;
+  transition:
+    transform 0.22s var(--ease-out-quart, ease),
+    box-shadow 0.22s var(--ease-out-quart, ease),
+    border-color 0.18s ease;
+  animation: courtside-rise 0.4s var(--ease-out-expo, ease) both;
+  position: relative;
 }
-@keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.match-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.45), transparent);
+  opacity: 0.5;
+  pointer-events: none;
+}
 
 .match-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px var(--playoff-card-shadow-hover, rgba(0, 0, 0, 0.1));
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px var(--playoff-card-shadow-hover, rgba(0, 0, 0, 0.12));
 }
 .match-card.is-complete {
   border-color: var(--playoff-accent-dim, rgba(37, 99, 235, 0.15));

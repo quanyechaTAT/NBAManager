@@ -23,6 +23,9 @@ public class PlayByPlaySyncLog {
     @Column(nullable = false, length = 40)
     private String source;
 
+    @Column(name = "operation_id", length = 64)
+    private String operationId;
+
     @Column(nullable = false, length = 20)
     private String status;
 
@@ -32,6 +35,18 @@ public class PlayByPlaySyncLog {
     private String errorMessage;
 
     private int eventCount;
+
+    @Column(name = "quality_level", length = 20)
+    private String qualityLevel;
+
+    @Column(name = "facts_hash", length = 64)
+    private String factsHash;
+
+    @Column(name = "quality_warnings_json", columnDefinition = "TEXT")
+    private String qualityWarningsJson;
+
+    @Column(name = "duration_ms")
+    private Long durationMs;
 
     private LocalDateTime startedAt;
     private LocalDateTime completedAt;

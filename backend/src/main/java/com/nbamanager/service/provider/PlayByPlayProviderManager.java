@@ -47,13 +47,15 @@ public class PlayByPlayProviderManager {
             log.info("Trying provider {} for gameId={}", typeName, gameId);
             try {
                 PlayByPlayFetchResult result = provider.fetch(gameId, options);
-                if (result.success()) {
+                if (result.success() && result.events() != null && !result.events().isEmpty()) {
                     log.info("Provider {} succeeded for gameId={}, events={}",
                             typeName, gameId,
-                            result.events() != null ? result.events().size() : 0);
+                            result.events().size());
                     return result;
                 }
-                String errorMsg = result.errorMessage() != null ? result.errorMessage() : "Unknown error";
+                String errorMsg = result.success()
+                        ? "Provider returned no play-by-play events"
+                        : result.errorMessage() != null ? result.errorMessage() : "Unknown error";
                 log.warn("Provider {} failed for gameId={}: {}", typeName, gameId, errorMsg);
                 errors.add(typeName + ": " + errorMsg);
             } catch (Exception e) {

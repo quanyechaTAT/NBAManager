@@ -15,6 +15,7 @@ import com.nbamanager.web.dto.SyncJobResponse;
 import com.nbamanager.web.dto.SyncJobStepResponse;
 import com.nbamanager.web.dto.SyncModuleOverview;
 import com.nbamanager.web.dto.SyncOverviewResponse;
+import com.nbamanager.web.support.PageRequestSanitizer;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -75,7 +76,11 @@ public class AdminController {
     public ResponseEntity<?> syncFull(@AuthenticationPrincipal UserPrincipal user) {
         try {
             SyncSubmission submission = syncCoordinator.submitFullSync("MANUAL", user.getUsername());
-            return ResponseEntity.accepted().body(SyncJobResponse.from(submission.job(), false));
+            SyncJobResponse response = SyncJobResponse.from(submission.job(), submission.reused());
+            if (submission.reused()) {
+                return ResponseEntity.ok(response);
+            }
+            return ResponseEntity.accepted().body(response);
         } catch (SyncJobConflictException e) {
             HttpStatus status = HttpStatus.valueOf(e.getStatus().value());
             if (status == HttpStatus.CONFLICT) {
@@ -116,8 +121,11 @@ public class AdminController {
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        int boundedSize = Math.min(size, 100);
-        PageRequest pageRequest = PageRequest.of(page, boundedSize, Sort.by(Sort.Direction.DESC, "createdAt"));
+        // 页码同样需要上限：page 过大时 PageRequest.of 的 offset 会溢出 int，
+        // 最终在 JPA 层抛 InvalidDataAccessApiUsageException 变成 500
+        int boundedPage = Math.max(0, Math.min(page, PageRequestSanitizer.MAX_PAGE_NUMBER));
+        int boundedSize = Math.max(1, Math.min(size, PageRequestSanitizer.MAX_PAGE_SIZE));
+        PageRequest pageRequest = PageRequest.of(boundedPage, boundedSize, Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<com.nbamanager.domain.SyncJob> jobPage = syncJobRepository.search(
                 module != null ? module.toUpperCase() : null,
                 triggerType, status, pageRequest);

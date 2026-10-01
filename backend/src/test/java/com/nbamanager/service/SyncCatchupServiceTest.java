@@ -52,6 +52,23 @@ class SyncCatchupServiceTest {
     }
 
     @Test
+    void successfulCatchupDoesNotRemainPendingForRetry() {
+        SyncDefinition newsDef = new SyncDefinition("NEWS", null, 5,
+                java.util.List.of(SyncSchedulePolicy.fixed(java.time.Duration.ofHours(1))));
+        when(registry.scheduledDefinitions()).thenReturn(java.util.List.of(newsDef));
+        when(repository.findTopByModuleAndStatusOrderByFinishedAtDesc("NEWS", "SUCCESS"))
+                .thenReturn(Optional.of(successAt("NEWS", now.minusHours(4))));
+        SyncJob submitted = new SyncJob();
+        submitted.setId(21L);
+        when(coordinator.submit(any())).thenReturn(new SyncSubmission(submitted, false));
+
+        catchupService.onAdminLogin(new AdminLoginEvent("admin", now));
+        catchupService.retryPendingCatchup();
+
+        verify(coordinator, times(1)).submit(SyncCommand.loginCatchup("NEWS", "admin"));
+    }
+
+    @Test
     void activeModuleIsDeduplicatedByCoordinator() {
         SyncDefinition todayDef = new SyncDefinition("TODAY_GAMES", null, 4,
                 java.util.List.of(SyncSchedulePolicy.fixed(java.time.Duration.ofMinutes(5))));

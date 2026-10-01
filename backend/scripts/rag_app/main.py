@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from functools import lru_cache
+import threading
 
 from fastapi import FastAPI
 
@@ -11,14 +11,39 @@ from rag_app.pipeline.engine import RAGEngine
 
 
 settings = RAGSettings.from_env()
+_engine: RAGEngine | None = None
+_engine_lock = threading.Lock()
 
 
-@lru_cache(maxsize=1)
 def get_engine() -> RAGEngine:
-    return RAGEngine(settings)
+    global _engine
+    if _engine is None:
+        with _engine_lock:
+            if _engine is None:
+                _engine = RAGEngine(settings)
+    return _engine
 
 app = FastAPI(title="NBA Manager RAG Service", version="0.1.0")
 app.include_router(create_router(get_engine))
+
+
+@app.on_event("startup")
+async def preload_models():
+    """Pre-load embedding and reranker models at startup to avoid first-request timeout."""
+    def _preload():
+        try:
+            engine = get_engine()
+            # Trigger model loading by calling embed_query
+            engine.retriever.embeddings.load()
+            print("Embedding model pre-loaded", file=sys.stderr)
+            # Trigger reranker loading
+            engine.retriever.reranker._load()
+            print("Reranker model pre-loaded", file=sys.stderr)
+        except Exception as e:
+            print(f"Model pre-load failed: {e}", file=sys.stderr)
+
+    # Run in background thread to not block startup
+    threading.Thread(target=_preload, daemon=True).start()
 
 
 def main() -> None:

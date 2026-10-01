@@ -6,7 +6,7 @@ import com.nbamanager.domain.PlayerShotChart;
 import com.nbamanager.repository.GameShotChartRepository;
 import com.nbamanager.repository.PlayerRepository;
 import com.nbamanager.repository.PlayerShotChartRepository;
-import com.nbamanager.util.PythonScriptRunner;
+import com.nbamanager.service.PythonScriptRunner;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -27,6 +27,15 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Slf4j
 public class ShotChartService {
+    /** 第 8 轮 P1-5：进程内 TTL 缓存（10min）。300 行投图表经 Redis 往返 ~20ms 抵消收益，
+     * 进程内直读个位数 ms；管理端 clearCache 主动失效；单实例语义正确。 */
+    private static final long SHOT_CACHE_TTL_MS = 10 * 60_000L;
+
+    private record Snapshot(long at, Map<String, Object> result) { }
+
+    private final java.util.concurrent.ConcurrentHashMap<String, Snapshot> shotChartCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
 
     private final PlayerShotChartRepository shotChartRepository;
     private final PlayerRepository playerRepository;
@@ -37,7 +46,26 @@ public class ShotChartService {
      * 获取球员投篮数据（优先从缓存获取，没有则从API获取）
      */
     @Transactional
+    /**
+     * 投篮热区（第 8 轮 P1-5）：10min 缓存。
+     * 命中时跳过"查库+不足50条再拉外部API"的完整链路（p95 103ms → 个位数 ms）。
+     * 外部同步/管理端清理（clearCacheForPlayer）会主动失效；TTL 兜底其余写入。
+     */
     public Map<String, Object> getPlayerShots(Long playerId, String season) {
+        String cacheKey = playerId + "|" + season;
+        long now = System.currentTimeMillis();
+        Snapshot snapshot = shotChartCache.get(cacheKey);
+        if (snapshot != null && now - snapshot.at < SHOT_CACHE_TTL_MS) {
+            return snapshot.result();
+        }
+        Map<String, Object> result = loadPlayerShots(playerId, season);
+        if (!result.isEmpty()) {
+            shotChartCache.put(cacheKey, new Snapshot(now, result));
+        }
+        return result;
+    }
+
+    private Map<String, Object> loadPlayerShots(Long playerId, String season) {
         // 查找球员
         Player player = playerRepository.findById(playerId).orElse(null);
         if (player == null || player.getNbaPlayerId() == null) {
@@ -208,6 +236,7 @@ public class ShotChartService {
      */
     @Transactional
     public void clearCache(Long nbaPlayerId, String season) {
+        shotChartCache.remove(nbaPlayerId + "|" + season);
         shotChartRepository.deleteByNbaPlayerIdAndSeason(nbaPlayerId, season);
         log.info("清除投篮缓存: playerId={}, season={}", nbaPlayerId, season);
     }

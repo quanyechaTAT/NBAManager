@@ -56,12 +56,12 @@ defineProps<{
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent, #E85D26), var(--purple, #8B5CF6));
-  color: #fff;
+  background: linear-gradient(135deg, var(--accent-light, #22D3EE), var(--accent, #0891B2));
+  color: var(--accent-contrast, #04202A);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 12px rgba(var(--accent-orange-rgb, 232, 93, 38), 0.25);
+  box-shadow: 0 2px 12px rgba(var(--accent-orange-rgb, 8, 145, 178), 0.25);
   flex-shrink: 0;
 }
 

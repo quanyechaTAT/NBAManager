@@ -21,10 +21,12 @@
       <div class="player-hero" v-loading="detailLoading">
         <div class="player-hero-inner">
           <div class="player-hero-left">
-            <div class="player-avatar" @click="showHeadshotPreview = true" :class="{ 'player-avatar--clickable': player?.nbaPlayerId }">
-              <img v-if="player?.nbaPlayerId" :src="headshotUrl" :alt="player?.name" class="player-headshot" @error="onHeadshotError" />
-              <span v-else>{{ player?.name?.charAt(0) || '?' }}</span>
-              <div v-if="player?.nbaPlayerId" class="avatar-zoom-hint">🔍</div>
+            <div class="player-avatar" :class="{ 'player-avatar--clickable': player?.nbaPlayerId }" :role="player?.nbaPlayerId ? 'button' : undefined" :tabindex="player?.nbaPlayerId ? 0 : -1" aria-label="查看球员头像" @click="player?.nbaPlayerId && (showHeadshotPreview = true)" @keydown.enter="player?.nbaPlayerId && (showHeadshotPreview = true)">
+              <img v-if="player?.nbaPlayerId && !avatarBroken" :src="headshotUrl" :alt="player?.name" class="player-headshot" @error="avatarBroken = true" />
+              <span v-else class="player-avatar-fallback">{{ player?.name?.charAt(0) || '?' }}</span>
+              <div v-if="player?.nbaPlayerId" class="avatar-zoom-hint">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              </div>
             </div>
             <div>
               <h1 class="player-name">{{ player?.name }}</h1>
@@ -33,22 +35,22 @@
               <el-button v-if="auth.token" :type="isFollowed ? 'success' : 'primary'" plain size="small" @click="toggleFollow" class="follow-btn">
                 {{ isFollowed ? '★ 已关注' : '+ 关注' }}
               </el-button>
-              <el-button plain size="small" @click="goCompare" class="follow-btn">🔄 对比</el-button>
+              <el-button plain size="small" @click="goCompare" class="follow-btn"><span class="btn-icon" style="display:inline-flex;margin-right:4px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg></span>双星对决</el-button>
             </div>
           </div>
           <div class="player-hero-stats">
             <div class="hero-stat">
-              <span class="hero-stat-num hero-stat-num--pts">{{ player?.pointsPerGame?.toFixed(1) }}</span>
+              <span class="hero-stat-num hero-stat-num--pts">{{ player?.pointsPerGame?.toFixed(1) ?? '—' }}</span>
               <span class="hero-stat-label">场均得分</span>
             </div>
             <div class="hero-stat-divider"></div>
             <div class="hero-stat">
-              <span class="hero-stat-num">{{ player?.reboundsPerGame?.toFixed(1) }}</span>
+              <span class="hero-stat-num">{{ player?.reboundsPerGame?.toFixed(1) ?? '—' }}</span>
               <span class="hero-stat-label">场均篮板</span>
             </div>
             <div class="hero-stat-divider"></div>
             <div class="hero-stat">
-              <span class="hero-stat-num">{{ player?.assistsPerGame?.toFixed(1) }}</span>
+              <span class="hero-stat-num">{{ player?.assistsPerGame?.toFixed(1) ?? '—' }}</span>
               <span class="hero-stat-label">场均助攻</span>
             </div>
           </div>
@@ -57,10 +59,29 @@
 
       <!-- 关键数据卡片 -->
       <el-row :gutter="16" class="stat-row">
-        <el-col :xs="12" :sm="8" :md="4" v-for="item in keyStats" :key="item.label">
+        <el-col :xs="12" :sm="8" :md="6" v-for="item in keyStats" :key="item.label">
           <div class="key-stat-card">
             <span class="key-stat-label">{{ item.label }}</span>
             <strong class="key-stat-num">{{ item.value }}</strong>
+            <div v-if="item.scaled" class="key-stat-compare">
+              <div class="key-stat-compare__track">
+                <span
+                  class="key-stat-compare__fill"
+                  :style="{ width: Math.min((item.raw / item.max) * 100, 100) + '%' }"
+                />
+                <span
+                  v-if="item.avg <= item.max"
+                  class="key-stat-compare__avg"
+                  :style="{ left: Math.min((item.avg / item.max) * 100, 100) + '%' }"
+                />
+              </div>
+              <div class="key-stat-compare__caption">
+                <span>联盟平均 {{ item.fmt(item.avg) }}</span>
+                <em :class="item.raw >= item.avg ? 'is-above' : 'is-below'">
+                  {{ item.raw >= item.avg ? '+' : '-' }}{{ item.fmt(Math.abs(item.raw - item.avg)).replace('%', '') }}
+                </em>
+              </div>
+            </div>
           </div>
         </el-col>
       </el-row>
@@ -87,8 +108,8 @@
               <el-card shadow="never" class="chart-card">
                 <div class="card-head">
                   <div class="card-head-title">
-                    <span>雷达图</span>
-                    <small>能力六维分析</small>
+                    <span>攻防六维雷达</span>
+                    <small>六维战术能力模型</small>
                   </div>
                 </div>
                 <div class="chart-body">
@@ -101,8 +122,8 @@
               <el-card shadow="never" class="chart-card">
                 <div class="card-head">
                   <div class="card-head-title">
-                    <span>生涯趋势</span>
-                    <small>场均数据变化</small>
+                    <span>生涯数据走势</span>
+                    <small>历年场均表现演进</small>
                   </div>
                 </div>
                 <div class="chart-body">
@@ -119,8 +140,8 @@
           <el-card shadow="never" class="chart-card">
             <div class="card-head">
               <div class="card-head-title">
-                <span>投篮热图</span>
-                <small>模拟投篮分布</small>
+                <span>半场投篮热区</span>
+                <small>投篮命中率与出手热区分布</small>
               </div>
             </div>
             <div class="chart-body shotchart-body">
@@ -179,7 +200,7 @@
       <!-- 近期比赛日志 -->
       <div class="section-header" style="margin-top: 28px;">
         <div class="section-header-left">
-          <h2>近期比赛</h2>
+          <h2>近期比赛日志 (Game Log)</h2>
         </div>
       </div>
       <el-card shadow="never" class="gamelog-card">
@@ -226,7 +247,7 @@
                 v-if="row.gameId"
                 link type="primary" size="small"
                 @click="goToMatchDetail(row)"
-              >📊</el-button>
+              ><span style="display:inline-flex;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="1em" height="1em"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 16l4-6 4 3 5-7"/></svg></span></el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -271,7 +292,8 @@ import { use } from 'echarts/core'
 import { RadarChart, LineChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, LegendComponent, GridComponent, RadarComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { fetchPlayerDetail, fetchPlayerCareer, fetchPlayerGameLog } from '@/api/playerDetail'
+import { fetchPlayerDetail, fetchPlayerCareer, fetchPlayerGameLog, fetchLeagueAverages } from '@/api/playerDetail'
+import type { LeagueAverages } from '@/api/playerDetail'
 import type { PlayerDetail, PlayerCareerStat, PlayerGameLogItem } from '@/api/playerDetail'
 import { toggleFavorite, fetchFollowedPlayerIds } from '@/api/favorite'
 import { useAuthStore } from '@/stores/auth'
@@ -304,6 +326,7 @@ const gameLogTotal = ref(0)
 const gameLogPage = ref(1)
 const gameLogRequestVersion = ref(0) // 用于跟踪最新请求，防止并发冲突
 
+const avatarBroken = ref(false)
 const detailLoading = ref(false)
 const showHeadshotPreview = ref(false)
 const detailLoaded = ref(false)
@@ -318,16 +341,47 @@ const chartTabs = [
 ]
 
 /* 关键数据卡片 */
+const leagueAvg = ref<LeagueAverages | null>(null)
+const leagueAvgLoaded = ref(false)
+
+async function loadLeagueAverages() {
+  if (leagueAvgLoaded.value) return
+  leagueAvgLoaded.value = true
+  try {
+    const { data } = await fetchLeagueAverages('2025-26')
+    leagueAvg.value = data.playerCount > 0 ? data : null
+  } catch { /* 联盟平均加载失败时仅隐藏对比条 */ }
+}
+
 const keyStats = computed(() => {
   const p = player.value
   if (!p) return []
+  const lg = leagueAvg.value
+  const one = (v: number) => v.toFixed(1)
+  const pct = (v: number) => (v * 100).toFixed(1) + '%'
+  interface StatItem {
+    label: string
+    value: string
+    raw: number
+    avg: number
+    max: number
+    fmt: (v: number) => string
+    scaled: boolean
+  }
+  const mk = (label: string, raw: number, fmt: (v: number) => string, avg = 0, max = 0): StatItem => ({
+    label,
+    value: fmt(raw),
+    raw,
+    avg: avg || 0,
+    max: max || 0,
+    fmt,
+    scaled: avg > 0 && max > 0 && max > avg,
+  })
   return [
-    { label: '得分', value: p.pointsPerGame.toFixed(1) },
-    { label: '篮板', value: p.reboundsPerGame.toFixed(1) },
-    { label: '助攻', value: p.assistsPerGame.toFixed(1) },
-    { label: '命中率', value: (p.fieldGoalPct * 100).toFixed(1) + '%' },
-    { label: '三分', value: (p.threePointPct * 100).toFixed(1) + '%' },
-    { label: '效率值', value: p.efficiency.toFixed(1) },
+    mk('得分', p.pointsPerGame, one, lg?.avgPoints, lg?.maxPoints),
+    mk('篮板', p.reboundsPerGame, one, lg?.avgRebounds, lg?.maxRebounds),
+    mk('助攻', p.assistsPerGame, one, lg?.avgAssists, lg?.maxAssists),
+    mk('命中率', p.fieldGoalPct, pct, lg?.avgFieldGoalPct, lg?.maxFieldGoalPct),
   ]
 })
 
@@ -341,12 +395,12 @@ const radarOption = computed(() => {
     tooltip: tooltipStyle.value,
     radar: {
       indicator: [
-        { name: '得分', max: 100 },
-        { name: '篮板', max: 100 },
-        { name: '助攻', max: 100 },
-        { name: '抢断', max: 100 },
-        { name: '盖帽', max: 100 },
-        { name: '命中率', max: 100 },
+        { name: '得分终结 (PPG)', max: 100 },
+        { name: '篮板冲抢 (RPG)', max: 100 },
+        { name: '组织串联 (APG)', max: 100 },
+        { name: '外线抢断 (SPG)', max: 100 },
+        { name: '护筐盖帽 (BPG)', max: 100 },
+        { name: '投篮准星 (FG%)', max: 100 },
       ],
       shape: 'polygon',
       splitNumber: 4,
@@ -494,6 +548,8 @@ async function loadDetail() {
     player.value = data
     // 加载投篮数据
     loadShotChart()
+    // 联盟平均不阻塞详情展示
+    void loadLeagueAverages()
   } catch {
     ElMessage.error('加载球员详情失败')
   } finally {
@@ -776,16 +832,14 @@ const displayShots = computed<ShotData[]>(() => {
 .player-hero {
   background: var(--bg-card);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-xl);
+  border-radius: 18px;
   padding: 28px 32px;
   margin-bottom: 24px;
   position: relative;
   overflow: hidden;
-  animation: heroSlideIn 0.5s var(--ease-smooth) forwards;
-  opacity: 0;
-  transform: translateY(16px);
+  animation: courtside-rise 0.5s var(--ease-out-expo, ease) both;
+  box-shadow: var(--shadow-md);
 }
-@keyframes heroSlideIn { to { opacity: 1; transform: translateY(0); } }
 .player-hero::before {
   content: '';
   position: absolute;
@@ -793,7 +847,7 @@ const displayShots = computed<ShotData[]>(() => {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-light), var(--purple));
+  background: linear-gradient(90deg, var(--accent-light), var(--accent));
 }
 .player-hero::after {
   content: '';
@@ -802,8 +856,8 @@ const displayShots = computed<ShotData[]>(() => {
   right: -10%;
   width: 300px;
   height: 300px;
-  background: radial-gradient(circle, var(--purple-glow) 0%, transparent 70%);
-  opacity: 0.3;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.08) 0%, transparent 70%);
+  opacity: 0.6;
   pointer-events: none;
 }
 .player-hero-inner {
@@ -820,11 +874,22 @@ const displayShots = computed<ShotData[]>(() => {
   align-items: center;
   gap: 16px;
 }
+.player-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 40px;
+  font-weight: 800;
+  color: var(--accent);
+  background: var(--accent-lighter);
+}
 .player-avatar {
   width: 88px;
   height: 88px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--purple) 0%, #5A4BD1 100%);
+  border-radius: 16px;
+  background: linear-gradient(145deg, var(--accent-light), var(--accent));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -833,11 +898,25 @@ const displayShots = computed<ShotData[]>(() => {
   overflow: hidden;
   flex-shrink: 0;
   border: 3px solid var(--border-light);
-  transition: all var(--duration-normal) var(--ease-smooth);
+  transition:
+    border-color 0.22s var(--ease-smooth),
+    box-shadow 0.22s var(--ease-out-quart, ease),
+    transform 0.22s var(--ease-out-quart, ease);
 }
-.player-hero:hover .player-avatar {
-  border-color: var(--purple);
-  box-shadow: 0 0 20px var(--purple-glow);
+.player-hero:hover .player-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 40px;
+  font-weight: 800;
+  color: var(--accent);
+  background: var(--accent-lighter);
+}
+.player-avatar {
+  border-color: rgba(34, 211, 238, 0.5);
+  box-shadow: 0 8px 24px var(--accent-glow-strong);
   transform: scale(1.05);
 }
 .player-headshot {
@@ -899,17 +978,11 @@ const displayShots = computed<ShotData[]>(() => {
 .headshot-dialog {
   background: var(--bg-card);
   border: 1px solid var(--border-medium);
-  border-radius: var(--radius-xl);
-  box-shadow: 0 32px 100px rgba(0, 0, 0, 0.8), 0 0 2px rgba(0, 255, 136, 0.2);
+  border-radius: 18px;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.5);
   overflow: hidden;
   transform: scale(0.95);
-  animation: headshotZoomIn 0.3s var(--ease-spring) forwards;
-}
-
-@keyframes headshotZoomIn {
-  to {
-    transform: scale(1);
-  }
+  animation: courtside-scale-in 0.3s var(--ease-out-expo, ease) forwards;
 }
 
 .headshot-dialog-header {
@@ -972,10 +1045,13 @@ const displayShots = computed<ShotData[]>(() => {
 .player-name {
   margin: 0;
   font-size: 30px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--text-primary);
   font-family: var(--font-heading);
-  letter-spacing: 0.3px;
+  letter-spacing: -0.5px;
+  background: linear-gradient(120deg, var(--text-primary) 0%, var(--text-primary) 60%, rgba(34, 211, 238, 0.9) 140%);
+  -webkit-background-clip: text;
+  background-clip: text;
 }
 .player-sub {
   margin: 4px 0 0;
@@ -999,9 +1075,10 @@ const displayShots = computed<ShotData[]>(() => {
 .hero-stat-num {
   display: block;
   font-size: 34px;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-weight: 800;
+  color: var(--accent);
   font-family: var(--font-heading);
+  font-variant-numeric: tabular-nums;
   line-height: 1.1;
   letter-spacing: -0.5px;
 }
@@ -1032,12 +1109,67 @@ const displayShots = computed<ShotData[]>(() => {
   background: var(--bg-card);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
-  padding: 16px 20px;
+  padding: 16px 20px 14px;
+  min-height: 106px;
   text-align: center;
   transition: all var(--duration-normal) var(--ease-smooth);
   margin-bottom: 16px;
   position: relative;
   overflow: hidden;
+}
+
+/* 联盟相对水平对比条 */
+.key-stat-compare {
+  margin-top: 10px;
+}
+.key-stat-compare__track {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-hover);
+  overflow: visible;
+}
+.key-stat-compare__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent-light), var(--accent));
+  transition: width var(--duration-slow) var(--ease-out-expo);
+}
+.key-stat-compare__avg {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 10px;
+  border-radius: 1px;
+  background: var(--text-muted);
+  transform: translateX(-1px);
+}
+.key-stat-compare__caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 10.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.key-stat-compare__caption > span {
+  color: var(--text-muted);
+}
+.key-stat-compare__caption em {
+  font-style: normal;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.key-stat-compare__caption em.is-above {
+  color: var(--success);
+}
+.key-stat-compare__caption em.is-below {
+  color: var(--text-muted);
 }
 .key-stat-card::before {
   content: '';
@@ -1122,7 +1254,7 @@ const displayShots = computed<ShotData[]>(() => {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--purple), var(--accent));
+  background: linear-gradient(90deg, var(--accent-light), var(--accent));
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   opacity: 0;
   transition: opacity var(--duration-normal) var(--ease-smooth);
@@ -1156,7 +1288,7 @@ const displayShots = computed<ShotData[]>(() => {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--accent), var(--cyan));
+  background: linear-gradient(90deg, var(--purple), var(--cyan));
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 .pager {

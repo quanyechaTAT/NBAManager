@@ -68,6 +68,8 @@ public class MatchRecordService {
         m.setMatchDate(req.matchDate());
         m.setSeason(req.season());
         m.setStatus(req.status());
+        m.setGameType(MatchGameTypeResolver.resolve(
+                req.gameType(), null, req.matchDate()));
         return MatchRecordDto.from(matchRecordRepository.save(m));
     }
 

@@ -210,8 +210,8 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { useAuthStore } from '@/stores/auth'
 import { changePasswordApi, uploadAvatarApi, resetAvatarApi } from '@/api/auth'
+import { useAuthStore } from '@/stores/auth'
 import { fetchTeams } from '@/api/team'
 import { fetchPlayers } from '@/api/player'
 import { fetchFollowedPlayerIds, fetchFollowedTeamIds, fetchFavoritedPostIds, fetchFavoritedNewsIds } from '@/api/favorite'
@@ -223,6 +223,7 @@ import type { Post } from '@/api/community'
 import AppEmpty from '@/components/common/AppEmpty.vue'
 import ProfileHero from '@/components/profile/ProfileHero.vue'
 import ProfileTabLabel from '@/components/profile/ProfileTabLabel.vue'
+import { fetchAllPages } from '@/utils/fetchAllPages'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -273,7 +274,10 @@ async function changePassword() {
   if (!valid) return
   pwdLoading.value = true
   try {
-    await changePasswordApi({ oldPassword: pwdForm.oldPassword, newPassword: pwdForm.newPassword })
+    const resp = await changePasswordApi({ oldPassword: pwdForm.oldPassword, newPassword: pwdForm.newPassword })
+    // 后端改密即换发携带新密码标记的 token：本地同步，避免当前会话被 401 踢出
+    const fresh = (resp as unknown as { data?: { token?: string } }).data
+    if (fresh?.token) auth.updateToken(fresh.token)
     ElMessage.success('密码修改成功')
     pwdForm.oldPassword = ''
     pwdForm.newPassword = ''
@@ -366,8 +370,8 @@ async function loadFollowedPlayers() {
   try {
     const { data: ids } = await fetchFollowedPlayerIds()
     if (ids.length === 0) { followedPlayers.value = []; return }
-    const { data } = await fetchPlayers({ page: 0, size: 1000 })
-    followedPlayers.value = data.content.filter(p => ids.includes(p.id))
+    const all = await fetchAllPages<Player>(p => fetchPlayers({ page: p, size: 100 }).then(r => r.data))
+    followedPlayers.value = all.filter(p => ids.includes(p.id))
   } catch (e) { console.error('加载关注球员失败:', e) }
   finally { favLoading.value = false }
 }
@@ -377,8 +381,8 @@ async function loadFollowedTeams() {
   try {
     const { data: ids } = await fetchFollowedTeamIds()
     if (ids.length === 0) { followedTeams.value = []; return }
-    const { data } = await fetchTeams({ page: 0, size: 1000 })
-    followedTeams.value = data.content.filter(t => ids.includes(t.id))
+    const all = await fetchAllPages<Team>(p => fetchTeams({ page: p, size: 100 }).then(r => r.data))
+    followedTeams.value = all.filter(t => ids.includes(t.id))
   } catch (e) { console.error('加载关注球队失败:', e) }
   finally { favLoading.value = false }
 }
@@ -388,8 +392,8 @@ async function loadFavoritedPosts() {
   try {
     const { data: ids } = await fetchFavoritedPostIds()
     if (ids.length === 0) { favoritedPosts.value = []; return }
-    const { data } = await fetchPosts({ page: 0, size: 1000 })
-    favoritedPosts.value = data.content.filter(p => ids.includes(p.id))
+    const all = await fetchAllPages<Post>(p => fetchPosts({ page: p, size: 100 }).then(r => r.data))
+    favoritedPosts.value = all.filter(p => ids.includes(p.id))
   } catch (e) { console.error('加载收藏帖子失败:', e) }
   finally { favLoading.value = false }
 }
@@ -399,8 +403,8 @@ async function loadFavoritedNews() {
   try {
     const { data: ids } = await fetchFavoritedNewsIds()
     if (ids.length === 0) { favoritedNews.value = []; return }
-    const { data } = await fetchNews({ page: 0, size: 1000 })
-    favoritedNews.value = data.content.filter(n => ids.includes(n.id))
+    const all = await fetchAllPages<GameNews>(p => fetchNews({ page: p, size: 100 }).then(r => r.data))
+    favoritedNews.value = all.filter(n => ids.includes(n.id))
   } catch (e) { console.error('加载收藏资讯失败:', e) }
   finally { newsLoading.value = false }
 }
@@ -413,14 +417,14 @@ async function loadBrowseHistory() {
       fetchBrowsedPostIds().then(res => res.data)
     ])
     if (newsIds.length > 0) {
-      const { data } = await fetchNews({ page: 0, size: 1000 })
-      browsedNews.value = data.content.filter(n => newsIds.includes(n.id))
+      const newsAll = await fetchAllPages<GameNews>(p => fetchNews({ page: p, size: 100 }).then(r => r.data))
+      browsedNews.value = newsAll.filter(n => newsIds.includes(n.id))
     } else {
       browsedNews.value = []
     }
     if (postIds.length > 0) {
-      const { data } = await fetchPosts({ page: 0, size: 1000 })
-      browsedPosts.value = data.content.filter(p => postIds.includes(p.id))
+      const postsAll = await fetchAllPages<Post>(p => fetchPosts({ page: p, size: 100 }).then(r => r.data))
+      browsedPosts.value = postsAll.filter(p => postIds.includes(p.id))
     } else {
       browsedPosts.value = []
     }
@@ -516,20 +520,25 @@ onMounted(loadTabData)
   font-weight: 500;
   font-family: var(--font-body);
   cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-smooth);
+  transition:
+    color 0.18s var(--ease-smooth),
+    background 0.18s var(--ease-smooth),
+    transform 0.18s var(--ease-out-quart, ease);
   position: relative;
   white-space: nowrap;
+  border-radius: 10px 10px 0 0;
 }
 
 .profile-nav__item:hover {
   color: var(--text-secondary);
   background: var(--bg-hover);
+  transform: translateY(-1px);
 }
 
 .profile-nav__item.is-active {
   color: var(--accent);
   background: var(--profile-nav-active-bg);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .profile-nav__item.is-active::after {
@@ -539,7 +548,7 @@ onMounted(loadTabData)
   left: 16px;
   right: 16px;
   height: 2px;
-  background: var(--accent);
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
   border-radius: 1px 1px 0 0;
 }
 
@@ -558,6 +567,26 @@ onMounted(loadTabData)
   border: 1px solid var(--profile-panel-border);
   border-radius: var(--radius-xl);
   padding: 24px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.22s var(--ease-out-quart, ease);
+}
+
+.profile-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.5), transparent);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.profile-panel:hover {
+  box-shadow: var(--shadow-md);
 }
 
 .profile-panel__inner {
@@ -885,18 +914,22 @@ onMounted(loadTabData)
   }
 
   .pwd-form :deep(.el-form-item) {
+    display: block;
     margin-bottom: 16px;
   }
 
   .pwd-form :deep(.el-form-item__label) {
-    float: none;
-    display: block;
+    display: flex;
+    width: auto !important;
+    height: auto;
+    justify-content: flex-start;
     text-align: left;
-    padding-bottom: 4px;
+    padding: 0 0 6px;
   }
 
   .pwd-form :deep(.el-form-item__content) {
     margin-left: 0 !important;
+    width: 100%;
   }
 }
 

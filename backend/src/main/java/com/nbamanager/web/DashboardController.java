@@ -5,6 +5,7 @@ import com.nbamanager.service.DashboardOverviewService;
 import com.nbamanager.web.dto.DashboardOverviewDto;
 import com.nbamanager.web.dto.DashboardStatsDto;
 import com.nbamanager.web.dto.PlayerDto;
+import com.nbamanager.web.support.PageRequestSanitizer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,6 +35,9 @@ public class DashboardController {
     public Page<PlayerDto> topScorers(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return dashboardService.getTopScorers(page, size);
+        // page * size 是 int 运算，越界会静默溢出成负数并返回错误的一页，这里先夹紧
+        int safePage = Math.max(0, Math.min(page, PageRequestSanitizer.MAX_PAGE_NUMBER));
+        int safeSize = Math.max(1, Math.min(size, PageRequestSanitizer.MAX_PAGE_SIZE));
+        return dashboardService.getTopScorers(safePage, safeSize);
     }
 }

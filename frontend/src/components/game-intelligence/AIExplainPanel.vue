@@ -13,28 +13,87 @@ const props = defineProps<{
 // Cache: eventId -> EventExplain
 const cache = ref<Map<number, EventExplain>>(new Map())
 const loading = ref(false)
+const explainError = ref<string | null>(null)
+let requestGeneration = 0
+let controller: AbortController | null = null
+
 const currentExplain = computed<EventExplain | null>(() => {
   if (!props.selectedEvent) return null
   return cache.value.get(props.selectedEvent.id) ?? null
 })
 
-// Fetch explanation when selected event changes
+const canGenerate = computed(() => Boolean(props.selectedEvent && props.gameId && !currentExplain.value && !loading.value))
+
+function isAbortError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === 'AbortError') return true
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { code?: unknown; name?: unknown }
+  return candidate.code === 'ERR_CANCELED' || candidate.name === 'CanceledError' || candidate.name === 'AbortError'
+}
+
+function explainErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const candidate = error as {
+      response?: { status?: number; data?: { message?: unknown } }
+      message?: unknown
+    }
+    if (candidate.response?.status === 401) return '请登录后生成 AI 解说'
+    if (candidate.response?.status === 403) return '当前账号无权生成 AI 解说'
+    if (typeof candidate.response?.data?.message === 'string') return candidate.response.data.message
+    if (typeof candidate.message === 'string') return candidate.message
+  }
+  return 'AI 解说生成失败，请稍后重试'
+}
+
 watch(
-  () => props.selectedEvent,
-  async (event) => {
-    if (!event) return
-    if (cache.value.has(event.id)) return
-    loading.value = true
-    try {
-      const result = await explainEvent(props.gameId, event.id)
-      cache.value.set(event.id, result)
-    } catch (err) {
-      console.error('Failed to fetch event explanation:', err)
-    } finally {
+  () => props.selectedEvent?.id,
+  () => {
+    requestGeneration += 1
+    controller?.abort()
+    controller = null
+    loading.value = false
+    explainError.value = null
+  },
+)
+
+watch(
+  () => props.gameId,
+  () => {
+    requestGeneration += 1
+    controller?.abort()
+    controller = null
+    loading.value = false
+    explainError.value = null
+    cache.value = new Map()
+  },
+)
+
+async function generateExplanation() {
+  const event = props.selectedEvent
+  const gameId = props.gameId
+  if (!event || !gameId || currentExplain.value) return
+
+  requestGeneration += 1
+  const generation = requestGeneration
+  controller?.abort()
+  controller = new AbortController()
+  loading.value = true
+  explainError.value = null
+
+  try {
+    const result = await explainEvent(gameId, event.id, controller.signal)
+    if (generation !== requestGeneration || props.selectedEvent?.id !== event.id || props.gameId !== gameId) return
+    cache.value.set(event.id, result)
+  } catch (error) {
+    if (generation !== requestGeneration || isAbortError(error)) return
+    explainError.value = explainErrorMessage(error)
+  } finally {
+    if (generation === requestGeneration) {
       loading.value = false
+      controller = null
     }
   }
-)
+}
 
 // Linked events from momentum data
 const prevEvent = computed<MomentumSnapshot | null>(() => {
@@ -71,21 +130,6 @@ function formatScore(home: number, away: number): string {
       <span class="empty-text">点击左侧时间线事件查看 AI 解说</span>
     </div>
 
-    <!-- Loading skeleton -->
-    <div v-else-if="loading && !currentExplain" class="skeleton-wrapper">
-      <div class="skeleton-header">
-        <div class="skeleton-line skeleton-badge" />
-        <div class="skeleton-line skeleton-clock" />
-      </div>
-      <div class="skeleton-line skeleton-name" />
-      <div class="skeleton-line skeleton-desc" />
-      <div class="skeleton-line skeleton-desc short" />
-      <div class="skeleton-divider" />
-      <div class="skeleton-line skeleton-title" />
-      <div class="skeleton-line skeleton-desc" />
-      <div class="skeleton-line skeleton-desc short" />
-    </div>
-
     <!-- Event details + AI explanation -->
     <template v-else-if="selectedEvent">
       <!-- Event facts -->
@@ -119,7 +163,24 @@ function formatScore(home: number, away: number): string {
         <p v-if="currentExplain?.explanation" class="ai-text">
           {{ displayAiText(currentExplain?.explanation) }}
         </p>
-        <p v-else class="ai-unavailable">AI 解说暂不可用</p>
+        <div v-else-if="loading" class="skeleton-wrapper" aria-live="polite">
+          <div class="skeleton-line skeleton-title" />
+          <div class="skeleton-line skeleton-desc" />
+          <div class="skeleton-line skeleton-desc short" />
+        </div>
+        <div v-else class="ai-generate">
+          <p class="ai-unavailable">基于当前事件事实生成解释。此操作会调用 AI，请按需触发。</p>
+          <button
+            data-test="generate-explain"
+            class="generate-btn"
+            type="button"
+            :disabled="!canGenerate"
+            @click="generateExplanation"
+          >
+            生成 AI 解说
+          </button>
+          <p v-if="explainError" class="ai-error" role="alert">{{ explainError }}</p>
+        </div>
 
         <!-- Model info -->
         <div v-if="currentExplain?.modelProvider" class="model-info">
@@ -333,6 +394,52 @@ function formatScore(home: number, away: number): string {
   color: var(--gi-muted, #94A3B8);
   font-style: italic;
   margin: 0;
+}
+
+.ai-generate {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.generate-btn {
+  align-self: flex-start;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.22), rgba(139, 92, 246, 0.14));
+  color: var(--gi-text, #F8FAFC);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 12px;
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.generate-btn:hover:not(:disabled) {
+  border-color: rgba(59, 130, 246, 0.7);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.32), rgba(139, 92, 246, 0.22));
+  transform: translateY(-1px);
+}
+
+.generate-btn:focus-visible {
+  outline: 2px solid var(--gi-home, #3B82F6);
+  outline-offset: 2px;
+}
+
+.generate-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.ai-error {
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--gi-danger, #EF4444);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+  padding: 8px 10px;
 }
 
 .model-info {

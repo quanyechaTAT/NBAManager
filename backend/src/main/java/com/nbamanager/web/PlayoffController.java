@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -36,8 +37,9 @@ public class PlayoffController {
         return ResponseEntity.ok(playoffService.getMatchupDetail(id));
     }
 
-    /** 修正季后赛数据（临时端点） */
+    /** 修正季后赛数据（运维修复端点，仅管理员） */
     @PostMapping("/fix-data")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, Object>> fixPlayoffData(
             @RequestParam(required = false, defaultValue = "2025-26") String season) {
         Map<String, Object> result = nbaDataService.fetchAndImportPlayoffData(season);

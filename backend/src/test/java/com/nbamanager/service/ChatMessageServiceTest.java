@@ -36,7 +36,8 @@ class ChatMessageServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ChatMessageService(messageRepository, userAccountRepository);
+        service = new ChatMessageService(messageRepository, userAccountRepository,
+                org.mockito.Mockito.mock(org.springframework.data.redis.core.StringRedisTemplate.class));
         user = new UserAccount();
         user.setId(7L);
         user.setUsername("tester");
