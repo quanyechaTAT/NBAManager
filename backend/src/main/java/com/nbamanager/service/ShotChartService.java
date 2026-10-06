@@ -52,107 +52,89 @@ public class ShotChartService {
      * 外部同步/管理端清理（clearCacheForPlayer）会主动失效；TTL 兜底其余写入。
      */
     public Map<String, Object> getPlayerShots(Long playerId, String season) {
+        return com.nbamanager.service.support.KeyedMutex.execute("player-shots:" + playerId + "|" + season, () -> cachedPlayerShots(playerId, season));
+    }
+
+    private Map<String, Object> cachedPlayerShots(Long playerId, String season) {
         String cacheKey = playerId + "|" + season;
         long now = System.currentTimeMillis();
         Snapshot snapshot = shotChartCache.get(cacheKey);
-        if (snapshot != null && now - snapshot.at < SHOT_CACHE_TTL_MS) {
+        long ttl = snapshot != null && "OK".equals(snapshot.result().get("status")) ? SHOT_CACHE_TTL_MS : 30_000L;
+        if (snapshot != null && now - snapshot.at < ttl) {
             return snapshot.result();
         }
         Map<String, Object> result = loadPlayerShots(playerId, season);
         if (!result.isEmpty()) {
-            shotChartCache.put(cacheKey, new Snapshot(now, result));
+            if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+                org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override public void afterCommit() { shotChartCache.put(cacheKey, new Snapshot(now, result)); }
+                    });
+            } else shotChartCache.put(cacheKey, new Snapshot(now, result));
         }
         return result;
     }
 
     private Map<String, Object> loadPlayerShots(Long playerId, String season) {
-        // 查找球员
         Player player = playerRepository.findById(playerId).orElse(null);
-        if (player == null || player.getNbaPlayerId() == null) {
-            return createEmptyResult();
+        if (player == null || player.getNbaPlayerId() == null) return emptyPlayerResult(season, "UNAVAILABLE", "暂无官方球员标识，无法获取投篮记录。");
+        Long nbaId = player.getNbaPlayerId();
+        var cached = shotChartRepository.findByNbaPlayerIdAndSeason(nbaId, season).stream()
+                .filter(row -> "NBA_SHOTCHARTDETAIL".equals(row.getDataSource()) && !"UNVERIFIED".equals(row.getDataMeta().quality()))
+                .filter(row -> row.getX() != null && row.getY() != null && row.getMade() != null).toList();
+        if (!cached.isEmpty() && cached.get(0).getDataSyncedAt() != null &&
+                cached.get(0).getDataSyncedAt().isAfter(java.time.Instant.now().minusSeconds(600))) return buildResult(cached);
+        JSONObject payload;
+        try { payload = scriptRunner.execute("shot_chart", new String[]{nbaId.toString(), season}, 60); }
+        catch (RuntimeException error) { payload = null; }
+        if (payload == null || "FAILED".equals(payload.optString("status"))) {
+            if (cached.isEmpty()) return emptyPlayerResult(season, "FAILED", "投篮数据请求失败，请稍后重试。");
+            var previous = buildResult(cached);
+            previous.put("status", "STALE"); previous.put("message", "来源暂不可用，显示上次获取的数据。");
+            return previous;
         }
-
-        Long nbaPlayerId = player.getNbaPlayerId();
-
-        // 先从数据库获取缓存数据
-        List<PlayerShotChart> cachedShots = shotChartRepository.findByNbaPlayerIdAndSeason(nbaPlayerId, season);
-
-        // 如果缓存数据足够（至少50条），直接返回
-        if (cachedShots.size() >= 50) {
-            log.info("从缓存返回投篮数据: playerId={}, count={}", nbaPlayerId, cachedShots.size());
-            return buildResult(cachedShots);
-        }
-
-        // 缓存不足，从API获取
-        log.info("从API获取投篮数据: playerId={}, season={}", nbaPlayerId, season);
-        List<PlayerShotChart> apiShots = fetchFromApi(nbaPlayerId, season);
-
-        if (!apiShots.isEmpty()) {
-            // 保存到数据库
-            shotChartRepository.saveAll(apiShots);
-            log.info("保存投篮数据: {} 条", apiShots.size());
-            return buildResult(apiShots);
-        }
-
-        // API也获取不到，返回缓存的少量数据
-        if (!cachedShots.isEmpty()) {
-            return buildResult(cachedShots);
-        }
-
-        return createEmptyResult();
+        if (!"NBA_SHOTCHARTDETAIL".equals(payload.optString("source")) || !payload.has("shots"))
+            return cached.isEmpty() ? emptyPlayerResult(season, "UNAVAILABLE", "投篮数据来源尚未核验。") : buildResult(cached);
+        String actualSeason = payload.optString("season", season);
+        if (!season.equals(actualSeason)) return cached.isEmpty() ? emptyPlayerResult(season, "UNAVAILABLE", "来源返回的赛季与请求不一致，请稍后重试。") : buildResult(cached);
+        var rows = parsePlayerShots(playerId, nbaId, actualSeason, payload.getJSONArray("shots"));
+        if (rows.isEmpty() && payload.getJSONArray("shots").length() > 0) return cached.isEmpty() ? emptyPlayerResult(season, "UNAVAILABLE", "来源记录缺少必要坐标或命中状态，无法生成投篮分布。") : buildResult(cached);
+        // A successful full snapshot replaces the old set, including a confirmed empty set. Failed sources preserve it.
+        shotChartRepository.deleteByNbaPlayerIdAndSeason(nbaId, season);
+        shotChartRepository.saveAll(rows);
+        if (rows.isEmpty()) return emptyPlayerResult(season, "EMPTY", "当前赛季暂无有效投篮记录。缺少坐标的记录不生成点位。");
+        return buildResult(rows);
     }
 
-    /**
-     * 从NBA API获取投篮数据
-     */
-    private List<PlayerShotChart> fetchFromApi(Long nbaPlayerId, String season) {
-        try {
-            JSONObject result = scriptRunner.execute("shot_chart", new String[]{String.valueOf(nbaPlayerId), season}, 60);
-
-            if (result == null || !result.has("shots")) {
-                log.warn("API返回的投篮数据为空: playerId={}", nbaPlayerId);
-                return new ArrayList<>();
-            }
-
-            JSONArray shotsArray = result.getJSONArray("shots");
-            List<PlayerShotChart> shots = new ArrayList<>();
-
-            for (int i = 0; i < shotsArray.length(); i++) {
-                JSONObject shot = shotsArray.getJSONObject(i);
-
-                PlayerShotChart entity = new PlayerShotChart();
-                entity.setPlayerId(nbaPlayerId);
-                entity.setNbaPlayerId(nbaPlayerId);
-                entity.setSeason(season);
-                entity.setGameId(shot.optString("gameId", ""));
-                entity.setX(BigDecimal.valueOf(shot.optDouble("x", 25)));
-                entity.setY(BigDecimal.valueOf(shot.optDouble("y", 25)));
-                entity.setMade(shot.optBoolean("made", false));
-                entity.setZone(shot.optString("zone", ""));
-                entity.setShotType(shot.optString("shotType", ""));
-                entity.setPeriod(shot.optInt("period", 0));
-
-                // 解析比赛日期
-                String dateStr = shot.optString("gameDate", "");
-                if (!dateStr.isEmpty()) {
-                    try {
-                        entity.setGameDate(LocalDate.parse(dateStr));
-                    } catch (Exception e) {
-                        entity.setGameDate(LocalDate.now());
-                    }
-                } else {
-                    entity.setGameDate(LocalDate.now());
-                }
-
-                shots.add(entity);
-            }
-
-            return shots;
-
-        } catch (Exception e) {
-            log.error("从API获取投篮数据失败: playerId={}", nbaPlayerId, e);
-            return new ArrayList<>();
+    static List<PlayerShotChart> parsePlayerShots(Long playerId, Long nbaId, String season, JSONArray input) {
+        var rows = new ArrayList<PlayerShotChart>();
+        for (int i = 0; i < input.length(); i++) {
+            JSONObject shot = input.getJSONObject(i);
+            Double x = PlayerSnapshotMapper.number(shot, "x"), y = PlayerSnapshotMapper.number(shot, "y");
+            if (x == null || y == null || !(shot.opt("made") instanceof Boolean)) continue;
+            var entity = new PlayerShotChart();
+            entity.setPlayerId(playerId); entity.setNbaPlayerId(nbaId); entity.setSeason(season);
+            entity.setGameId(PlayerSnapshotMapper.text(shot, "gameId"));
+            entity.setX(BigDecimal.valueOf(x)); entity.setY(BigDecimal.valueOf(y));
+            entity.setMade(shot.getBoolean("made")); entity.setZone(PlayerSnapshotMapper.text(shot, "zone"));
+            entity.setShotType(PlayerSnapshotMapper.text(shot, "shotType"));
+            Double period = PlayerSnapshotMapper.number(shot, "period"); entity.setPeriod(period == null ? null : period.intValue());
+            String date = PlayerSnapshotMapper.text(shot, "gameDate");
+            if (date != null) try { entity.setGameDate(LocalDate.parse(date, date.length() == 8 ? java.time.format.DateTimeFormatter.BASIC_ISO_DATE : java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)); }
+            catch (java.time.format.DateTimeParseException ignored) { /* Keep missing date, never substitute today. */ }
+            entity.markData("NBA_SHOTCHARTDETAIL", season, "REGULAR_SEASON_SHOTS", "x", "y", "made", "shotType", "gameDate");
+            entity.setDataSourceUrl("https://www.nba.com/stats/players/shooting"); rows.add(entity);
         }
+        return rows;
+    }
+
+    private Map<String, Object> emptyPlayerResult(String season, String status, String message) {
+        var result = createEmptyResult(); result.put("season", season); result.put("status", status);
+        result.put("mode", status.equals("EMPTY") ? "REAL_SHOT_CHART" : "UNAVAILABLE");
+        result.put("source", status.equals("EMPTY") ? "NBA_SHOTCHARTDETAIL" : "UNKNOWN"); result.put("message", message);
+        result.put("dataMeta", new com.nbamanager.web.dto.DataMeta((String)result.get("source"), null, season,
+                "REGULAR_SEASON_SHOTS", null, null, "PARTIAL", 0, Map.of()));
+        return result;
     }
 
     /**
@@ -171,10 +153,19 @@ public class ShotChartService {
             shotMap.put("zone", shot.getZone());
             shotMap.put("shotType", shot.getShotType());
             shotMap.put("period", shot.getPeriod());
+            shotMap.put("gameId", shot.getGameId());
+            shotMap.put("gameDate", shot.getGameDate());
             shotList.add(shotMap);
         }
 
         result.put("shots", shotList);
+        var first = shots.get(0);
+        var meta = first.getDataMeta();
+        long games = shots.stream().map(PlayerShotChart::getGameId).filter(java.util.Objects::nonNull).distinct().count();
+        result.put("season", first.getSeason()); result.put("source", meta.source()); result.put("status", "OK");
+        result.put("mode", "REAL_SHOT_CHART"); result.put("message", "官方投篮记录；统计仅涵盖本次有效点位。");
+        result.put("dataMeta", new com.nbamanager.web.dto.DataMeta(meta.source(), meta.sourceUrl(), first.getSeason(),
+                "REGULAR_SEASON_SHOTS", null, meta.syncedAt(), "PARTIAL", games == 0 ? null : (int) games, meta.fieldStates()));
 
         // 计算统计摘要
         int total = shots.size();
@@ -225,7 +216,7 @@ public class ShotChartService {
         summary.put("totalShots", 0);
         summary.put("made", 0);
         summary.put("missed", 0);
-        summary.put("fgPct", 0);
+        summary.put("fgPct", null);
         summary.put("zones", new ArrayList<>());
         result.put("summary", summary);
         return result;
@@ -236,7 +227,7 @@ public class ShotChartService {
      */
     @Transactional
     public void clearCache(Long nbaPlayerId, String season) {
-        shotChartCache.remove(nbaPlayerId + "|" + season);
+        shotChartCache.entrySet().removeIf(entry -> season.equals(entry.getValue().result().get("season")));
         shotChartRepository.deleteByNbaPlayerIdAndSeason(nbaPlayerId, season);
         log.info("清除投篮缓存: playerId={}, season={}", nbaPlayerId, season);
     }
@@ -302,6 +293,7 @@ public class ShotChartService {
         List<GameShotChart> shots = new ArrayList<>();
         for (int i = 0; i < shotsArray.length(); i++) {
             JSONObject shot = shotsArray.getJSONObject(i);
+            if (PlayerSnapshotMapper.number(shot, "locX") == null || PlayerSnapshotMapper.number(shot, "locY") == null || !(shot.opt("made") instanceof Boolean)) continue;
             GameShotChart entity = new GameShotChart();
             entity.setGameId(gameId);
             entity.setTeamId(shot.has("teamId") ? shot.optLong("teamId") : null);

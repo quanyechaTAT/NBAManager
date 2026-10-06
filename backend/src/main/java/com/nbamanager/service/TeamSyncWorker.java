@@ -74,8 +74,10 @@ public class TeamSyncWorker extends ModuleSyncWorker {
                     existing.setAbbreviation(t.optString("abbreviation", ""));
                     existing.setCity(t.getString("city"));
                     existing.setConference(t.getString("conference"));
-                    existing.setWins(t.getInt("wins"));
-                    existing.setLosses(t.getInt("losses"));
+                    existing.setWins(nullableInteger(t, "wins"));
+                    existing.setLosses(nullableInteger(t, "losses"));
+                    existing.markData("NBA_API", PlayerSnapshotMapper.text(t, "season"), "REGULAR_SEASON", "wins", "losses");
+                    existing.setDataSourceUrl("https://www.nba.com/standings");
                     teamRepository.save(existing);
                     updated++;
                 } else {
@@ -85,8 +87,10 @@ public class TeamSyncWorker extends ModuleSyncWorker {
                     team.setAbbreviation(t.optString("abbreviation", ""));
                     team.setCity(t.getString("city"));
                     team.setConference(t.getString("conference"));
-                    team.setWins(t.getInt("wins"));
-                    team.setLosses(t.getInt("losses"));
+                    team.setWins(nullableInteger(t, "wins"));
+                    team.setLosses(nullableInteger(t, "losses"));
+                    team.markData("NBA_API", PlayerSnapshotMapper.text(t, "season"), "REGULAR_SEASON", "wins", "losses");
+                    team.setDataSourceUrl("https://www.nba.com/standings");
                     teamRepository.save(team);
                     inserted++;
                 }
@@ -101,4 +105,9 @@ public class TeamSyncWorker extends ModuleSyncWorker {
             return SyncResult.failed("TEAMS", "PARSE_ERROR", e.getMessage());
         }
     }
+    private static Integer nullableInteger(JSONObject data, String field) {
+        Double value = PlayerSnapshotMapper.number(data, field);
+        return value == null ? null : value.intValue();
+    }
+
 }

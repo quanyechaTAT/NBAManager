@@ -37,10 +37,12 @@ withDefaults(defineProps<Props>(), {
 .loading-state__circle {
   width: 100%;
   height: 100%;
-  border: 3px solid var(--border-light);
+  border: 2.5px solid rgba(148, 163, 184, 0.15);
   border-top-color: var(--accent);
+  border-right-color: rgba(34, 211, 238, 0.4);
   border-radius: 50%;
-  animation: loadingRotate 1s linear infinite;
+  animation: loadingRotate 0.9s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite;
+  box-shadow: 0 0 16px -2px rgba(34, 211, 238, 0.25);
 }
 
 @keyframes loadingRotate {
@@ -53,8 +55,10 @@ withDefaults(defineProps<Props>(), {
 }
 
 .loading-state__text {
-  font-size: 14px;
-  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
   margin: 0;
 }
 </style>

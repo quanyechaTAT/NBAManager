@@ -73,6 +73,25 @@ public class PlayerService {
         String kw = hasKeyword ? keyword.trim() : null;
         String ps = hasPos ? position.trim() : null;
 
+        var numericOrder = safePageable.getSort().stream().filter(order -> !Set.of("id", "name", "nameEn", "position", "jerseyNumber").contains(order.getProperty())).findFirst();
+        if (numericOrder.isPresent()) {
+            var order = numericOrder.get();
+            org.springframework.data.jpa.domain.Specification<Player> specification = (root, query, builder) -> {
+                var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+                if (hasKeyword) predicates.add(builder.or(builder.like(builder.lower(root.get("name")), "%" + kw.toLowerCase(java.util.Locale.ROOT) + "%"), builder.like(builder.lower(root.get("nameEn")), "%" + kw.toLowerCase(java.util.Locale.ROOT) + "%")));
+                if (hasTeam) predicates.add(builder.equal(root.get("team").get("id"), teamId));
+                if (hasPos) predicates.add(builder.equal(builder.lower(root.get("position")), ps.toLowerCase(java.util.Locale.ROOT)));
+                if (query != null && query.getResultType() != Long.class) {
+                    var unavailable = builder.not(DataPublication.available(root, builder, order.getProperty()));
+                    var missing = builder.<Integer>selectCase().when(unavailable, 1).otherwise(0);
+                    query.orderBy(builder.asc(missing), order.isAscending() ? builder.asc(root.get(order.getProperty())) : builder.desc(root.get(order.getProperty())), builder.asc(root.get("id")));
+                }
+                return builder.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+            };
+            page = playerRepository.findAll(specification, org.springframework.data.domain.PageRequest.of(safePageable.getPageNumber(), safePageable.getPageSize()));
+            return new PlayerListCache.PagePayload(page.getContent().stream().map(this::toDto).toList(), page.getTotalElements());
+        }
+
         if (hasKeyword && hasTeam && hasPos) {
             page = playerRepository.findByNameOrNameEnContainingIgnoreCaseAndTeamIdAndPositionIgnoreCase(kw, teamId, ps, safePageable);
         } else if (hasKeyword && hasTeam) {
@@ -152,6 +171,7 @@ public class PlayerService {
         p.setHeight(req.height());
         p.setWeight(req.weight());
         p.setCountry(req.country());
+        p.markData("MANUAL", p.getDataSeason(), "REGULAR_SEASON", PlayerSnapshotMapper.FIELDS.keySet().toArray(String[]::new));
     }
 
     private PlayerDto toDto(Player p) {
@@ -188,7 +208,7 @@ public class PlayerService {
                 p.getVorp(),
                 p.getBpm(),
                 p.getOffensiveRating(),
-                p.getDefensiveRating());
+                p.getDefensiveRating(), p.getDataMeta());
     }
 
     private static ApiException notFound(Long id) {

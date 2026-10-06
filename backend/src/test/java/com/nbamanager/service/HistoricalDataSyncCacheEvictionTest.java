@@ -128,9 +128,9 @@ class HistoricalDataSyncCacheEvictionTest {
         verify(seasonService, never()).updateSyncStatus(eq("2023-24"), eq("COMPLETED"), anyInt(), anyInt());
     }
 
-    /** 部分失败（只有球员、没有球队）→ 不失效；状态记 PARTIAL。 */
+    /** 部分失败（只有球员、没有球队）→ 已写入记录使缓存失效；状态记 PARTIAL。 */
     @Test
-    void partialSyncDoesNotEvictCache() {
+    void partialSyncEvictsWrittenRecords() {
         when(scriptRunner.execute(eq("historical_players"), aryEq(new String[]{"2023-24"}), anyInt()))
                 .thenReturn(playersPayload(2));
         when(scriptRunner.execute(eq("historical_teams"), aryEq(new String[]{"2023-24"}), anyInt()))
@@ -141,7 +141,7 @@ class HistoricalDataSyncCacheEvictionTest {
         assertThatThrownBy(() -> service.syncSeasonDataSync("2023-24", null))
                 .isInstanceOf(PartialSyncException.class);
 
-        verify(historicalStatsCache, never()).evictAll();
+        verify(historicalStatsCache, times(1)).evictAll();
         verify(seasonService).updateSyncStatus("2023-24", "PARTIAL", 2, 0);
     }
 

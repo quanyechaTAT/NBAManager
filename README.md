@@ -251,6 +251,10 @@ cd frontend
 npm run dev
 ```
 
+Windows 本机的 `start.bat` 可一键启动后端与前端。脚本按 `backend/pom.xml` 的版本和 `finalName` 查找 JAR，已有产物时直接复用，缺失时才构建；修改 Java 源码后执行 `start.bat build`，然后用 `start.bat stop`、`start.bat` 停止并重新启动。也可用 `start.bat frontend` 单独启动前端。
+
+前端启动固定使用指定端口，进程提前退出时会立即显示错误和日志，不再持续等待无响应的 HTTP 地址。启动脚本的隔离回归检查可执行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-start.ps1`。
+
 Java 会尝试启动本机的 RAG 与 Copilot 子进程，无需重复启动。如果要单独调试 Python 服务，在加载配置后执行：
 
 ```powershell
@@ -271,7 +275,7 @@ macOS / Linux 使用对应的 `venv312/bin/python` 路径。独立启动时 Copi
 | --- | --- |
 | 前端 | [http://localhost:5173](http://localhost:5173) |
 | 后端 API | [http://localhost:8080/api/teams](http://localhost:8080/api/teams) |
-| RAG 健康检查 | [http://127.0.0.1:18999/health](http://127.0.0.1:18999/health)，模型就绪 `200`、加载中可能 `503` |
+| RAG 健康检查 | [http://127.0.0.1:18999/health](http://127.0.0.1:18999/health) 表示 API 可用；`/ready` 在向量与索引就绪时返回 `200`，准备中返回 `503` |
 | Copilot 健康检查 | [http://127.0.0.1:18998/health](http://127.0.0.1:18998/health) |
 
 ### 6. 创建管理员与同步数据
@@ -313,7 +317,9 @@ Git 仓库不包含业务数据库，截图中的数据不会随克隆自动导�
 
 RAG 结合结构化数据查询、向量检索、重排和网络证据补充；比赛复盘根据已有逐回合数据展示走势与关键事件，并区分完整、部分和缺失的数据状态。Copilot 当前是 Python 意图路由，未接入 LangGraph 执行图；Stats 处理器主要依赖模型知识，实际赛季统计仍应结合数据页面核对。
 
-RAG 向前端提供 SSE 渐进显示。当前 Java 的 `/api/rag/stream` 会等待 Python 非流式查询结果，再合成分片事件，因此首段内容的等待时间包含检索与模型生成时间。
+RAG 使用真实 SSE：Java 的 `/api/rag/stream` 直接转发 Python `/stream` 的状态、来源和增量正文，收到事件立即刷新。等待检索或模型时发送心跳。历史对阵优先查询已核实的比赛来源，按双方、日期和赛季限制范围；追问根据该场统计差异生成。实现与验证见 [AI 助手架构说明](docs/ai-assistant-architecture.md)。
+
+复杂问题通过意图识别、受约束改写和子问题拆分进行多路召回，候选采用 RRF 合并后按原问题重排。语义证据不足时可生成临时 HyDE 文档辅助检索真实资料；假设文档不会写入索引、引用、回答材料或会话。比分和简单统计保持快速路径。首次发现空索引或只有旧格式索引时，服务在后台从满足数据发布规则的数据库记录构建索引，后续启动直接复用。
 
 ### 模型与索引
 
@@ -321,7 +327,7 @@ RAG 向前端提供 SSE 渐进显示。当前 Java 的 `/api/rag/stream` 会等�
 
 数据库同步与向量索引更新是不同步骤。同步完成后若检索文档为空或内容落后，可由管理员调用 `POST /api/rag/rebuild`。接口返回后台启动状态，完成后查看 `GET /api/rag/stats` 的文档数量，避免并发重复重建。
 
-`DEEPSEEK_MODEL` 和 `RAG_LLM_MODEL` 是模型名配置，模板使用 `deepseek-v4-flash`；请按自己 API 账户支持的模型修改。健康检查通过表示服务就绪，模型调用还需要有效 Key、可用模型与外部网络。
+`DEEPSEEK_MODEL` 和 `RAG_LLM_MODEL` 是模型名配置，模板使用 `deepseek-v4-flash`；请按自己 API 账户支持的模型修改。Python `/health` 表示 API 可用，`model_loaded` 表示向量检索就绪；需要等待向量模型的运维检查使用 `/ready`。历史比赛与 SQL 查询可在模型加载期间使用，模型生成仍需要有效 Key、可用模型与外部网络。
 
 ### 独立调试与日志
 
@@ -355,6 +361,13 @@ cd backend/scripts/nba_copilot_app
 | `RAG_SEARCH_PROVIDERS` | `espn_scoreboard,espn_news,google_news_rss` | 联网检索来源 |
 | `RAG_SEARCH_TIMEOUT_SECONDS`、`RAG_SEARCH_TOP_K` | `8`、`5` | 联网检索超时和结果数量 |
 | `RAG_SEARCH_CACHE_TTL_SECONDS` | `600` | 联网结果缓存时间 |
+| `RAG_SEARCH_CACHE_MAX_ENTRIES` | `256` | 联网查询缓存的条目上限 |
+| `RAG_MEMORY_MAX_SESSIONS`、`RAG_MEMORY_TTL_SECONDS` | `256`、`3600` | 单进程会话缓存容量与空闲有效期 |
+| `RAG_DB_CONNECT_TIMEOUT_SECONDS` | `3` | Python 数据库连接超时，故障时继续尝试其他证据来源 |
+| `RAG_QUERY_PLANNER_MODE` | `auto` | 复杂语义问题使用模型规划；`rules` 只使用规则 |
+| `RAG_QUERY_PLANNER_TIMEOUT_SECONDS`、`RAG_MULTI_QUERY_LIMIT` | `5`、`3` | 规划 HTTP 超时和检索查询数量，查询数最多 4 |
+| `RAG_HYDE_ENABLED`、`RAG_HYDE_TIMEOUT_SECONDS` | `true`、`5` | 证据不足时可选 HyDE 补充及独立 HTTP 超时 |
+| `RAG_AUTO_BUILD_INDEX` | `true` | 空索引、旧格式或中断的迁移在后台重建；已完成的合规索引直接复用 |
 | `RAG_ALLOW_GENERAL_WEB_SEARCH` | `false` | 通用网页检索，可选 `RAG_SEARXNG_BASE_URL` |
 | `RAG_MAX_VECTOR_DISTANCE`、`RAG_MIN_RERANK_SCORE` | `0.68`、`0` | 向量距离与重排证据阈值 |
 | `RAG_FORCE_WEB_SEARCH` | `false` | 是否强制补充联网检索 |
@@ -364,6 +377,7 @@ cd backend/scripts/nba_copilot_app
 | `RAG_LLM_TIMEOUT_SECONDS` | `300` | 模板中的模型调用超时 |
 | `RAG_CONNECT_TIMEOUT_MS`、`RAG_READ_TIMEOUT_MS` | `10000`、`600000` | Java 连接/读取 RAG 的超时 |
 | `RAG_ASYNC_TIMEOUT_MS` | `600000` | Spring 异步请求超时 |
+| `APP_RAG_STREAM_MAX_CONCURRENT` | `16` | Java 流式线程池上限，无等待队列；Python 问答另有共享并发限制 |
 | `VITE_RAG_STREAM_IDLE_TIMEOUT_MS` | `300000` | 前端 SSE 空闲超时 |
 | `CORS_ALLOWED_ORIGINS`、`WS_ALLOWED_ORIGINS` | 本地开发 Origin 等 | 部署时改为实际前端域名 |
 | `TRUSTED_PROXY_IPS` | 空 | 接受转发客户端 IP 的可信代理列表 |
@@ -534,7 +548,7 @@ WebSocket 当前使用 Spring 内存简单消息代理，扩容为多个 Java �
 - 按实际域名设置 `CORS_ALLOWED_ORIGINS`、`WS_ALLOWED_ORIGINS`；只有确实使用可信代理时才设置 `TRUSTED_PROXY_IPS`。
 - 配置独立的数据库密码、JWT 密钥和 API Key，限制数据库权限，并为数据库、上传文件和运行数据安排备份。
 - 当前使用 JPA 自动更新基础表加 Flyway 增量迁移，生产环境应先验证数据库变更；空库初始化方式见上文。
-- RAG 首次加载模型或重建索引可能较慢；模型就绪前的健康检查和回答会受影响。
+- RAG 首次加载模型或重建索引可能较慢；历史比赛来源与 SQL 查询可独立工作，向量检索就绪情况通过 `/ready` 查看。
 - 外部数据并不保证完整或实时，AI 功能依赖可用的 API Key、模型与来源证据。
 - 当前配置仅在 Java 侧压缩静态文本资源；API JSON 压缩可由网关处理。性能上限应在目标部署环境重新测量，工具位于 `backend/scripts/measure_gzip*.py`；运行这些工具前配置自己的 `ADMIN_USER` 和 `ADMIN_PASS`。
 
@@ -550,10 +564,10 @@ WebSocket 当前使用 Spring 内存简单消息代理，扩容为多个 Java �
 | 今日赛事为 0 或资讯图片缺失 | 可能处于休赛期或外部来源暂不可用，查看已同步的历史赛果与任务日志 |
 | 注册后没有管理入口 | 注册角色为 `USER`；提升指定账号为 `ADMIN` 后重新登录，等待旧身份缓存失效 |
 | 重启后需要重新登录 | Token 过期、密钥改变或账号身份变化都会要求重新认证；设置稳定的随机 `JWT_SECRET` |
-| RAG 健康检查返回 `503` | 向量/重排模型仍在加载，检查下载网络和 `rag_app.log`；就绪后应返回 `200` |
+| RAG `/ready` 返回 `503` | 向量模型仍在加载，检查下载网络和 `rag_app.log`；`/health` 与历史比赛查询可先使用 |
 | AI 页面可打开但回答失败 | 检查 Python 服务、API Key、可用模型、网络与超时配置 |
 | 数据页有内容但检索证据不足 | 检查 `/api/rag/stats` 文档数量；数据库同步完成后按需重建向量索引 |
-| AI 首段内容等待较久 | Java 当前在 Python 查询完成后分片，CPU 检索与模型生成都可能增加等待时间 |
+| AI 首段内容等待较久 | 查看状态与来源事件；外部来源或模型网络可能增加等待时间，历史对阵查询会跳过向量模型；代理需关闭 SSE 响应缓冲 |
 | Python 启动失败或找不到依赖 | 检查 `backend/scripts/venv312` 和依赖；从 `backend/` 启动 Java，或手动启动 Python 服务 |
 | 聊天连接失败 | 检查登录状态、`/ws` 代理和 Upgrade、`WS_ALLOWED_ORIGINS` 与实际页面 Origin |
 | 同步返回 `409` 或处于取消中 | 查看活动任务；全量与模块任务可能冲突，取消需等待当前步骤释放资源 |

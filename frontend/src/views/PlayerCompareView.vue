@@ -14,8 +14,8 @@
 
       <SportsHeader
         eyebrow="HEAD-TO-HEAD SHOWDOWN"
-        title="双星对决 · 球员深度对比"
-        subtitle="并排透视两名现役球星的场均技术统计、效率高低与高维能力画像"
+        title="球员数据对比"
+        subtitle="并排对比两名现役球员的场均技术统计、效率表现与多维能力画像"
       />
 
       <!-- 球员选择 -->
@@ -26,7 +26,7 @@
             filterable
             remote
             reserve-keyword
-            placeholder="输入球星姓名搜索..."
+            placeholder="输入球员姓名搜索..."
             style="width:100%"
             @change="loadCompare"
             :remote-method="(q: string) => searchPlayers(q, 1)"
@@ -49,7 +49,7 @@
             filterable
             remote
             reserve-keyword
-            placeholder="输入球星姓名搜索..."
+            placeholder="输入球员姓名搜索..."
             style="width:100%"
             @change="loadCompare"
             :remote-method="(q: string) => searchPlayers(q, 2)"
@@ -68,24 +68,38 @@
       <!-- 对比结果 -->
       <div v-if="compare" class="compare-content" v-loading="loading">
         <!-- 球员卡片 -->
-        <el-row :gutter="20">
+        <el-row :gutter="20" class="showdown-hero-row">
           <el-col :xs="24" :sm="12">
-            <div class="player-card player-card--left">
+            <div class="player-card player-card--left glass-card" :style="{ '--p-accent': getTeamPrimaryColor(compare.player1.teamName) }">
+              <span class="player-accent-stripe" aria-hidden="true" />
               <img v-if="compare.player1.nbaPlayerId && !brokenPhotos.has(compare.player1.id)" :src="`https://cdn.nba.com/headshots/nba/latest/1040x760/${compare.player1.nbaPlayerId}.png`" class="player-photo" @error="onPhotoError(compare.player1.id)" />
               <div v-else class="player-photo-placeholder player-photo-placeholder--p1">{{ compare.player1.name?.charAt(0) }}</div>
               <div class="player-info">
+                <div class="player-sub-meta">
+                  <img v-if="getTeamLogo(compare.player1.teamName)" :src="getTeamLogo(compare.player1.teamName)" class="compare-team-logo" alt="" />
+                  <span class="compare-team-name">{{ compare.player1.teamName }}</span>
+                  <span class="meta-dot">·</span>
+                  <span class="pos-badge">{{ compare.player1.position }}</span>
+                  <span v-if="compare.player1.jerseyNumber" class="jersey-pill">#{{ compare.player1.jerseyNumber }}</span>
+                </div>
                 <h3>{{ compare.player1.name }}</h3>
-                <p>{{ compare.player1.teamName }} · {{ compare.player1.position }} · #{{ compare.player1.jerseyNumber }}</p>
               </div>
             </div>
           </el-col>
           <el-col :xs="24" :sm="12">
-            <div class="player-card player-card--right">
+            <div class="player-card player-card--right glass-card" :style="{ '--p-accent': getTeamPrimaryColor(compare.player2.teamName) }">
+              <span class="player-accent-stripe" aria-hidden="true" />
               <img v-if="compare.player2.nbaPlayerId && !brokenPhotos.has(compare.player2.id)" :src="`https://cdn.nba.com/headshots/nba/latest/1040x760/${compare.player2.nbaPlayerId}.png`" class="player-photo" @error="onPhotoError(compare.player2.id)" />
               <div v-else class="player-photo-placeholder player-photo-placeholder--p2">{{ compare.player2.name?.charAt(0) }}</div>
               <div class="player-info">
+                <div class="player-sub-meta">
+                  <img v-if="getTeamLogo(compare.player2.teamName)" :src="getTeamLogo(compare.player2.teamName)" class="compare-team-logo" alt="" />
+                  <span class="compare-team-name">{{ compare.player2.teamName }}</span>
+                  <span class="meta-dot">·</span>
+                  <span class="pos-badge">{{ compare.player2.position }}</span>
+                  <span v-if="compare.player2.jerseyNumber" class="jersey-pill">#{{ compare.player2.jerseyNumber }}</span>
+                </div>
                 <h3>{{ compare.player2.name }}</h3>
-                <p>{{ compare.player2.teamName }} · {{ compare.player2.position }} · #{{ compare.player2.jerseyNumber }}</p>
               </div>
             </div>
           </el-col>
@@ -95,6 +109,68 @@
         <el-card shadow="never" class="chart-card">
           <h3 class="section-title">攻防六维战术能力模型对比 (Tactical Radar)</h3>
           <v-chart class="compare-chart" :option="radarOption" autoresize />
+        </el-card>
+
+        <!-- 双向分流对比进度条 (Dual Comparative Bars) -->
+        <el-card shadow="never" class="dual-bars-card">
+          <div class="bars-card-header">
+            <div class="header-player-tag header-player-tag--p1">
+              <span class="player-dot dot--p1" />
+              <strong>{{ compare.player1.name }}</strong>
+            </div>
+            <div class="bars-title-center">
+              <h3 class="section-title">核心指标双向分流对比 (Comparative Telemetry)</h3>
+              <p>各项数据向两侧对称展开 · 领先方指标微光发光</p>
+            </div>
+            <div class="header-player-tag header-player-tag--p2">
+              <strong>{{ compare.player2.name }}</strong>
+              <span class="player-dot dot--p2" />
+            </div>
+          </div>
+
+          <div class="dual-bars-list">
+            <div
+              v-for="row in compareRows"
+              :key="row.label"
+              class="dual-bar-row"
+              :class="{ 'lead-left': row.winner === 1, 'lead-right': row.winner === 2 }"
+            >
+              <!-- Player 1 侧 -->
+              <div class="bar-side bar-side--left">
+                <span class="bar-val font-tabular" :class="{ 'is-winner': row.winner === 1 }">
+                  {{ formatVal(row.val1, row.pct, row.alreadyPercent, row.integer) }}
+                  <span v-if="row.winner === 1" class="winner-crown" title="领先">&#9650;</span>
+                </span>
+                <div class="bar-track bar-track--left">
+                  <div
+                    class="bar-fill bar-fill--left"
+                    :class="{ 'is-leading': row.winner === 1 }"
+                    :style="{ width: getBarPct(row.val1, getRowMax(row)) + '%' }"
+                  />
+                </div>
+              </div>
+
+              <!-- 中间指标名称 -->
+              <div class="bar-label-badge font-tabular">
+                {{ row.label }}
+              </div>
+
+              <!-- Player 2 侧 -->
+              <div class="bar-side bar-side--right">
+                <div class="bar-track bar-track--right">
+                  <div
+                    class="bar-fill bar-fill--right"
+                    :class="{ 'is-leading': row.winner === 2 }"
+                    :style="{ width: getBarPct(row.val2, getRowMax(row)) + '%' }"
+                  />
+                </div>
+                <span class="bar-val font-tabular" :class="{ 'is-winner': row.winner === 2 }">
+                  <span v-if="row.winner === 2" class="winner-crown winner-crown--b" title="领先">&#9650;</span>
+                  {{ formatVal(row.val2, row.pct, row.alreadyPercent, row.integer) }}
+                </span>
+              </div>
+            </div>
+          </div>
         </el-card>
 
         <!-- 详细数据对比表：指标名称 | 球员 A | 球员 B -->
@@ -122,8 +198,8 @@
         <span class="compare-empty__icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="26" height="26"><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
         </span>
-        <strong>锁定两位球星，开启巅峰对决</strong>
-        <span>在上方搜索栏分别选择对决双方，即可呈现六维能力雷达与各项数据深度对比</span>
+        <strong>选择两位球员进行数据对比</strong>
+        <span>在上方搜索栏分别选择两位球员，即可呈现多维能力雷达与各项技术统计对比</span>
       </div>
     </div>
   </div>
@@ -144,6 +220,19 @@ import type { Player } from '@/api/types'
 import type { PlayerCompare } from '@/api/playerCompare'
 import { useChartTheme } from '@/composables/useChartTheme'
 import SportsHeader from '@/components/common/SportsHeader.vue'
+import { getTeamLogo } from '@/utils/teamLogos'
+import { getTeamPrimaryColor } from '@/utils/teamColors'
+
+function getBarPct(val: number | null | undefined, max: number): number {
+  if (val == null || max <= 0) return 0
+  return Math.min(Math.round((val / max) * 100), 100)
+}
+
+function getRowMax(row: any): number {
+  const v1 = Number(row.val1) || 0
+  const v2 = Number(row.val2) || 0
+  return Math.max(v1, v2, 0.001)
+}
 
 use([RadarChart, TitleComponent, TooltipComponent, RadarComponent, CanvasRenderer])
 
@@ -372,16 +461,243 @@ function onPhotoError(id: number) {
   letter-spacing: 1px;
 }
 
-.player-card { display: flex; align-items: center; gap: 16px; padding: 20px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-xl); transition: border-color var(--duration-normal) var(--ease-smooth), box-shadow var(--duration-normal) var(--ease-smooth); }
-.player-card:hover { box-shadow: var(--shadow-md); }
-.player-card--left { border-left: 3px solid var(--accent); }
-.player-card--right { border-left: 3px solid var(--purple-light); }
-.player-photo { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.player-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl);
+  position: relative;
+  overflow: hidden;
+  transition: border-color var(--duration-normal) var(--ease-smooth), box-shadow var(--duration-normal) var(--ease-smooth), transform var(--duration-normal) var(--ease-smooth);
+}
+.player-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+.player-card--left {
+  border-left: 3px solid var(--p-accent, var(--accent));
+}
+.player-card--right {
+  border-left: 3px solid var(--p-accent, var(--purple-light));
+}
+.player-accent-stripe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--p-accent, var(--accent));
+  opacity: 0.7;
+}
+.compare-team-logo {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  vertical-align: middle;
+}
+.compare-team-name {
+  font-weight: 600;
+}
+.player-sub-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.meta-dot {
+  opacity: 0.4;
+}
+.jersey-pill {
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  padding: 1px 4px;
+}
+
+.player-photo { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1px solid var(--border-light); }
 .player-photo-placeholder { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 700; flex-shrink: 0; }
 .player-photo-placeholder--p1 { background: var(--accent-lighter); color: var(--accent); }
 .player-photo-placeholder--p2 { background: var(--purple-dim); color: var(--purple-light); }
-.player-info h3 { margin: 0 0 4px; font-size: 18px; color: var(--text-primary); font-family: var(--font-heading); }
-.player-info p { margin: 0; font-size: 13px; color: var(--text-muted); }
+.player-info h3 { margin: 0; font-size: 20px; font-weight: 800; color: var(--text-primary); font-family: var(--font-heading); }
+
+/* 双向分流对比进度条卡片 */
+.dual-bars-card {
+  margin: 20px 0;
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-light) !important;
+  border-radius: var(--radius-xl) !important;
+}
+.bars-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-light);
+}
+.header-player-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.player-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.dot--p1 {
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
+}
+.dot--p2 {
+  background: #A855F7;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+}
+.bars-title-center {
+  text-align: center;
+}
+.bars-title-center h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+}
+.bars-title-center p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dual-bars-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dual-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.03);
+  transition: background 0.15s ease;
+}
+.dual-bar-row:hover {
+  background: var(--bg-hover);
+}
+
+.bar-side {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.bar-side--left {
+  justify-content: flex-end;
+}
+.bar-side--right {
+  justify-content: flex-start;
+}
+
+.bar-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 52px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.bar-side--left .bar-val {
+  justify-content: flex-end;
+  text-align: right;
+}
+.bar-side--right .bar-val {
+  justify-content: flex-start;
+  text-align: left;
+}
+.bar-val.is-winner {
+  font-weight: 800;
+  color: var(--text-primary);
+}
+.bar-side--left .bar-val.is-winner {
+  color: var(--accent);
+}
+.bar-side--right .bar-val.is-winner {
+  color: #C084FC;
+}
+
+.winner-crown {
+  font-size: 10px;
+  color: var(--accent);
+}
+.winner-crown--b {
+  color: #C084FC;
+}
+
+.bar-track {
+  flex: 1;
+  height: 8px;
+  background: var(--bg-hover);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--border-light);
+}
+.bar-track--left {
+  display: flex;
+  justify-content: flex-end;
+}
+.bar-track--right {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s var(--ease-out-quart, ease);
+}
+.bar-fill--left {
+  background: rgba(34, 211, 238, 0.28);
+}
+.bar-fill--left.is-leading {
+  background: linear-gradient(270deg, #67E8F9, #0891B2);
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.45);
+}
+.bar-fill--right {
+  background: rgba(168, 85, 247, 0.28);
+}
+.bar-fill--right.is-leading {
+  background: linear-gradient(90deg, #C084FC, #7C3AED);
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.45);
+}
+
+.bar-label-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-align: center;
+  width: 140px;
+  padding: 4px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  letter-spacing: 0.2px;
+}
 
 .chart-card { margin: 20px 0; background: var(--bg-card) !important; border: 1px solid var(--border-light) !important; border-radius: var(--radius-xl) !important; }
 .section-title { position: relative; margin: 0 0 16px; padding-left: 12px; font-size: 16px; font-weight: 700; color: var(--text-primary); font-family: var(--font-heading); }
@@ -394,6 +710,33 @@ function onPhotoError(id: number) {
 .winner-left .win-marker { color: var(--accent); }
 .winner-right { color: var(--purple-light); font-weight: 700; }
 .winner-right .win-marker { color: var(--purple-light); }
+
+[data-theme="light"] .bar-side--right .bar-val.is-winner {
+  color: var(--purple, #7C3AED);
+}
+[data-theme="light"] .winner-crown--b {
+  color: var(--purple, #7C3AED);
+}
+[data-theme="light"] .winner-right {
+  color: var(--purple, #7C3AED);
+}
+[data-theme="light"] .winner-right .win-marker {
+  color: var(--purple, #7C3AED);
+}
+[data-theme="light"] .bar-fill--left.is-leading {
+  background: linear-gradient(270deg, #0891B2, #06B6D4);
+  box-shadow: 0 0 8px rgba(8, 145, 178, 0.35);
+}
+[data-theme="light"] .bar-fill--right.is-leading {
+  background: linear-gradient(90deg, #8B5CF6, #7C3AED);
+  box-shadow: 0 0 8px rgba(124, 58, 237, 0.35);
+}
+[data-theme="light"] .dual-bar-row {
+  background: rgba(148, 163, 184, 0.08);
+}
+[data-theme="light"] .dual-bar-row:hover {
+  background: rgba(148, 163, 184, 0.16);
+}
 .compare-scroll-hint { display: none; }
 @media (max-width: 768px) {
   .page { padding: 0 16px; }

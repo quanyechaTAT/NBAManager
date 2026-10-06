@@ -57,6 +57,7 @@ export interface TeamRank {
   oppPointsPerGame?: number
   netRating?: number
   streak?: string
+  pointDifferential?: number
 }
 
 export interface DashboardStats {

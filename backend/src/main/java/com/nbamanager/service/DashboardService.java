@@ -35,12 +35,15 @@ public class DashboardService {
 
         List<TeamWinRow> teamRows =
                 teams.stream()
+                        .filter(t -> t.canDisplay("wins") && t.canDisplay("losses")
+                                && t.getWins() != null && t.getLosses() != null)
                         .sorted(Comparator.comparing(Team::getWins).reversed())
                         .map(t -> new TeamWinRow(t.getName(), t.getWins(), t.getLosses()))
                         .collect(Collectors.toList());
 
         List<TopScorerRow> top =
                 players.stream()
+                        .filter(p -> p.getPointsPerGame() != null)
                         .sorted(Comparator.comparing(Player::getPointsPerGame).reversed())
                         .limit(9)
                         .map(p -> new TopScorerRow(p.getId(), p.getName(), p.getPointsPerGame(), p.getTeam().getName(), p.getNbaPlayerId()))
@@ -51,7 +54,8 @@ public class DashboardService {
 
     @Transactional(readOnly = true)
     public Page<PlayerDto> getTopScorers(int page, int size) {
-        List<Player> all = playerRepository.findAllWithTeamSortedByPpg();
+        List<Player> all = playerRepository.findAllWithTeamSortedByPpg().stream()
+                .filter(player -> player.getPointsPerGame() != null).toList();
         // 用 long 计算 offset，避免 page/size 较大时 int 溢出成负数
         long offset = (long) page * size;
         if (offset > Integer.MAX_VALUE) {
@@ -76,6 +80,6 @@ public class DashboardService {
                 p.getFreeThrowPct(), p.getBlocksPerGame(), p.getTurnoversPerGame(), p.getEfficiency(),
                 p.getTrueShootingPct(), p.getUsagePct(), p.getJerseyNumber(), p.getHeight(), p.getWeight(),
                 p.getCountry(), p.getPer(), p.getWinShares(), p.getVorp(), p.getBpm(),
-                p.getOffensiveRating(), p.getDefensiveRating());
+                p.getOffensiveRating(), p.getDefensiveRating(), p.getDataMeta());
     }
 }

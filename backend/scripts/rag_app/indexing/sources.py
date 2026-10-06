@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from data_integrity import display_metric
+from rag_app.structured.provenance import published_row, source_metadata
 from rag_app.indexing.documents import IndexDocument
 from rag_app.structured.db import Database
 
@@ -25,35 +27,33 @@ class MySQLDocumentSource:
                    p.points_per_game, p.rebounds_per_game, p.assists_per_game,
                    p.steals_per_game, p.blocks_per_game, p.games_played,
                    p.field_goal_pct, p.three_point_pct, p.free_throw_pct,
-                   p.true_shooting_pct, p.efficiency, p.minutes_per_game
+                   p.true_shooting_pct, p.efficiency, p.minutes_per_game, p.data_source, p.data_source_url, p.data_season, p.data_synced_at, p.data_quality, p.data_field_states
             FROM players p
             LEFT JOIN teams t ON p.team_id = t.id
-            WHERE p.points_per_game > 0
+            WHERE p.data_quality IN ('COMPLETE','PARTIAL')
         """
         with self.database.cursor() as cursor:
             cursor.execute(sql)
-            rows = cursor.fetchall()
+            rows = [published_row(row) for row in cursor.fetchall()]
         docs = []
         for row in rows:
-            fg = (row.get("field_goal_pct") or 0) * 100
-            tp = (row.get("three_point_pct") or 0) * 100
-            ft = (row.get("free_throw_pct") or 0) * 100
-            ts = (row.get("true_shooting_pct") or 0) * 100
-            eff = row.get("efficiency") or 0
-            text = (
-                f"{row.get('name')}是{row.get('team_name')}队的{row.get('position')}，"
-                f"本赛季出场{row.get('games_played')}次，场均{row.get('points_per_game')}分、"
-                f"{row.get('rebounds_per_game')}篮板、{row.get('assists_per_game')}助攻、"
-                f"{row.get('steals_per_game')}抢断、{row.get('blocks_per_game')}盖帽。"
-                f"投篮命中率{fg:.1f}%，三分命中率{tp:.1f}%，罚球命中率{ft:.1f}%，"
-                f"真实投篮命中率{ts:.1f}%，效率值{eff:.1f}。"
-            )
+            metrics = [("points_per_game", "场均得分", False), ("rebounds_per_game", "场均篮板", False),
+                       ("assists_per_game", "场均助攻", False), ("steals_per_game", "场均抢断", False),
+                       ("blocks_per_game", "场均盖帽", False), ("field_goal_pct", "投篮命中率", True),
+                       ("three_point_pct", "三分命中率", True), ("free_throw_pct", "罚球命中率", True),
+                       ("true_shooting_pct", "TS%", True), ("efficiency", "效率值", False)]
+            text = f"{row.get('name')}，{row.get('team_name')}，赛季{row.get('data_season') or '未知'}。" + "，".join(label + display_metric(row.get(field), percentage) for field, label, percentage in metrics)
             docs.append(
                 IndexDocument(
                     id=f"player:{row.get('id')}",
                     text=text,
                     metadata={
                         "type": "player",
+                        "source": row.get("data_source") or "UNKNOWN",
+                        "source_url": row.get("data_source_url") or "",
+                        "season": row.get("data_season") or "",
+                        "synced_at": str(row.get("data_synced_at") or ""),
+                        "quality": row.get("data_quality") or "UNVERIFIED",
                         "id": row.get("id"),
                         "name": row.get("name"),
                         "team": row.get("team_name"),
@@ -65,24 +65,25 @@ class MySQLDocumentSource:
         return docs
 
     def teams(self) -> list[IndexDocument]:
-        sql = "SELECT id, name, name_en, city, conference, wins, losses FROM teams"
+        sql = "SELECT id, name, name_en, city, conference, wins, losses, data_source, data_source_url, data_season, data_synced_at, data_quality, data_field_states FROM teams WHERE data_quality IN ('COMPLETE','PARTIAL') AND wins IS NOT NULL AND losses IS NOT NULL"
         with self.database.cursor() as cursor:
             cursor.execute(sql)
-            rows = cursor.fetchall()
+            rows = [published_row(row) for row in cursor.fetchall()]
         docs = []
         for row in rows:
-            total = (row.get("wins") or 0) + (row.get("losses") or 0)
-            pct = (row.get("wins") or 0) / total if total else 0
+            wins, losses = row.get("wins"), row.get("losses")
+            total = wins + losses if wins is not None and losses is not None else None
+            pct = wins / total if total else None
             text = (
                 f"{row.get('city') or ''}{row.get('name')}是{row.get('conference')}联盟球队，"
-                f"本赛季战绩{row.get('wins')}胜{row.get('losses')}负，胜率{pct:.1%}。"
+                f"{row.get('data_season') or '未知'}赛季战绩{display_metric(wins)}胜{display_metric(losses)}负，胜率{display_metric(pct, percentage=True)}。"
             )
             docs.append(
                 IndexDocument(
                     id=f"team:{row.get('id')}",
                     text=text,
                     metadata={
-                        "type": "team",
+                        "type": "team", **source_metadata(row),
                         "id": row.get("id"),
                         "name": row.get("name"),
                         "team": row.get("name"),
@@ -94,20 +95,25 @@ class MySQLDocumentSource:
 
     def news(self, limit: int = 500) -> list[IndexDocument]:
         sql = """
-            SELECT id, title, summary, category, home_team, away_team
+            SELECT id, title, summary, category, home_team, away_team, source_url, create_time
             FROM game_news
             ORDER BY create_time DESC
             LIMIT %s
         """
         with self.database.cursor() as cursor:
             cursor.execute(sql, (limit,))
-            rows = cursor.fetchall()
+            rows = [published_row(row) for row in cursor.fetchall()]
         return [
             IndexDocument(
                 id=f"news:{row.get('id')}",
                 text=f"{row.get('title') or ''}。{row.get('summary') or ''}",
                 metadata={
                     "type": "news",
+                    "title": row.get("title"),
+                    "source": "EXTERNAL_NEWS" if row.get("source_url") else "UNKNOWN",
+                    "source_url": row.get("source_url") or "",
+                    "recorded_at": str(row.get("create_time") or ""),
+                    "quality": "UNVERIFIED",
                     "id": row.get("id"),
                     "category": row.get("category"),
                     "team": row.get("home_team") or row.get("away_team") or "",
@@ -119,28 +125,29 @@ class MySQLDocumentSource:
     def matches(self, limit: int = 300) -> list[IndexDocument]:
         sql = """
             SELECT id, home_team, away_team, home_score, away_score,
-                   match_date, status, season
+                   match_date, status, season, data_source, data_source_url, data_season, data_synced_at, data_quality, data_field_states
             FROM match_records
-            WHERE status = 'FINISHED'
+            WHERE status = 'FINISHED' AND data_quality IN ('COMPLETE','PARTIAL') AND home_score IS NOT NULL AND away_score IS NOT NULL
             ORDER BY match_date DESC
             LIMIT %s
         """
         with self.database.cursor() as cursor:
             cursor.execute(sql, (limit,))
-            rows = cursor.fetchall()
+            rows = [published_row(row) for row in cursor.fetchall()]
         docs = []
         for row in rows:
-            winner = row["home_team"] if row["home_score"] > row["away_score"] else row["away_team"]
+            if row.get("home_score") is None or row.get("away_score") is None: continue
+            result = "结果尚未核验" if row["home_score"] == row["away_score"] else f"{row['home_team'] if row['home_score'] > row['away_score'] else row['away_team']}获胜"
             text = (
                 f"{row.get('match_date')} {row.get('home_team')} {row.get('home_score')}:"
-                f"{row.get('away_score')} {row.get('away_team')}，{winner}获胜，赛季{row.get('season')}。"
+                f"{row.get('away_score')} {row.get('away_team')}，{result}，赛季{row.get('season') or '未知'}。"
             )
             docs.append(
                 IndexDocument(
                     id=f"match:{row.get('id')}",
                     text=text,
                     metadata={
-                        "type": "match",
+                        "type": "match", **source_metadata(row),
                         "id": row.get("id"),
                         "team": row.get("home_team"),
                         "home_team": row.get("home_team"),
@@ -154,28 +161,28 @@ class MySQLDocumentSource:
     def historical_players(self, limit: int = 1000) -> list[IndexDocument]:
         sql = """
             SELECT id, season, player_name, team_name, position,
-                   points_per_game, rebounds_per_game, assists_per_game
+                   points_per_game, rebounds_per_game, assists_per_game, data_source, data_source_url, data_season, data_synced_at, data_quality, data_field_states
             FROM player_season_stats
-            WHERE points_per_game > 0
+            WHERE data_quality IN ('COMPLETE','PARTIAL')
             ORDER BY season DESC, points_per_game DESC
             LIMIT %s
         """
         with self.database.cursor() as cursor:
             cursor.execute(sql, (limit,))
-            rows = cursor.fetchall()
+            rows = [published_row(row) for row in cursor.fetchall()]
         docs = []
         for row in rows:
             text = (
                 f"{row.get('season')}赛季 {row.get('player_name')}效力于{row.get('team_name')}，"
-                f"位置{row.get('position')}，场均{row.get('points_per_game')}分、"
-                f"{row.get('rebounds_per_game')}篮板、{row.get('assists_per_game')}助攻。"
+                f"位置{row.get('position')}，场均{display_metric(row.get('points_per_game'))}分、"
+                f"{display_metric(row.get('rebounds_per_game'))}篮板、{display_metric(row.get('assists_per_game'))}助攻。"
             )
             docs.append(
                 IndexDocument(
                     id=f"historical:{row.get('id')}",
                     text=text,
                     metadata={
-                        "type": "historical",
+                        "type": "historical", **source_metadata(row),
                         "id": row.get("id"),
                         "season": row.get("season"),
                         "name": row.get("player_name"),
@@ -194,7 +201,7 @@ class MySQLDocumentSource:
         """
         with self.database.cursor() as cursor:
             cursor.execute(sql, (limit,))
-            rows = cursor.fetchall()
+            rows = [published_row(row) for row in cursor.fetchall()]
         docs = []
         for row in rows:
             text = (
@@ -226,7 +233,7 @@ class MySQLDocumentSource:
         """
         with self.database.cursor() as cursor:
             cursor.execute(sql, (limit,))
-            rows = cursor.fetchall()
+            rows = [published_row(row) for row in cursor.fetchall()]
         docs = []
         for row in rows:
             text = (

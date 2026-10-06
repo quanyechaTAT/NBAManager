@@ -23,7 +23,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-public class MatchRecord {
+public class MatchRecord extends DataTracked {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

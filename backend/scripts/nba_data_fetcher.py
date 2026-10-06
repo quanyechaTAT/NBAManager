@@ -1043,7 +1043,30 @@ def _format_minutes(minutes_str):
 
 
 def _get_current_season():
-    """获取当前赛季字符串，如 '2024-25'"""
+    """获取当前赛季字符串，如 '2025-26'"""
+    season_env = os.environ.get('CURRENT_SEASON')
+    if season_env and season_env.strip():
+        return season_env.strip()
+    try:
+        import pymysql
+        conn = pymysql.connect(
+            host=os.environ.get('DB_HOST', 'localhost'),
+            port=int(os.environ.get('DB_PORT', 3306)),
+            user=os.environ.get('DB_USERNAME', 'root'),
+            password=os.environ.get('DB_PASSWORD', 'dl041280'),
+            database=os.environ.get('DB_NAME', 'nba_manager'),
+            charset='utf8mb4',
+            connect_timeout=2
+        )
+        with conn.cursor() as cur:
+            cur.execute("SELECT season FROM season_config WHERE is_current = 1 LIMIT 1")
+            row = cur.fetchone()
+            if row and row[0]:
+                conn.close()
+                return str(row[0]).strip()
+        conn.close()
+    except Exception:
+        pass
     now = datetime.now()
     if now.month >= 10:
         return f"{now.year}-{str(now.year + 1)[-2:]}"
@@ -1101,6 +1124,9 @@ def needs_translation(text):
     return bool(re.search(r'[a-zA-Z]{3,}', text))
 
 
+from data_integrity import optional_number, optional_round, per_game, player_metrics
+
+
 def fetch_team_standings():
     """从nba_api获取球队战绩"""
     _init_team_map()
@@ -1131,12 +1157,13 @@ def fetch_team_standings():
 
         result.append({
             'name': cn_name,
+            'season': _get_current_season(),
             'nameEn': en_name,
             'abbreviation': abbreviation,
             'city': city,
             'conference': conference,
-            'wins': _safe_int(data.get('WINS')),
-            'losses': _safe_int(data.get('LOSSES')),
+            'wins': optional_number(data.get('WINS')),
+            'losses': optional_number(data.get('LOSSES')),
         })
 
     print(f"获取到 {len(result)} 支球队数据", file=sys.stderr)
@@ -1199,28 +1226,9 @@ def fetch_player_stats():
 
         # 位置映射 - 尝试多个可能的字段名
         pos_raw = data.get('PLAYER_POSITION', '') or data.get('POSITION', '') or data.get('POS', '')
-        position = POSITION_MAP.get(pos_raw, '控卫')
+        position = POSITION_MAP.get(pos_raw)
 
-        # 基础数据
-        gp = _safe_int(data.get('GP'))
-        ppg = _safe_float(data.get('PTS'))
-        rpg = _safe_float(data.get('REB'))
-        apg = _safe_float(data.get('AST'))
-        spg = _safe_float(data.get('STL'))
-        bpg = _safe_float(data.get('BLK'))
-        tpg = _safe_float(data.get('TOV'))
-        mpg = _safe_float(data.get('MIN'))
-        fg_pct = _safe_float(data.get('FG_PCT'))
-        three_pct = _safe_float(data.get('FG3_PCT'))
-        ft_pct = _safe_float(data.get('FT_PCT'))
-
-        # 高级数据
-        adv = adv_map.get(player_id, {})
-        per = _safe_float(adv.get('E_OFF_RATING'), 110.0)
-        ts_pct = _safe_float(adv.get('TS_PCT'), fg_pct)
-        usg_pct = _safe_float(adv.get('USG_PCT')) * 100
-        if usg_pct < 1.0:
-            usg_pct = 20.0
+        metrics = player_metrics(data, adv_map.get(player_id, {}))
 
         # 球员名翻译（先查映射，再调用DeepSeek API）
         en_name = data.get('PLAYER_NAME', '')
@@ -1233,24 +1241,12 @@ def fetch_player_stats():
             'translationStatus': translation_status,
             'team': cn_team,
             'position': position,
-            'ppg': round(ppg, 1),
-            'rpg': round(rpg, 1),
-            'apg': round(apg, 1),
-            'spg': round(spg, 1),
-            'gp': gp,
-            'mpg': round(mpg, 1),
-            'fgPct': round(fg_pct, 3),
-            'threePct': round(three_pct, 3),
-            'ftPct': round(ft_pct, 3),
-            'bpg': round(bpg, 1),
-            'tpg': round(tpg, 1),
-            'per': round(per, 1),
-            'tsPct': round(ts_pct, 3),
-            'usgPct': round(usg_pct, 1),
+            **metrics,
+            'season': season,
             'jersey': str(PLAYER_JERSEY_MAP.get(en_name, '')),
-            'height': data.get('HEIGHT', '6-6'),
-            'weight': _safe_int(data.get('WEIGHT', 210)),
-            'country': data.get('COUNTRY', '美国'),
+            'height': data.get('HEIGHT') or None,
+            'weight': optional_number(data.get('WEIGHT')),
+            'country': data.get('COUNTRY') or None,
         })
 
     # 批量获取球员详细信息（包括球衣号码和位置）
@@ -1269,7 +1265,7 @@ def fetch_player_stats():
                         headers = info_data['resultSets'][0]['headers']
                         row_data = dict(zip(headers, rows[0]))
                         # 更新球衣号码
-                        jersey_num = row_data.get('JERSEY', '').strip()
+                        jersey_num = str(row_data.get('JERSEY') or '').strip()
                         if jersey_num:
                             player['jersey'] = jersey_num
                         # 更新位置信息 - 从API获取真实位置
@@ -1280,7 +1276,7 @@ def fetch_player_stats():
                         if row_data.get('HEIGHT'):
                             player['height'] = row_data['HEIGHT']
                         if row_data.get('WEIGHT'):
-                            player['weight'] = _safe_int(row_data['WEIGHT'])
+                            player['weight'] = optional_number(row_data['WEIGHT'])
                         if row_data.get('COUNTRY'):
                             player['country'] = row_data['COUNTRY']
                         updated_count += 1
@@ -1297,13 +1293,13 @@ def fetch_player_stats():
     seen = {}
     for player in result:
         nid = player['nbaPlayerId']
-        if nid not in seen or player['gp'] > seen[nid]['gp']:
+        if nid not in seen or (player['gp'] if player['gp'] is not None else -1) > (seen[nid]['gp'] if seen[nid]['gp'] is not None else -1):
             seen[nid] = player
     result = list(seen.values())
     print(f"去重后球员数: {len(result)}", file=sys.stderr)
 
     # 按得分排序，取所有球员
-    result.sort(key=lambda x: x['ppg'], reverse=True)
+    result.sort(key=lambda x: (x['ppg'] is None, -(x['ppg'] or 0)))
 
     print(f"获取到 {len(result)} 名球员数据", file=sys.stderr)
     return result
@@ -2593,16 +2589,16 @@ def fetch_player_career(player_id):
             result.append({
                 'season': d.get('SEASON_ID', ''),
                 'teamName': TEAM_ID_TO_CN.get(team_id, d.get('TEAM_ABBREVIATION', '')),
-                'gamesPlayed': _safe_int(d.get('GP')),
-                'minutesPerGame': round(_safe_float(d.get('MIN')) / max(_safe_int(d.get('GP')), 1), 1),
-                'pointsPerGame': round(_safe_float(d.get('PTS')) / max(_safe_int(d.get('GP')), 1), 1),
-                'reboundsPerGame': round(_safe_float(d.get('REB')) / max(_safe_int(d.get('GP')), 1), 1),
-                'assistsPerGame': round(_safe_float(d.get('AST')) / max(_safe_int(d.get('GP')), 1), 1),
-                'stealsPerGame': round(_safe_float(d.get('STL')) / max(_safe_int(d.get('GP')), 1), 1),
-                'blocksPerGame': round(_safe_float(d.get('BLK')) / max(_safe_int(d.get('GP')), 1), 1),
-                'fgPct': _safe_float(d.get('FG_PCT')),
-                'threePct': _safe_float(d.get('FG3_PCT')),
-                'ftPct': _safe_float(d.get('FT_PCT')),
+                'gamesPlayed': optional_number(d.get('GP')),
+                'minutesPerGame': per_game(d.get('MIN'), d.get('GP')),
+                'pointsPerGame': per_game(d.get('PTS'), d.get('GP')),
+                'reboundsPerGame': per_game(d.get('REB'), d.get('GP')),
+                'assistsPerGame': per_game(d.get('AST'), d.get('GP')),
+                'stealsPerGame': per_game(d.get('STL'), d.get('GP')),
+                'blocksPerGame': per_game(d.get('BLK'), d.get('GP')),
+                'fgPct': optional_number(d.get('FG_PCT')),
+                'threePct': optional_number(d.get('FG3_PCT')),
+                'ftPct': optional_number(d.get('FT_PCT')),
             })
 
     print(f"获取到 {len(result)} 个赛季的生涯数据", file=sys.stderr)
@@ -2636,28 +2632,23 @@ def fetch_player_gamelog(player_id, season=None):
             opponent_cn = translate_opponent(matchup, is_home)
             result.append({
                 'gameId': d.get('Game_ID', ''),
+                'season': season,
                 'matchDate': d.get('GAME_DATE', ''),
                 'opponent': opponent_cn,
                 'isHome': is_home,
                 'minutes': d.get('MIN', ''),
-                'points': _safe_int(d.get('PTS')),
-                'rebounds': _safe_int(d.get('REB')),
-                'assists': _safe_int(d.get('AST')),
-                'steals': _safe_int(d.get('STL')),
-                'blocks': _safe_int(d.get('BLK')),
-                'turnovers': _safe_int(d.get('TOV')),
-                'fgPct': _safe_float(d.get('FG_PCT')),
-                'threePct': _safe_float(d.get('FG3_PCT')),
-                'ftPct': _safe_float(d.get('FT_PCT')),
-                'plusMinus': _safe_int(d.get('PLUS_MINUS')),
+                'points': optional_number(d.get('PTS')),
+                'rebounds': optional_number(d.get('REB')),
+                'assists': optional_number(d.get('AST')),
+                'steals': optional_number(d.get('STL')),
+                'blocks': optional_number(d.get('BLK')),
+                'turnovers': optional_number(d.get('TOV')),
+                'fgPct': optional_number(d.get('FG_PCT')),
+                'threePct': optional_number(d.get('FG3_PCT')),
+                'ftPct': optional_number(d.get('FT_PCT')),
+                'plusMinus': optional_number(d.get('PLUS_MINUS')),
                 'result': d.get('WL', ''),
             })
-
-    # 如果当前赛季没有数据，尝试获取上个赛季
-    if not result and season == _get_current_season():
-        prev_season = str(int(season.split('-')[0]) - 1) + '-' + str(int(season.split('-')[0]))[-2:]
-        print(f"当前赛季无数据，尝试获取上个赛季 {prev_season}...", file=sys.stderr)
-        return fetch_player_gamelog(player_id, prev_season)
 
     print(f"获取到 {len(result)} 场比赛日志", file=sys.stderr)
     return result
@@ -2871,7 +2862,11 @@ def _prepare_news_candidate(article):
         category = 'injury'
     elif any(word in lower for word in ['draft', 'pick', 'rookie']):
         category = 'draft'
-    elif nba_game_id or re.search(r'\d+\s*[-:]\s*\d+', headline):
+    elif nba_game_id or (
+        re.search(r'\b(?<!\d)(?:[5-9]\d|1\d\d)\s*[-:]\s*(?:[5-9]\d|1\d\d)\b', headline)
+        and not re.search(r'\b20\d\d[-/]\d\d\b', headline)
+        and len(teams) >= 2
+    ):
         category = 'game'
 
     return {
@@ -3828,7 +3823,7 @@ def main():
     if action == 'shot_chart' and len(sys.argv) > 2:
         player_id = int(sys.argv[2])
         season = sys.argv[3] if len(sys.argv) > 3 else _get_current_season()
-        result['shots'] = fetch_shot_chart(player_id, season)
+        result.update(fetch_shot_chart(player_id, season, with_status=True))
 
     if action == 'game_shot_chart' and len(sys.argv) > 2:
         game_id = sys.argv[2]
@@ -3900,18 +3895,18 @@ def fetch_historical_players(season):
                 'teamNameEn': d.get('TEAM_ABBREVIATION', ''),
                 'position': POSITION_MAP.get(d.get('POSITION', ''), ''),
                 'jersey': str(PLAYER_JERSEY_MAP.get(player_name, '')),
-                'gp': d.get('GP', 0),
-                'gs': d.get('GS', 0),
-                'mpg': round(d.get('MIN', 0), 1),
-                'ppg': round(d.get('PTS', 0), 1),
-                'rpg': round(d.get('REB', 0), 1),
-                'apg': round(d.get('AST', 0), 1),
-                'spg': round(d.get('STL', 0), 1),
-                'bpg': round(d.get('BLK', 0), 1),
-                'fgPct': round(d.get('FG_PCT', 0), 3),
-                'threePct': round(d.get('FG3_PCT', 0), 3),
-                'ftPct': round(d.get('FT_PCT', 0), 3),
-                'topg': round(d.get('TOV', 0), 1),
+                'gp': optional_number(d.get('GP')),
+                'gs': optional_number(d.get('GS')),
+                'mpg': optional_round(d.get('MIN'), 1),
+                'ppg': optional_round(d.get('PTS'), 1),
+                'rpg': optional_round(d.get('REB'), 1),
+                'apg': optional_round(d.get('AST'), 1),
+                'spg': optional_round(d.get('STL'), 1),
+                'bpg': optional_round(d.get('BLK'), 1),
+                'fgPct': optional_round(d.get('FG_PCT'), 3),
+                'threePct': optional_round(d.get('FG3_PCT'), 3),
+                'ftPct': optional_round(d.get('FT_PCT'), 3),
+                'topg': optional_round(d.get('TOV'), 1),
             })
 
         print(f"获取到 {len(result)} 名球员的 {season} 赛季常规赛数据", file=sys.stderr)
@@ -3920,6 +3915,21 @@ def fetch_historical_players(season):
     except Exception as e:
         print(f"获取 {season} 赛季球员数据失败: {e}", file=sys.stderr)
         return []
+
+
+def _format_streak(streak_val):
+    """格式化连胜/连败字符串，如 'W 3' -> '3连胜', 'L 2' -> '2连败'"""
+    if not streak_val or not str(streak_val).strip():
+        return None
+    s = str(streak_val).strip()
+    if '连胜' in s or '连败' in s:
+        return s
+    import re
+    m = re.match(r'([WL])\s*(\d+)', s, re.IGNORECASE)
+    if m:
+        letter, num = m.groups()
+        return f"{num}{'连胜' if letter.upper() == 'W' else '连败'}"
+    return s
 
 
 def fetch_historical_teams(season):
@@ -3952,16 +3962,19 @@ def fetch_historical_teams(season):
                 'teamNameEn': d.get('TeamCity', '') + ' ' + d.get('TeamName', ''),
                 'conference': d.get('Conference', ''),
                 'division': d.get('Division', ''),
-                'wins': d.get('WINS', 0),
-                'losses': d.get('LOSSES', 0),
-                'winPct': round(d.get('WinPCT', 0), 3),
-                'conferenceRank': d.get('ConferenceRank', 0),
-                'divisionRank': d.get('DivisionRank', 0),
-                'leagueRank': d.get('LeagueRank', 0),
-                'ppg': round(d.get('PTS', 0), 1),
-                'oppg': round(d.get('OPP_PTS', 0), 1),
-                'rpg': round(d.get('REB', 0), 1),
-                'apg': round(d.get('AST', 0), 1),
+                'wins': optional_number(d.get('WINS')),
+                'losses': optional_number(d.get('LOSSES')),
+                'winPct': optional_round(d.get('WinPCT'), 3),
+                'conferenceRank': optional_number(d.get('ConferenceRank')),
+                'divisionRank': optional_number(d.get('DivisionRank')),
+                'leagueRank': optional_number(d.get('LeagueRank')),
+                'ppg': optional_round(d.get('PointsPG') if d.get('PointsPG') is not None else d.get('PTS'), 1),
+                'oppg': optional_round(d.get('OppPointsPG') if d.get('OppPointsPG') is not None else d.get('OPP_PTS'), 1),
+                'rpg': optional_round(d.get('ReboundsPG') if d.get('ReboundsPG') is not None else d.get('REB'), 1),
+                'apg': optional_round(d.get('AssistsPG') if d.get('AssistsPG') is not None else d.get('AST'), 1),
+                'homeRecord': d.get('HOME', ''),
+                'awayRecord': d.get('ROAD', ''),
+                'streak': _format_streak(d.get('strCurrentStreak', '')),
             })
 
         print(f"获取到 {len(result)} 支球队的 {season} 赛季常规赛数据", file=sys.stderr)
@@ -3972,7 +3985,7 @@ def fetch_historical_teams(season):
         return []
 
 
-def fetch_shot_chart(player_id, season=None):
+def fetch_shot_chart(player_id, season=None, with_status=False):
     """获取球员投篮数据"""
     _init_team_map()
     if season is None:
@@ -4001,8 +4014,10 @@ def fetch_shot_chart(player_id, season=None):
                     d = dict(zip(headers, shot_row))
 
                     # 转换坐标（NBA API的坐标系统）
-                    loc_x = d.get('LOC_X', 0)
-                    loc_y = d.get('LOC_Y', 0)
+                    loc_x = optional_number(d.get('LOC_X'))
+                    loc_y = optional_number(d.get('LOC_Y'))
+                    if loc_x is None or loc_y is None or d.get('SHOT_MADE_FLAG') not in (0, 1):
+                        continue
 
                     # 转换为SVG坐标系 (x: 0-50, y: 0-47)
                     # NBA API: x = -250 to 250, y = -50 to 470
@@ -4013,7 +4028,7 @@ def fetch_shot_chart(player_id, season=None):
                     zone = determine_zone(svg_x, svg_y)
 
                     # 判断命中
-                    made = d.get('SHOT_MADE_FLAG', 0) == 1
+                    made = d.get('SHOT_MADE_FLAG') == 1
 
                     result.append({
                         'x': round(svg_x, 2),
@@ -4022,16 +4037,16 @@ def fetch_shot_chart(player_id, season=None):
                         'zone': zone,
                         'shotType': d.get('SHOT_TYPE', ''),
                         'gameId': d.get('GAME_ID', ''),
-                        'gameDate': d.get('GAME_DATE', ''),
+                        'gameDate': d.get('GAME_DATE') or None,
                         'period': d.get('PERIOD', 0),
                     })
 
         print(f"获取到 {len(result)} 次投篮记录", file=sys.stderr)
-        return result
+        return {"shots": result, "source": "NBA_SHOTCHARTDETAIL", "mode": "REAL_SHOT_CHART", "status": "OK" if result else "EMPTY", "season": season} if with_status else result
 
     except Exception as e:
         print(f"获取球员 {player_id} 投篮数据失败: {e}", file=sys.stderr)
-        return []
+        return {"shots": [], "source": "NBA_SHOTCHARTDETAIL", "mode": "UNAVAILABLE", "status": "FAILED", "season": season} if with_status else []
 
 
 def _call_shotchartdetail_noproxy(**kwargs):

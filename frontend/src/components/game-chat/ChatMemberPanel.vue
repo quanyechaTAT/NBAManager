@@ -116,11 +116,11 @@ function onImgError(e: Event) {
 }
 
 .member-avatar {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent-light, #22D3EE), var(--accent, #0891B2));
-  color: var(--accent-contrast, #04202A);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary);
   font-size: 13px;
   font-weight: 700;
   display: flex;
@@ -128,6 +128,7 @@ function onImgError(e: Event) {
   justify-content: center;
   flex-shrink: 0;
   overflow: hidden;
+  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.1));
 }
 
 .member-avatar-img {

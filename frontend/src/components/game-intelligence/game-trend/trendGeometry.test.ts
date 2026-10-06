@@ -26,4 +26,30 @@ describe('trendGeometry', () => {
     expect(path).toContain(' C ')
     expect(path).toMatch(/260 110$/)
   })
+
+  it('handles empty and single-point series gracefully', () => {
+    expect(smoothPath([])).toBe('')
+    expect(smoothPath([{ x: 50, y: 80 }])).toBe('M 50 80')
+  })
+
+  it('prevents wild control point overshoot on steep momentum swings', () => {
+    const swingPoints = [
+      { x: 0, y: 100 },
+      { x: 50, y: 100 },
+      { x: 100, y: 300 }, // sudden 200px drop (opponent big run)
+      { x: 150, y: 300 },
+    ]
+    const path = smoothPath(swingPoints)
+    expect(path).toContain(' C ')
+    // Ensure all control point y values stay bounded
+    const matches = path.matchAll(/C ([\d.-]+) ([\d.-]+), ([\d.-]+) ([\d.-]+), ([\d.-]+) ([\d.-]+)/g)
+    for (const match of matches) {
+      const cp1y = Number(match[2])
+      const cp2y = Number(match[4])
+      expect(cp1y).toBeGreaterThanOrEqual(80)
+      expect(cp1y).toBeLessThanOrEqual(320)
+      expect(cp2y).toBeGreaterThanOrEqual(80)
+      expect(cp2y).toBeLessThanOrEqual(320)
+    }
+  })
 })

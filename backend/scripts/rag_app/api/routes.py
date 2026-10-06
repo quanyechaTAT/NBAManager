@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 from rag_app.api.schemas import QueryRequest, QueryResponse
-from rag_app.api.sse import encode_sse
+from rag_app.api.sse import stream_with_heartbeats
 from rag_app.indexing.builder import build_all_indexes
 from rag_app.pipeline.engine import RAGEngine
 
@@ -82,22 +82,16 @@ def create_router(engine_provider: Callable[[], RAGEngine]) -> APIRouter:
     @router.get("/health")
     def health():
         current = engine()
-        embedding_loaded = current.retriever.embeddings._model is not None
-        reranker_required = bool(current.settings.reranker_enabled)
-        reranker_loaded = current.retriever.reranker._model is not None
-        model_loaded = embedding_loaded and (not reranker_required or reranker_loaded)
-        if not model_loaded:
-            # 模型仍在后台预加载：返回 503 让 Java 拉起循环继续等待，
-            # 避免首个请求打到未就绪的模型（表现为流异常中断）
-            from fastapi.responses import JSONResponse
-            return JSONResponse(
-                status_code=503,
-                content={"status": "loading", "model_loaded": False},
-            )
-        return {
-            "status": "ok",
-            "model_loaded": True,
-        }
+        # SQL and authoritative web tools can answer while vector models warm up.
+        return {'status': 'ok', 'model_loaded': current.retriever.ready}
+
+    @router.get('/ready')
+    def vector_readiness():
+        status = health()
+        if status['model_loaded']:
+            return status
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=503, content={'status': 'warming', 'model_loaded': False})
 
     @router.get("/query", response_model=QueryResponse)
     def query_get(
@@ -134,7 +128,11 @@ def create_router(engine_provider: Callable[[], RAGEngine]) -> APIRouter:
             for event in gen:
                 yield event
         except Exception as exc:  # noqa: BLE001
-            yield {"type": "error", "error": f"服务内部错误: {exc}"}
+            print(f'RAG stream failed: {type(exc).__name__}', file=sys.stderr)
+            yield {"type": "error", "error": '服务暂时不可用，请稍后重试', 'code': 'INTERNAL_ERROR'}
+        finally:
+            if hasattr(gen, 'close'):
+                gen.close()
 
     def _gated_stream(gen):
         """给流式响应套饱和闸门（第 9 轮 P1-2）。
@@ -153,7 +151,7 @@ def create_router(engine_provider: Callable[[], RAGEngine]) -> APIRouter:
             # 流式响应的头部在惰性消费开始前就已确定，无法再改状态码，
             # 因此以 SSE error 事件表达"过载"（与 _safe_stream 的错误事件同构），
             # 客户端按 error 处理而非把它当成正常回答。
-            yield encode_sse({"type": "error", "error": "RAG 服务繁忙，请稍后重试", "overloaded": True})
+            yield {"type": "error", "error": "RAG 服务繁忙，请稍后重试", "overloaded": True}
             return
         try:
             for event in gen:
@@ -161,6 +159,8 @@ def create_router(engine_provider: Callable[[], RAGEngine]) -> APIRouter:
         finally:
             # 必须在生成器真正结束（含 GeneratorExit/异常）时才归还
             _leave_query_gate()
+            if hasattr(gen, 'close'):
+                gen.close()
 
     @router.get("/stream")
     def stream_get(
@@ -170,16 +170,16 @@ def create_router(engine_provider: Callable[[], RAGEngine]) -> APIRouter:
         force_web_search: bool = False,
     ):
         return StreamingResponse(
-            (encode_sse(event) for event in _gated_stream(
+            stream_with_heartbeats(_gated_stream(
                 _safe_stream(engine().stream(question, top_k, session_id, force_web_search)))),
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+            headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
         )
 
     @router.post("/stream")
     def stream_post(request: QueryRequest):
         return StreamingResponse(
-            (encode_sse(event) for event in _gated_stream(
+            stream_with_heartbeats(_gated_stream(
                 _safe_stream(engine().stream(
                     request.question,
                     request.top_k,
@@ -188,7 +188,7 @@ def create_router(engine_provider: Callable[[], RAGEngine]) -> APIRouter:
                     _conversation_history(request),
                 )))),
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+            headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
         )
 
     @router.get("/stats")
@@ -196,24 +196,31 @@ def create_router(engine_provider: Callable[[], RAGEngine]) -> APIRouter:
         return engine().stats()
 
     _rebuilding = {"flag": False}
+    _rebuild_lock = threading.Lock()
 
     @router.post("/rebuild")
     def rebuild(body: dict = Body(default_factory=dict)):
         # 索引重建（2059+ 条文档的 embedding）需要数十秒，且 build 期间会占用 worker：
         # 改为后台线程执行并立即返回，防重入避免并发 clear/rebuild 竞争
-        if _rebuilding["flag"]:
-            return {"status": "busy", "message": "index rebuild in progress"}
+        with _rebuild_lock:
+            if _rebuilding['flag'] or getattr(engine().retriever, '_index_status', '') == 'building':
+                return {"status": "busy", "message": "index rebuild in progress"}
+            _rebuilding['flag'] = True
         clear_first = bool(body.get("clear_first", True))
 
         def _run():
             try:
-                _rebuilding["flag"] = True
-                build_all_indexes(engine().settings, clear_first=clear_first)
+                current = engine()
+                current.retriever._index_status = 'building'
+                build_all_indexes(current.settings, clear_first=clear_first, store=current.retriever.store)
+                current.retriever._index_status = 'ready'
                 print("[rebuild] index rebuild finished", flush=True)
             except Exception as exc:
+                engine().retriever._index_status = 'failed'
                 print(f"[rebuild] index rebuild failed: {exc}", file=sys.stderr, flush=True)
             finally:
-                _rebuilding["flag"] = False
+                with _rebuild_lock:
+                    _rebuilding["flag"] = False
 
         threading.Thread(target=_run, daemon=True, name="index-rebuild").start()
         return {"status": "started", "message": "index rebuild started in background"}
@@ -247,4 +254,6 @@ def _to_response(answer) -> QueryResponse:
         search_execution=answer.search_execution or {},
         retrieval_quality=answer.retrieval_quality or {},
         error=answer.error,
+        sourceDetails=getattr(answer, 'sourceDetails', []),
+        follow_ups=getattr(answer, 'follow_ups', []),
     )

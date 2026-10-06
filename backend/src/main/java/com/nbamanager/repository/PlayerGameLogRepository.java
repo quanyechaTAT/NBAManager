@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface PlayerGameLogRepository extends JpaRepository<PlayerGameLog, Long> {
 
+    java.util.Optional<PlayerGameLog> findFirstByPlayerIdAndGameId(Long playerId, String gameId);
+
     Page<PlayerGameLog> findByPlayerIdAndSeasonOrderByMatchDateDesc(Long playerId, String season, Pageable pageable);
 
     Page<PlayerGameLog> findByPlayerIdOrderByMatchDateDesc(Long playerId, Pageable pageable);

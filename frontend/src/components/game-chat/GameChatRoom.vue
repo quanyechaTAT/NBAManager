@@ -4,6 +4,13 @@
       :connected="connected"
       :reconnecting="reconnecting"
       :online-count="onlineCount"
+      :home-team="homeTeam"
+      :away-team="awayTeam"
+      :selected-camp="selectedCamp"
+      :home-cheer-count="homeCheerCount"
+      :away-cheer-count="awayCheerCount"
+      @select-camp="onSelectCamp"
+      @cheer="onCheer"
     />
 
     <div class="chat-layout">
@@ -38,7 +45,7 @@
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 </svg>
               </div>
-              <p class="empty-text">暂无消息，来说点什么吧！</p>
+              <p class="empty-text">暂无观赛互动，打出第一句助威吧！</p>
             </div>
 
             <ChatMessageItem
@@ -46,6 +53,8 @@
               :key="msg.clientMessageId || msg.id"
               :message="msg"
               :is-self="msg.username === auth.username"
+              :home-team="homeTeam"
+              :away-team="awayTeam"
               @retry="retryMessage(msg)"
             />
           </div>
@@ -63,6 +72,8 @@
           v-if="auth.isAuthenticated"
           :connected="connected"
           :send-loading="sendLoading"
+          :home-team="homeTeam"
+          :away-team="awayTeam"
           @send="handleSend"
         />
         <div v-else class="login-prompt">
@@ -215,6 +226,37 @@ const members = computed(() => {
   }
   return []
 })
+
+const selectedCamp = ref<'HOME' | 'AWAY' | 'ALL'>('ALL')
+const homeCheerCount = ref(52)
+const awayCheerCount = ref(46)
+const CAMP_KEY_PREFIX = 'nba_chat_camp_'
+
+try {
+  const saved = typeof window !== 'undefined' ? localStorage.getItem(`${CAMP_KEY_PREFIX}${props.gameId}`) : null
+  if (saved === 'HOME' || saved === 'AWAY' || saved === 'ALL') {
+    selectedCamp.value = saved
+  }
+} catch { /* ignore */ }
+
+function onSelectCamp(camp: 'HOME' | 'AWAY' | 'ALL') {
+  selectedCamp.value = camp
+  try {
+    localStorage.setItem(`${CAMP_KEY_PREFIX}${props.gameId}`, camp)
+  } catch { /* ignore */ }
+}
+
+function onCheer(team: 'HOME' | 'AWAY') {
+  selectedCamp.value = team
+  if (team === 'HOME') {
+    homeCheerCount.value++
+  } else {
+    awayCheerCount.value++
+  }
+  try {
+    localStorage.setItem(`${CAMP_KEY_PREFIX}${props.gameId}`, team)
+  } catch { /* ignore */ }
+}
 
 async function handleSend(content: string) {
   await sendMessage(content)

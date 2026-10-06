@@ -45,19 +45,53 @@ public class MatchDetailService {
     private final PlayerRepository playerRepository;
     private final PythonTimeoutProperties pythonTimeoutProperties;
 
-    @Cacheable(value = "boxScore", key = "#gameId", unless = "#result.homeTeam.isEmpty()")
+    @Cacheable(value = "boxScore", key = "#gameId", unless = "#result.homeTeam.isEmpty() || #result.quarterScores.isEmpty()")
     @Transactional(readOnly = true)
     public BoxScoreDto getBoxScore(String gameId) {
         // 转换gameId（ESPN格式 -> NBA格式）
         String nbaGameId = gameIdMappingService.getNbaGameId(gameId);
         log.info("获取BoxScore: 原始gameId={}, 转换后gameId={}", gameId, nbaGameId);
 
+        String fallbackHomeTeam = "";
+        String fallbackAwayTeam = "";
+        Integer fallbackHomeScore = null;
+        Integer fallbackAwayScore = null;
+
+        Optional<MatchRecord> matchOpt = findMatchRecord(gameId, nbaGameId);
+        if (matchOpt.isPresent()) {
+            MatchRecord match = matchOpt.get();
+            fallbackHomeTeam = match.getHomeTeam() != null ? match.getHomeTeam() : "";
+            fallbackAwayTeam = match.getAwayTeam() != null ? match.getAwayTeam() : "";
+            if ("SCHEDULED".equalsIgnoreCase(match.getStatus())) {
+                return new BoxScoreDto(gameId, fallbackHomeTeam, fallbackAwayTeam,
+                        List.of(), List.of(), List.of(), null, null);
+            }
+            fallbackHomeScore = match.getHomeScore();
+            fallbackAwayScore = match.getAwayScore();
+        } else {
+            Optional<GameNews> newsOpt = findGameNews(gameId, nbaGameId);
+            if (newsOpt.isPresent()) {
+                GameNews news = newsOpt.get();
+                fallbackHomeTeam = news.getHomeTeam() != null ? news.getHomeTeam() : "";
+                fallbackAwayTeam = news.getAwayTeam() != null ? news.getAwayTeam() : "";
+                if ("SCHEDULED".equalsIgnoreCase(news.getStatus())) {
+                    return new BoxScoreDto(gameId, fallbackHomeTeam, fallbackAwayTeam,
+                            List.of(), List.of(), List.of(), null, null);
+                }
+                fallbackHomeScore = news.getHomeScore();
+                fallbackAwayScore = news.getAwayScore();
+            }
+        }
+
+        List<QuarterScoreDto> quarterScores = getQuarterScores(gameId);
         List<GameBoxScore> records = gameBoxScoreRepository.findByGameId(nbaGameId);
 
         if (records.isEmpty()) {
-            // 即使没有boxscore记录，也尝试获取比分
-            ScorePair scores = resolveScores(nbaGameId, "", "");
-            return new BoxScoreDto(nbaGameId, "", "", List.of(), List.of(), List.of(), scores.home, scores.away);
+            // 即使没有boxscore球员记录，也尝试获取比分与主客队名及节末比分
+            ScorePair scores = resolveScores(nbaGameId);
+            Integer finalHome = scores.home() != null ? scores.home() : fallbackHomeScore;
+            Integer finalAway = scores.away() != null ? scores.away() : fallbackAwayScore;
+            return new BoxScoreDto(gameId, fallbackHomeTeam, fallbackAwayTeam, List.of(), List.of(), quarterScores, finalHome, finalAway);
         }
 
         // 使用 isHome 字段分组主客队
@@ -89,22 +123,71 @@ public class MatchDetailService {
                     .collect(Collectors.toList());
         }
 
-        List<QuarterScoreDto> quarterScores = getQuarterScores(gameId);
+        if (homeTeam.isBlank()) {
+            homeTeam = fallbackHomeTeam;
+        }
+        if (awayTeam.isBlank()) {
+            awayTeam = fallbackAwayTeam;
+        }
 
         // 从MatchRecord/GameNews获取总比分
-        ScorePair scores = resolveScores(nbaGameId, homeTeam, awayTeam);
+        ScorePair scores = resolveScores(nbaGameId);
+        Integer finalHome = scores.home() != null ? scores.home() : fallbackHomeScore;
+        Integer finalAway = scores.away() != null ? scores.away() : fallbackAwayScore;
 
-        return new BoxScoreDto(gameId, homeTeam, awayTeam, homePlayers, awayPlayers, quarterScores, scores.home, scores.away);
+        return new BoxScoreDto(gameId, homeTeam, awayTeam, homePlayers, awayPlayers, quarterScores, finalHome, finalAway);
+    }
+
+    private Optional<MatchRecord> findMatchRecord(String gameId, String nbaGameId) {
+        if (nbaGameId != null && !nbaGameId.isBlank()) {
+            Optional<MatchRecord> match = matchRecordRepository.findByNbaGameId(nbaGameId);
+            if (match.isPresent()) {
+                return match;
+            }
+        }
+        if (gameId != null && !gameId.isBlank() && !gameId.equals(nbaGameId)) {
+            Optional<MatchRecord> match = matchRecordRepository.findByNbaGameId(gameId);
+            if (match.isPresent()) {
+                return match;
+            }
+        }
+        if (gameId != null && !gameId.isBlank()) {
+            try {
+                Long id = Long.parseLong(gameId);
+                return matchRecordRepository.findById(id);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Optional<GameNews> findGameNews(String gameId, String nbaGameId) {
+        if (nbaGameId != null && !nbaGameId.isBlank()) {
+            List<GameNews> newsList = gameNewsRepository.findByNbaGameId(nbaGameId);
+            if (!newsList.isEmpty()) {
+                return Optional.of(newsList.get(0));
+            }
+        }
+        if (gameId != null && !gameId.isBlank() && !gameId.equals(nbaGameId)) {
+            List<GameNews> newsList = gameNewsRepository.findByNbaGameId(gameId);
+            if (!newsList.isEmpty()) {
+                return Optional.of(newsList.get(0));
+            }
+        }
+        return Optional.empty();
     }
 
     /**
      * 从MatchRecord或GameNews解析总比分
      */
-    private ScorePair resolveScores(String nbaGameId, String homeTeam, String awayTeam) {
+    private ScorePair resolveScores(String nbaGameId) {
         // 优先从MatchRecord获取
         if (nbaGameId != null && !nbaGameId.isBlank()) {
             Optional<MatchRecord> match = matchRecordRepository.findByNbaGameId(nbaGameId);
-            if (match.isPresent() && match.get().getHomeScore() != null && match.get().getHomeScore() > 0) {
+            if (match.isPresent()) {
+                if ("SCHEDULED".equalsIgnoreCase(match.get().getStatus())) {
+                    return new ScorePair(null, null);
+                }
                 log.info("从MatchRecord获取比分: gameId={}, {}-{}", nbaGameId, match.get().getHomeScore(), match.get().getAwayScore());
                 return new ScorePair(match.get().getHomeScore(), match.get().getAwayScore());
             }
@@ -115,7 +198,7 @@ public class MatchDetailService {
             List<GameNews> newsList = gameNewsRepository.findByNbaGameId(nbaGameId);
             if (!newsList.isEmpty()) {
                 GameNews news = newsList.get(0);
-                if (news.getHomeScore() != null && news.getHomeScore() > 0) {
+                if (!"SCHEDULED".equalsIgnoreCase(news.getStatus())) {
                     log.info("从GameNews获取比分: gameId={}, {}-{}", nbaGameId, news.getHomeScore(), news.getAwayScore());
                     return new ScorePair(news.getHomeScore(), news.getAwayScore());
                 }
@@ -230,6 +313,11 @@ public class MatchDetailService {
         // 转换gameId（ESPN格式 -> NBA格式）
         String nbaGameId = gameIdMappingService.getNbaGameId(gameId);
         log.info("获取逐节比分: 原始gameId={}, 转换后gameId={}", gameId, nbaGameId);
+
+        if (findMatchRecord(gameId, nbaGameId)
+                .map(match -> "SCHEDULED".equalsIgnoreCase(match.getStatus())).orElse(false)) {
+            return List.of();
+        }
 
         // Public GET endpoints must be pure reads. Replay preparation is the only path
         // allowed to call providers/Python and persist fresh facts.

@@ -66,8 +66,11 @@ nohup.out
 /BOOT-INF/
 /META-INF/
 /output/
+/outputs/
 /frontend/output/
 /test-evidence/
+*.pid
+/scripts/star_matches.txt
 screenshots/
 test_screenshots/
 test-results/
@@ -75,9 +78,8 @@ playwright-report/
 .playwright-cli/
 .playwright-mcp/
 
-# Machine-local launchers; the README documents portable commands
+# Machine-local launcher; portable start.bat is versioned
 /start-backend.bat
-/start.bat
 
 # IDE, local agent settings and operating-system files
 .vscode/

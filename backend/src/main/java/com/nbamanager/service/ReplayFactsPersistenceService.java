@@ -19,6 +19,7 @@ import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONArray;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +39,8 @@ public class ReplayFactsPersistenceService {
     private final ReplayFactsHashService factsHashService;
     private final ReplayQualityService qualityService;
     private final ReplaySyncStateRepository syncStateRepository;
+    private final CacheManager cacheManager;
+    private final GameIdMappingService gameIdMappingService;
 
     @Transactional
     public PersistResult persist(String gameId, PlayByPlayFetchResult fetchResult, String operationId) {
@@ -97,6 +100,7 @@ public class ReplayFactsPersistenceService {
         playByPlayRepository.deleteByGameId(gameId);
         List<PlayByPlay> saved = playByPlayRepository.saveAll(normalized);
         List<PlayByPlay> savedFacts = saved == null ? normalized : saved;
+        evictMatchDetailCaches(gameId);
 
         momentumComputeService.compute(gameId, validEvents);
         highlightDetectService.detect(gameId, validEvents, savedFacts);
@@ -106,6 +110,34 @@ public class ReplayFactsPersistenceService {
         completeState(gameId, operationId, quality, factsHash, validEvents.size(), source);
         return new PersistResult(true, source, validEvents.size(), "Success",
                 quality.level().name(), factsHash);
+    }
+
+    private void evictMatchDetailCaches(String gameId) {
+        if (cacheManager == null) {
+            return;
+        }
+        try {
+            evictCache("boxScore", gameId);
+            evictCache("quarterScores", gameId);
+            evictCache("playByPlay", gameId);
+            if (gameIdMappingService != null) {
+                String espnGameId = gameIdMappingService.getEspnGameId(gameId);
+                if (espnGameId != null && !espnGameId.isBlank() && !espnGameId.equals(gameId)) {
+                    evictCache("boxScore", espnGameId);
+                    evictCache("quarterScores", espnGameId);
+                    evictCache("playByPlay", espnGameId);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to evict match detail caches for gameId={}: {}", gameId, e.getMessage());
+        }
+    }
+
+    private void evictCache(String cacheName, String key) {
+        org.springframework.cache.Cache cache = cacheManager.getCache(cacheName);
+        if (cache != null) {
+            cache.evict(key);
+        }
     }
 
     private void assertCurrentOperation(String gameId, String operationId) {

@@ -15,7 +15,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-public class TeamSeasonStats {
+public class TeamSeasonStats extends DataTracked {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -39,16 +39,16 @@ public class TeamSeasonStats {
     private String division;
 
     /** 胜场 */
-    @Column(nullable = false)
-    private Integer wins = 0;
+    @Column(nullable = true)
+    private Integer wins ;
 
     /** 负场 */
-    @Column(nullable = false)
-    private Integer losses = 0;
+    @Column(nullable = true)
+    private Integer losses ;
 
     /** 胜率 */
     @Column(precision = 4, scale = 3)
-    private BigDecimal winPct = BigDecimal.ZERO;
+    private BigDecimal winPct ;
 
     /** 联盟排名 */
     private Integer conferenceRank;
@@ -61,19 +61,31 @@ public class TeamSeasonStats {
 
     /** 场均得分 */
     @Column(precision = 4, scale = 1)
-    private BigDecimal pointsPerGame = BigDecimal.ZERO;
+    private BigDecimal pointsPerGame ;
 
     /** 场均失分 */
     @Column(precision = 4, scale = 1)
-    private BigDecimal opponentsPointsPerGame = BigDecimal.ZERO;
+    private BigDecimal opponentsPointsPerGame ;
 
     /** 场均篮板 */
     @Column(precision = 4, scale = 1)
-    private BigDecimal reboundsPerGame = BigDecimal.ZERO;
+    private BigDecimal reboundsPerGame ;
 
     /** 场均助攻 */
     @Column(precision = 4, scale = 1)
-    private BigDecimal assistsPerGame = BigDecimal.ZERO;
+    private BigDecimal assistsPerGame ;
+
+    /** 主场战绩 */
+    @Column(name = "home_record", length = 16)
+    private String homeRecord;
+
+    /** 客场战绩 */
+    @Column(name = "away_record", length = 16)
+    private String awayRecord;
+
+    /** 近况连胜/连败，如 "3连胜" */
+    @Column(length = 16)
+    private String streak;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
@@ -92,4 +104,17 @@ public class TeamSeasonStats {
     }
 
 
+    public Integer getWins() { return wins != null ? wins : publishedValue("wins", wins); }
+    public Integer getLosses() { return losses != null ? losses : publishedValue("losses", losses); }
+    public BigDecimal getWinPct() { return winPct != null ? winPct : publishedValue("winPct", winPct); }
+    public Integer getConferenceRank() { return conferenceRank != null ? conferenceRank : publishedValue("conferenceRank", conferenceRank); }
+    public Integer getDivisionRank() { return divisionRank != null ? divisionRank : publishedValue("divisionRank", divisionRank); }
+    public Integer getLeagueRank() { return leagueRank != null ? leagueRank : publishedValue("leagueRank", leagueRank); }
+    public BigDecimal getPointsPerGame() { return pointsPerGame != null ? pointsPerGame : publishedValue("pointsPerGame", pointsPerGame); }
+    public BigDecimal getOpponentsPointsPerGame() { return opponentsPointsPerGame != null ? opponentsPointsPerGame : publishedValue("opponentsPointsPerGame", opponentsPointsPerGame); }
+    public BigDecimal getReboundsPerGame() { return reboundsPerGame != null ? reboundsPerGame : publishedValue("reboundsPerGame", reboundsPerGame); }
+    public BigDecimal getAssistsPerGame() { return assistsPerGame != null ? assistsPerGame : publishedValue("assistsPerGame", assistsPerGame); }
+    public String getHomeRecord() { return (homeRecord != null && !homeRecord.isBlank()) ? homeRecord : publishedValue("homeRecord", homeRecord); }
+    public String getAwayRecord() { return (awayRecord != null && !awayRecord.isBlank()) ? awayRecord : publishedValue("awayRecord", awayRecord); }
+    public String getStreak() { return (streak != null && !streak.isBlank()) ? streak : publishedValue("streak", streak); }
 }

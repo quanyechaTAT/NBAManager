@@ -18,7 +18,7 @@ public class SyncJobStepStateService {
     private final SyncJobStepRepository stepRepository;
 
     private static final Set<String> TERMINAL_STATUSES = Set.of(
-            "SUCCESS", "PARTIAL_FAILED", "FAILED", "CANCELLED"
+            "SUCCESS", "PARTIAL_FAILED", "FAILED", "CANCELLED", "INTERRUPTED"
     );
 
     @Transactional
@@ -85,7 +85,6 @@ public class SyncJobStepStateService {
         step.setFinishedAt(LocalDateTime.now());
         step.setErrorCode("CANCELLED");
         step.setErrorMessage("步骤已取消");
-        step.setProgress(100);
         stepRepository.save(step);
     }
 }

@@ -25,9 +25,18 @@ export function toLocalDateKey(value: string | Date | null | undefined): string 
 }
 
 /** 是否有可展示的比分：未开赛或缺失都不算 */
-export function hasScore(match: Pick<MatchRecord, 'status' | 'homeScore' | 'awayScore'>): boolean {
-  if (match.status === 'SCHEDULED') return false
-  return typeof match.homeScore === 'number' && typeof match.awayScore === 'number'
+export function hasScore(
+  match: Pick<MatchRecord, 'status' | 'homeScore' | 'awayScore'> | null | undefined
+): boolean {
+  if (!match || match.status === 'SCHEDULED') return false
+  return (
+    typeof match.homeScore === 'number' &&
+    typeof match.awayScore === 'number' &&
+    !Number.isNaN(match.homeScore) &&
+    !Number.isNaN(match.awayScore) &&
+    match.homeScore >= 0 &&
+    match.awayScore >= 0
+  )
 }
 
 /**

@@ -52,8 +52,8 @@ class ChromaVectorStore:
             "query_embeddings": [query_embedding],
             "n_results": max(top_k, 1),
         }
-        if where:
-            kwargs["where"] = where
+        contract = {"data_contract_version": 2}
+        kwargs["where"] = {"$and": [where, contract]} if where else contract
         results = collection.query(**kwargs)
         return VectorSearchResult(
             documents=(results.get("documents") or [[]])[0],
@@ -72,17 +72,41 @@ class ChromaVectorStore:
             embeddings=self.embeddings.embed_documents(documents),
         )
 
+    def search_many(self, queries: list[str], top_k: int, where: dict | None = None) -> list[VectorSearchResult]:
+        """One embedding batch and one read-only collection request for all variants."""
+        if not queries:
+            return []
+        collection = self.collection()
+        contract = {'data_contract_version': 2}
+        results = collection.query(query_embeddings=self.embeddings.embed_documents(queries),
+            n_results=max(1, top_k), where={'$and': [where, contract]} if where else contract)
+        documents = results.get('documents') or [[] for _ in queries]
+        metadatas = results.get('metadatas') or [[] for _ in queries]
+        distances = results.get('distances') or [[] for _ in queries]
+        return [VectorSearchResult(documents[i], metadatas[i], [float(v) for v in distances[i]]) for i in range(len(queries))]
+
+    def upsert_texts(self, documents, metadatas, ids):
+        if documents:
+            self.collection().upsert(documents=documents, metadatas=metadatas, ids=ids,
+                                     embeddings=self.embeddings.embed_documents(documents))
+
+    def has_published_index(self):
+        return bool(self.collection().get(where={'data_contract_version': 2}, include=[], limit=1)['ids'])
+
+    def prune_published(self, retained_ids):
+        retained = set(retained_ids)
+        current = self.collection().get(where={'data_contract_version': 2}, include=[])['ids']
+        stale = [identifier for identifier in current if identifier not in retained]
+        for start in range(0, len(stale), 1000):
+            self.collection().delete(ids=stale[start:start + 1000])
+        return len(stale)
+
     def clear(self) -> None:
-        if self._client is None:
-            self.collection()
-        try:
-            self._client.delete_collection(self.settings.collection_name)
-        except Exception:
-            pass
-        self._collection = self._client.get_or_create_collection(
-            name=self.settings.collection_name,
-            metadata={"hnsw:space": "cosine"},
-        )
+        # Keep the collection identity valid for all readers in this process.
+        collection = self.collection()
+        identifiers = collection.get(include=[])['ids']
+        for start in range(0, len(identifiers), 1000):
+            collection.delete(ids=identifiers[start:start + 1000])
 
     def count(self) -> int:
         try:

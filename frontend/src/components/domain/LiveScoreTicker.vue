@@ -24,9 +24,19 @@
             v-for="match in matches"
             :key="match.id"
             class="live-ticker__item"
-            :class="[`is-${match.status.toLowerCase()}`]"
+            :class="[
+              `is-${match.status.toLowerCase()}`,
+              { 'is-clickable': Boolean(match.nbaGameId) }
+            ]"
+            :role="groupIndex === 0 && match.nbaGameId ? 'button' : undefined"
+            :tabindex="groupIndex === 0 && match.nbaGameId ? 0 : undefined"
+            :title="getMatchTooltip(match)"
+            :aria-label="groupIndex === 0 ? getMatchAriaLabel(match) : undefined"
+            @click="goToMatch(match)"
+            @keydown.enter="goToMatch(match)"
+            @keydown.space.prevent="goToMatch(match)"
           >
-            <span v-if="match.status === 'LIVE'" class="live-ticker__live-dot" aria-hidden="true" aria-label="直播中" />
+            <span v-if="match.status === 'LIVE'" class="live-ticker__live-dot" aria-hidden="true" />
             <span v-else-if="match.status === 'FINISHED'" class="live-ticker__final-mark" aria-hidden="true">FINAL</span>
             <span v-if="match.status !== 'LIVE' && match.matchDate" class="live-ticker__date">{{ dateLabel(match.matchDate) }}</span>
 
@@ -35,20 +45,27 @@
               <img v-if="getTeamLogo(match.homeTeam)" :src="getTeamLogo(match.homeTeam)" :alt="match.homeTeam" class="live-ticker__logo" />
               <span class="live-ticker__team-name">{{ match.homeTeam }}</span>
               <span
-                v-if="match.status !== 'SCHEDULED'"
+                v-if="hasScore(match)"
                 class="live-ticker__score"
-                :class="{ 'is-winner': match.homeScore > match.awayScore, 'is-loser': match.homeScore < match.awayScore }"
+                :class="{ 'is-winner': isWinner(match, 'home'), 'is-loser': isLoser(match, 'home') }"
               >{{ match.homeScore }}</span>
             </span>
 
-            <span class="live-ticker__vs">{{ getVsText(match) }}</span>
+            <span
+              class="live-ticker__vs"
+              :class="{
+                'live-ticker__vs--score': hasScore(match),
+                'live-ticker__vs--live': match.status === 'LIVE' && !hasScore(match),
+                'live-ticker__vs--scheduled': match.status === 'SCHEDULED'
+              }"
+            >{{ getVsText(match) }}</span>
 
             <!-- 客队 -->
             <span class="live-ticker__team">
               <span
-                v-if="match.status !== 'SCHEDULED'"
+                v-if="hasScore(match)"
                 class="live-ticker__score"
-                :class="{ 'is-winner': match.awayScore > match.homeScore, 'is-loser': match.awayScore < match.homeScore }"
+                :class="{ 'is-winner': isWinner(match, 'away'), 'is-loser': isLoser(match, 'away') }"
               >{{ match.awayScore }}</span>
               <span class="live-ticker__team-name">{{ match.awayTeam }}</span>
               <img v-if="getTeamLogo(match.awayTeam)" :src="getTeamLogo(match.awayTeam)" :alt="match.awayTeam" class="live-ticker__logo" />
@@ -62,9 +79,10 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { MatchRecord } from '@/api/types'
 import { getTeamLogo } from '@/utils/teamLogos'
-import { classifyMatches, liveMatches } from '@/utils/matchFeed'
+import { liveMatches, tickerLabel, hasScore } from '@/utils/matchFeed'
 
 interface Props {
   /** 比赛记录列表（已按展示优先级排序） */
@@ -74,10 +92,7 @@ interface Props {
 const props = defineProps<Props>()
 
 /** 标签文案：直播中 / 今日赛程 / 最近赛果 */
-const label = computed(() => {
-  const groups = classifyMatches(props.matches)
-  return groups[0]?.label ?? '赛事'
-})
+const label = computed(() => tickerLabel(props.matches))
 
 /** 只有真正存在直播时才启用橙色脉冲 */
 const hasLive = computed(() => liveMatches(props.matches).length > 0)
@@ -92,6 +107,43 @@ const duration = ref('30s')
 const groups = computed(() => (shouldScroll.value ? [0, 1] : [0]))
 
 let resizeObserver: ResizeObserver | null = null
+
+let router: ReturnType<typeof useRouter> | null = null
+try {
+  router = useRouter()
+} catch {
+  // router not present in test environment
+}
+
+function goToMatch(match: MatchRecord) {
+  if (match.nbaGameId && router) {
+    const query: Record<string, string> = {
+      gameId: match.nbaGameId,
+      status: match.status,
+      homeTeam: match.homeTeam,
+      awayTeam: match.awayTeam,
+    }
+    if (hasScore(match) && match.homeScore !== undefined && match.homeScore !== null && match.awayScore !== undefined && match.awayScore !== null) {
+      query.homeScore = String(match.homeScore)
+      query.awayScore = String(match.awayScore)
+    }
+    router.push({ path: '/match-detail', query })
+  }
+}
+
+function isWinner(match: MatchRecord, side: 'home' | 'away'): boolean {
+  if (!hasScore(match)) return false
+  const home = match.homeScore as number
+  const away = match.awayScore as number
+  return side === 'home' ? home > away : away > home
+}
+
+function isLoser(match: MatchRecord, side: 'home' | 'away'): boolean {
+  if (!hasScore(match)) return false
+  const home = match.homeScore as number
+  const away = match.awayScore as number
+  return side === 'home' ? home < away : away < home
+}
 
 /** 按 70px/s 匀速估算时长，限制在 16~60s，避免过快或过慢 */
 function calcDuration(groupWidth: number): string {
@@ -146,20 +198,39 @@ watch(() => props.matches, async () => {
 })
 
 /**
- * 获取对阵中间的文本。
- * 未开赛显示 'vs'；已结束显示 'FINAL'；直播显示 'LIVE'。
- * 不编造节次/剩余时间——接口未提供这些字段。
+ * 获取对阵连接符。
+ * 有比分时作为比分间隔符（'-'）；无有效比分或未开赛时作为对阵标识（'vs'）。
+ * 比赛状态（FINAL / LIVE）在卡片左侧已有专属徽章/脉冲点展示，不在此重复混入队名之间。
  */
 function getVsText(match: MatchRecord): string {
-  if (match.status === 'LIVE') return 'LIVE'
-  if (match.status === 'FINISHED') return 'FINAL'
-  return 'vs'
+  return hasScore(match) ? '-' : 'vs'
 }
 
-function dateLabel(value: string): string {
+function dateLabel(value?: string | null): string {
+  if (!value) return ''
+  const m = value.match(/^\d{4}-(\d{2})-(\d{2})/)
+  if (m) {
+    return `${m[1]}/${m[2]}`
+  }
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value.slice(0, 10)
   return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+}
+
+function getMatchTooltip(match: MatchRecord): string {
+  const scoreOrVs = hasScore(match) ? `${match.homeScore} - ${match.awayScore}` : 'vs'
+  const matchup = `${match.homeTeam} ${scoreOrVs} ${match.awayTeam}`
+  return match.nbaGameId ? `查看比赛详情：${matchup}` : matchup
+}
+
+function getMatchAriaLabel(match: MatchRecord): string {
+  const statusStr = match.status === 'LIVE' ? '直播中' : match.status === 'FINISHED' ? '已结束' : '未开赛'
+  const dateStr = match.status !== 'LIVE' && match.matchDate ? `${dateLabel(match.matchDate)} ` : ''
+  const matchup = hasScore(match)
+    ? `${match.homeTeam} ${match.homeScore} 比 ${match.awayScore} ${match.awayTeam}`
+    : `${match.homeTeam} 对阵 ${match.awayTeam}`
+  const action = match.nbaGameId ? '，回车可查看比赛详情' : ''
+  return `${statusStr}，${dateStr}${matchup}${action}`
 }
 </script>
 
@@ -336,15 +407,35 @@ function dateLabel(value: string): string {
   font-variant-numeric: tabular-nums;
 }
 .live-ticker__score.is-winner { color: var(--text-primary); }
+.live-ticker__score.is-loser { color: var(--text-tertiary); opacity: 0.75; }
 
 .live-ticker__vs {
   font-size: 10px;
   font-weight: 700;
   color: var(--text-muted);
   letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+.live-ticker__vs--score {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  margin: 0 -1px;
 }
 .live-ticker__vs--live { color: var(--live); }
 .live-ticker__vs--scheduled { color: var(--text-tertiary); }
+
+.live-ticker__item.is-clickable {
+  cursor: pointer;
+  transition: background 0.18s var(--ease-smooth), border-color 0.18s var(--ease-smooth), transform 0.18s var(--ease-out-quart), box-shadow 0.18s var(--ease-smooth);
+}
+.live-ticker__item.is-clickable:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  border-color: rgba(34, 211, 238, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), 0 0 10px rgba(34, 211, 238, 0.12);
+}
 
 /* LIVE 橙色脉冲圆点：仅真实直播使用 */
 .live-ticker__live-dot {

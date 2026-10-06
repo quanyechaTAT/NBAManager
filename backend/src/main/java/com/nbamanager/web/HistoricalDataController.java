@@ -52,7 +52,7 @@ public class HistoricalDataController {
     @GetMapping("/rankings")
     public ResponseEntity<Map<String, List<Map<String, Object>>>> getRankings(
             @RequestParam String season) {
-        List<TeamSeasonStats> teams = teamStatsRepo.findBySeasonOrderByWinsDesc(season);
+        List<TeamSeasonStats> teams = teamStatsRepo.findBySeasonOrderByWinsDesc(season).stream().filter(team -> team.getWins() != null && team.getLosses() != null).toList();
 
         Map<String, List<Map<String, Object>>> result = new java.util.LinkedHashMap<>();
         Map<String, List<TeamSeasonStats>> grouped = teams.stream()
@@ -74,12 +74,20 @@ public class HistoricalDataController {
                 row.put("losses", t.getLosses());
                 row.put("gamesBehind", Math.round(gb * 10.0) / 10.0);
                 row.put("conference", conf);
-                row.put("winPct", t.getWinPct() != null ? t.getWinPct().doubleValue() : 0);
+                row.put("winPct", t.getWinPct());
+                row.put("dataMeta", t.getDataMeta());
                 // 历史赛季可能没有得分数据，返回 null 而非 0
                 double ppg = t.getPointsPerGame() != null ? t.getPointsPerGame().doubleValue() : 0;
                 double oppg = t.getOpponentsPointsPerGame() != null ? t.getOpponentsPointsPerGame().doubleValue() : 0;
-                row.put("pointsPerGame", ppg > 0 ? ppg : null);
-                row.put("oppPointsPerGame", oppg > 0 ? oppg : null);
+                Double netRating = (t.getPointsPerGame() != null && t.getOpponentsPointsPerGame() != null)
+                        ? Math.round((ppg - oppg) * 10.0) / 10.0 : null;
+                row.put("pointsPerGame", t.getPointsPerGame());
+                row.put("oppPointsPerGame", t.getOpponentsPointsPerGame());
+                row.put("netRating", netRating);
+                row.put("pointDifferential", netRating);
+                row.put("homeRecord", t.getHomeRecord());
+                row.put("awayRecord", t.getAwayRecord());
+                row.put("streak", t.getStreak());
                 ranks.add(row);
             }
             result.put(conf, ranks);
@@ -94,7 +102,7 @@ public class HistoricalDataController {
     @GetMapping("/division-rankings")
     public ResponseEntity<Map<String, List<Map<String, Object>>>> getDivisionRankings(
             @RequestParam String season) {
-        List<TeamSeasonStats> teams = teamStatsRepo.findBySeasonOrderByWinsDesc(season);
+        List<TeamSeasonStats> teams = teamStatsRepo.findBySeasonOrderByWinsDesc(season).stream().filter(team -> team.getWins() != null && team.getLosses() != null).toList();
 
         Map<String, List<Map<String, Object>>> result = new java.util.LinkedHashMap<>();
         Map<String, List<TeamSeasonStats>> grouped = teams.stream()
@@ -118,12 +126,20 @@ public class HistoricalDataController {
                 row.put("losses", t.getLosses());
                 row.put("gamesBehind", Math.round(gb * 10.0) / 10.0);
                 row.put("conference", normalizeConference(t.getConference()));
-                row.put("winPct", t.getWinPct() != null ? t.getWinPct().doubleValue() : 0);
+                row.put("winPct", t.getWinPct());
+                row.put("dataMeta", t.getDataMeta());
                 // 历史赛季可能没有得分数据，返回 null 而非 0
                 double ppg = t.getPointsPerGame() != null ? t.getPointsPerGame().doubleValue() : 0;
                 double oppg = t.getOpponentsPointsPerGame() != null ? t.getOpponentsPointsPerGame().doubleValue() : 0;
-                row.put("pointsPerGame", ppg > 0 ? ppg : null);
-                row.put("oppPointsPerGame", oppg > 0 ? oppg : null);
+                Double netRating = (t.getPointsPerGame() != null && t.getOpponentsPointsPerGame() != null)
+                        ? Math.round((ppg - oppg) * 10.0) / 10.0 : null;
+                row.put("pointsPerGame", t.getPointsPerGame());
+                row.put("oppPointsPerGame", t.getOpponentsPointsPerGame());
+                row.put("netRating", netRating);
+                row.put("pointDifferential", netRating);
+                row.put("homeRecord", t.getHomeRecord());
+                row.put("awayRecord", t.getAwayRecord());
+                row.put("streak", t.getStreak());
                 ranks.add(row);
             }
             result.put(div, ranks);
@@ -200,11 +216,19 @@ public class HistoricalDataController {
      */
     @GetMapping("/leaders")
     public ResponseEntity<Map<String, List<PlayerSeasonStats>>> getLeaders(
-            @RequestParam String season) {
+            @RequestParam String season, @RequestParam(required = false) String teamName) {
 
         Map<String, List<PlayerSeasonStats>> leaders = new HashMap<>();
         PageRequest top10 = PageRequest.of(0, 10);
 
+        if (teamName != null && !teamName.isBlank()) {
+            Map<String,String> fields = Map.of("scoring","pointsPerGame", "rebounds","reboundsPerGame", "assists","assistsPerGame", "steals","stealsPerGame", "blocks","blocksPerGame");
+            for (var entry : fields.entrySet()) {
+                org.springframework.data.jpa.domain.Specification<PlayerSeasonStats> spec = (root, query, cb) -> cb.and(cb.equal(root.get("season"), season), cb.equal(root.get("teamName"), teamName), com.nbamanager.service.DataPublication.available(root, cb, "gamesPlayed"), cb.ge(root.get("gamesPlayed"),10), com.nbamanager.service.DataPublication.available(root, cb, entry.getValue()));
+                leaders.put(entry.getKey(), playerStatsRepo.findAll(spec, PageRequest.of(0,10, org.springframework.data.domain.Sort.by(entry.getValue()).descending())).getContent());
+            }
+            return ResponseEntity.ok(leaders);
+        }
         leaders.put("scoring", playerStatsRepo.findTopScorers(season, top10));
         leaders.put("rebounds", playerStatsRepo.findTopRebounders(season, top10));
         leaders.put("assists", playerStatsRepo.findTopAssisters(season, top10));

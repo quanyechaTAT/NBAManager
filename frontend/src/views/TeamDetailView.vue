@@ -111,11 +111,12 @@
           <el-table-column label="比分" width="130" align="center">
             <template #default="{ row }">
               <span v-if="row.status === 'SCHEDULED'" class="match-pending">未开赛</span>
-              <div v-else class="score-block">
+              <div v-else-if="row.homeScore != null && row.awayScore != null" class="score-block">
                 <span class="match-score" :class="{ 'score-win': row.homeScore > row.awayScore }">{{ row.homeScore }}</span>
                 <span class="match-sep">:</span>
                 <span class="match-score" :class="{ 'score-win': row.awayScore > row.homeScore }">{{ row.awayScore }}</span>
               </div>
+              <span v-else class="match-pending">未录入</span>
             </template>
           </el-table-column>
           <el-table-column label="客队" min-width="120">
@@ -146,7 +147,7 @@
           <span class="section-sub">与各队的交手记录汇总</span>
         </div>
       </div>
-      <div class="h2h-grid">
+      <div v-if="headToHeadStats.length" class="h2h-grid">
         <div v-for="stat in headToHeadStats" :key="stat.opponent" class="h2h-card">
           <div class="h2h-header">
             <span class="h2h-opponent">{{ stat.opponent }}</span>
@@ -161,6 +162,7 @@
           </div>
         </div>
       </div>
+      <div v-else class="h2h-empty">暂无已完赛的交锋统计数据</div>
     </div>
   </div>
 </template>
@@ -169,7 +171,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { fetchTeams } from '@/api/team'
+import { fetchTeams, fetchTeam } from '@/api/team'
 import { fetchMatchRecords } from '@/api/matchRecord'
 import { fetchPlayers } from '@/api/player'
 import type { Team, MatchRecord, Player } from '@/api/types'
@@ -200,7 +202,9 @@ function goBack() {
   }
 }
 
-const teamName = computed(() => (route.query.name as string) || '')
+const queryName = computed(() => (route.query.name as string) || '')
+const queryId = computed(() => route.query.id ? Number(route.query.id) : null)
+const teamName = computed(() => teamInfo.value?.name || queryName.value || '')
 const teamInfo = ref<Team | null>(null)
 const teamLoading = ref(false)
 const allMatchRecords = ref<MatchRecord[]>([])
@@ -230,12 +234,22 @@ async function loadRoster(teamId: number) {
 }
 
 async function loadTeamInfo() {
-  if (!teamName.value) return
+  if (!queryName.value && !queryId.value) return
   teamLoading.value = true
   try {
-    const { data } = await fetchTeams({ q: teamName.value, page: 0, size: 1 })
-    teamInfo.value = data.content.find((t) => t.name === teamName.value) || null
-    if (teamInfo.value) void loadRoster(teamInfo.value.id)
+    if (queryName.value) {
+      const { data } = await fetchTeams({ q: queryName.value, page: 0, size: 1 })
+      teamInfo.value = data.content.find((t) => t.name === queryName.value) || null
+    } else if (queryId.value) {
+      const { data } = await fetchTeam(queryId.value)
+      teamInfo.value = data || null
+    }
+    if (teamInfo.value) {
+      void loadRoster(teamInfo.value.id)
+      if (!queryName.value) {
+        void loadMatchRecords()
+      }
+    }
   } catch {
     ElMessage.error('加载球队信息失败')
   } finally {
@@ -270,6 +284,7 @@ function winPct(w: number, l: number) {
 
 function getResultType(row: MatchRecord) {
   if (row.status !== 'FINISHED') return 'info'
+  if (row.homeScore == null || row.awayScore == null) return 'info'
   if (row.homeScore === row.awayScore) return 'info'
   if (row.homeTeam === teamName.value) {
     return row.homeScore > row.awayScore ? 'success' : 'danger'
@@ -280,6 +295,7 @@ function getResultType(row: MatchRecord) {
 function getResultLabel(row: MatchRecord) {
   if (row.status === 'SCHEDULED') return '未开赛'
   if (row.status === 'LIVE') return '进行中'
+  if (row.homeScore == null || row.awayScore == null) return '—'
   if (row.homeScore === row.awayScore) return '平'
   const isHome = row.homeTeam === teamName.value
   const won = isHome ? row.homeScore > row.awayScore : row.awayScore > row.homeScore
@@ -321,7 +337,10 @@ function goToMatchDetail(row: MatchRecord) {
 const headToHeadStats = computed(() => {
   const map = new Map<string, { wins: number; losses: number; totalScore: number; games: number }>()
   for (const m of allMatchRecords.value.filter(record => record.status === 'FINISHED')) {
+    if (m.homeScore == null || m.awayScore == null) continue
     const isHome = m.homeTeam === teamName.value
+    const isAway = m.awayTeam === teamName.value
+    if (!isHome && !isAway) continue
     const opponent = isHome ? m.awayTeam : m.homeTeam
     const myScore = isHome ? m.homeScore : m.awayScore
     const theirScore = isHome ? m.awayScore : m.homeScore
@@ -331,7 +350,7 @@ const headToHeadStats = computed(() => {
     }
     const s = map.get(opponent)!
     if (won) s.wins++
-    else s.losses++
+    else if (theirScore > myScore) s.losses++
     s.totalScore += myScore
     s.games++
   }
@@ -343,7 +362,7 @@ const headToHeadStats = computed(() => {
       winPct: s.games > 0 ? (s.wins / s.games) * 100 : 0,
       avgScore: s.games > 0 ? s.totalScore / s.games : 0,
     }))
-    .sort((a, b) => b.wins - a.wins)
+    .sort((a, b) => b.wins - a.wins || b.winPct - a.winPct)
 })
 
 async function toggleFollow() {
@@ -737,6 +756,15 @@ onMounted(() => {
   justify-content: space-between;
   font-size: 11px;
   color: var(--text-muted);
+}
+.h2h-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--bg-card);
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius-lg, 12px);
 }
 
 /* 移动端 */

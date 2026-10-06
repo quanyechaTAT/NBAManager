@@ -29,6 +29,30 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class SyncOverviewServiceTest {
 
+    @Test
+    void completedFullSyncStillSuppliesTheModuleSuccessfulTime() {
+        when(seasonManagementService.getCurrentSeason()).thenReturn("2025-26");
+        SyncJob full = new SyncJob();
+        full.setId(90L);
+        full.setModule("FULL_SYNC");
+        full.setStatus("SUCCESS");
+        full.setCreatedAt(LocalDateTime.of(2026, 10, 5, 12, 0));
+        SyncJobStep step = new SyncJobStep();
+        step.setId(901L);
+        step.setJobId(90L);
+        step.setModule("TEAMS");
+        step.setStatus("SUCCESS");
+        step.setFinishedAt(LocalDateTime.of(2026, 10, 5, 12, 5));
+        when(syncJobRepository.findLatestPerModule()).thenReturn(java.util.List.of(full));
+        when(syncJobStepRepository.findByJobIdOrderByStepOrder(90L))
+                .thenReturn(java.util.List.of(step));
+        SyncModuleOverview teams = service.getOverview().modules().stream()
+                .filter(module -> module.key().equals("TEAMS")).findFirst().orElseThrow();
+        assertThat(teams.lastSuccessfulAt()).isEqualTo(step.getFinishedAt());
+        assertThat(teams.latestFullStep().status()).isEqualTo("SUCCESS");
+        assertThat(service.getOverview().latestFullJob().jobId()).isEqualTo(90L);
+    }
+
     @Mock private TeamRepository teamRepository;
     @Mock private PlayerRepository playerRepository;
     @Mock private MatchRecordRepository matchRecordRepository;
@@ -87,7 +111,8 @@ class SyncOverviewServiceTest {
         teamsStep.setStepOrder(0);
         teamsStep.setStatus("RUNNING");
         teamsStep.setProgress(30);
-        when(syncJobRepository.findActiveByModule("FULL_SYNC")).thenReturn(java.util.Optional.of(fullSync));
+        when(syncJobRepository.findByStatusIn(java.util.List.of("QUEUED", "RUNNING", "CANCELLING")))
+                .thenReturn(java.util.List.of(fullSync));
         when(syncJobStepRepository.findByJobIdOrderByStepOrder(90L)).thenReturn(java.util.List.of(teamsStep));
 
         SyncModuleOverview teams = service.getOverview().modules().stream()
@@ -97,5 +122,36 @@ class SyncOverviewServiceTest {
         assertThat(teams.activeFullStep()).isNotNull();
         assertThat(teams.activeFullStep().module()).isEqualTo("TEAMS");
         assertThat(teams.activeFullStep().progress()).isEqualTo(30);
+        assertThat(service.getOverview().activeFullJob().jobId()).isEqualTo(90L);
+    }
+
+    @Test
+    void newerSingleJobSupersedesFinishedFullStepButDoesNotEraseItsSuccessTime() {
+        SyncJob full = new SyncJob(); full.setId(90L); full.setModule("FULL_SYNC"); full.setStatus("SUCCESS");
+        full.setCreatedAt(LocalDateTime.of(2026, 10, 5, 12, 0));
+        SyncJob single = new SyncJob(); single.setId(91L); single.setModule("TEAMS"); single.setStatus("FAILED");
+        single.setCreatedAt(full.getCreatedAt().plusHours(1));
+        SyncJobStep step = new SyncJobStep(); step.setId(901L); step.setJobId(90L); step.setModule("TEAMS");
+        step.setStatus("SUCCESS"); step.setStartedAt(full.getCreatedAt()); step.setFinishedAt(full.getCreatedAt().plusMinutes(1));
+        when(syncJobRepository.findLatestPerModule()).thenReturn(java.util.List.of(full, single));
+        when(syncJobStepRepository.findByJobIdOrderByStepOrder(90L)).thenReturn(java.util.List.of(step));
+        var teams = service.getOverview().modules().get(0);
+        assertThat(teams.latestJob().status()).isEqualTo("FAILED");
+        assertThat(teams.latestFullStep()).isNull();
+        assertThat(teams.lastSuccessfulAt()).isEqualTo(step.getFinishedAt());
+    }
+
+    @Test
+    void interruptedFullParentCannotLeaveQueuedStepsLookingActive() {
+        SyncJob full = new SyncJob(); full.setId(90L); full.setModule("FULL_SYNC"); full.setStatus("INTERRUPTED");
+        full.setCreatedAt(LocalDateTime.of(2026, 10, 5, 12, 0)); full.setFinishedAt(full.getCreatedAt().plusMinutes(5));
+        SyncJobStep step = new SyncJobStep(); step.setId(901L); step.setJobId(90L); step.setModule("TEAMS"); step.setStatus("QUEUED");
+        when(syncJobRepository.findLatestPerModule()).thenReturn(java.util.List.of(full));
+        when(syncJobStepRepository.findByJobIdOrderByStepOrder(90L)).thenReturn(java.util.List.of(step));
+        var result = service.getOverview();
+        assertThat(result.activeFullJob()).isNull();
+        assertThat(result.modules().get(0).latestFullStep().status()).isEqualTo("INTERRUPTED");
+        assertThat(result.latestFullJob().steps().get(0).finishedAt()).isEqualTo(full.getFinishedAt());
+        assertThat(step.getStatus()).isEqualTo("QUEUED");
     }
 }

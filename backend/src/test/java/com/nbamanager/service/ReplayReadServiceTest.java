@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 import com.nbamanager.domain.AiGameSummary;
 import com.nbamanager.domain.GameHighlight;
@@ -18,6 +19,9 @@ import com.nbamanager.domain.GameMomentumSnapshot;
 import com.nbamanager.domain.GameTurningPoint;
 import com.nbamanager.domain.MatchRecord;
 import com.nbamanager.domain.PlayByPlay;
+import com.nbamanager.domain.Player;
+import com.nbamanager.repository.PlayerRepository;
+import com.nbamanager.service.deepseek.DeepSeekClient;
 import com.nbamanager.domain.replay.ReplayPageState;
 import com.nbamanager.domain.replay.ReplayQualityLevel;
 import com.nbamanager.domain.replay.ReplaySyncState;
@@ -56,11 +60,20 @@ class ReplayReadServiceTest {
 
     private ReplayFactsHashService factsHashService;
     private ReplayReadService service;
+    private DeepSeekClient translationClient;
 
     @BeforeEach
     void setUp() {
         factsHashService = new ReplayFactsHashService();
         ReplayQualityService qualityService = new ReplayQualityService(factsHashService);
+        translationClient = mock(DeepSeekClient.class);
+        PlayerRepository players = mock(PlayerRepository.class);
+        Player anunoby = new Player();
+        anunoby.setNameEn("OG Anunoby");
+        anunoby.setName("OG·阿奴诺比");
+        when(players.findAll()).thenReturn(List.of(anunoby));
+        PlayByPlayTranslationService translator = new PlayByPlayTranslationService(translationClient, players);
+        translator.init();
         service = new ReplayReadService(
                 matchRepository,
                 playByPlayRepository,
@@ -69,7 +82,29 @@ class ReplayReadServiceTest {
                 turningPointRepository,
                 summaryRepository,
                 syncStateRepository,
-                qualityService);
+                qualityService,
+                translator);
+    }
+
+    @Test
+    void legacyEnglishEventsAreLocalizedWithoutChangingStoredFacts() {
+        MatchRecord match = match("FINISHED", 100, 92);
+        List<PlayByPlay> events = periodScores();
+        PlayByPlay event = events.get(0);
+        String original = "Anunoby REBOUND (Off:0 Def:1)";
+        event.setDescription(original);
+        event.setPlayerName("Anunoby");
+        when(matchRepository.findByNbaGameId(GAME_ID)).thenReturn(Optional.of(match));
+        when(playByPlayRepository.findByGameIdOrderByEventOrderAsc(GAME_ID)).thenReturn(events);
+        when(syncStateRepository.findByGameId(GAME_ID)).thenReturn(Optional.empty());
+
+        ReplayBootstrapDto result = service.bootstrap(GAME_ID);
+
+        assertThat(result.timeline().get(0).descriptionCn()).contains("篮板", "进攻", "防守");
+        assertThat(result.timeline().get(0).descriptionEn()).isEqualTo(original);
+        assertThat(result.timeline().get(0).playerName()).matches(".*[\\p{IsHan}].*");
+        assertThat(event.getDescription()).isEqualTo(original);
+        verifyNoInteractions(translationClient);
     }
 
     @Test

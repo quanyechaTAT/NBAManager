@@ -3,6 +3,7 @@ package com.nbamanager.service;
 import com.nbamanager.config.PythonTimeoutProperties;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 import com.nbamanager.domain.MatchRecord;
 import com.nbamanager.domain.Player;
@@ -52,6 +53,24 @@ class PlayerDetailServiceTest {
     private PythonTimeoutProperties pythonTimeoutProperties;
 
     @Test
+    void aggregateMetadataDistinguishesObservedZeroFromMissingAverage() {
+        var aggregate = mock(PlayerSeasonStatsRepository.LeagueStatAggregate.class);
+        when(playerSeasonStatsRepository.findLeagueAggregate("2025-26")).thenReturn(aggregate);
+        when(aggregate.getPlayerCount()).thenReturn(12L);
+        when(aggregate.getAvgPoints()).thenReturn(java.math.BigDecimal.ZERO);
+        var service = new PlayerDetailService(playerRepository, playerGameLogRepository, playerCareerStatsRepository,
+                teamRepository, matchRecordRepository, playerSeasonStatsRepository, pythonScriptRunner, pythonTimeoutProperties);
+        var result = service.getLeagueAverages("2025-26");
+        assertThat(result.avgPoints()).isZero();
+        assertThat(result.avgRebounds()).isNull();
+        assertThat(result.dataMeta().season()).isEqualTo("2025-26");
+        assertThat(result.dataMeta().sampleSize()).isEqualTo(12);
+        assertThat(result.dataMeta().publishes("avgPoints")).isTrue();
+        assertThat(result.dataMeta().publishes("avgRebounds")).isFalse();
+        assertThat(result.dataMeta().fieldStates()).containsEntry("avgRebounds", "MISSING");
+    }
+
+    @Test
     void getGameLogMergesScoresFromMatchingGameRecord() {
         Team team = new Team();
         team.setName("Lakers");
@@ -89,10 +108,10 @@ class PlayerDetailServiceTest {
         match.setMatchDate(LocalDate.of(2026, 1, 2));
         match.setSeason("2025-26");
         match.setStatus("FINISHED");
+        match.markData("NBA_API", "2025-26", "REGULAR_SEASON", "homeScore", "awayScore", "status");
 
         PageRequest pageable = PageRequest.of(0, 10);
         when(playerRepository.findById(7L)).thenReturn(Optional.of(player));
-        when(matchRecordRepository.findByTeamName("Lakers")).thenReturn(List.of());
         when(playerGameLogRepository.findByPlayerIdOrderByMatchDateDesc(7L, pageable))
                 .thenReturn(new PageImpl<>(List.of(log), pageable, 1));
         when(matchRecordRepository.findByNbaGameIdIn(List.of("0022500001"))).thenReturn(List.of(match));

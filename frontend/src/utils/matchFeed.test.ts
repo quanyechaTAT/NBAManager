@@ -132,4 +132,14 @@ describe('hasScore', () => {
     expect(hasScore({ status: 'SCHEDULED', homeScore: 0, awayScore: 0 })).toBe(false)
     expect(hasScore({ status: 'FINISHED', homeScore: null as unknown as number, awayScore: 1 })).toBe(false)
   })
+
+  it('rejects null, undefined, NaN, and negative scores', () => {
+    expect(hasScore(null)).toBe(false)
+    expect(hasScore(undefined)).toBe(false)
+    expect(hasScore({ status: 'FINISHED', homeScore: NaN, awayScore: 100 })).toBe(false)
+    expect(hasScore({ status: 'FINISHED', homeScore: 100, awayScore: NaN })).toBe(false)
+    expect(hasScore({ status: 'FINISHED', homeScore: -1, awayScore: 100 })).toBe(false)
+    expect(hasScore({ status: 'FINISHED', homeScore: 105, awayScore: 129 })).toBe(true)
+    expect(hasScore({ status: 'LIVE', homeScore: 88, awayScore: 92 })).toBe(true)
+  })
 })

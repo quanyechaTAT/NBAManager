@@ -25,7 +25,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-public class Player {
+public class Player extends DataTracked {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -49,80 +49,105 @@ public class Player {
     @JoinColumn(name = "team_id", nullable = false)
     private Team team;
 
-    @Column(nullable = false, length = 16)
+    @Column(length = 16)
     private String position;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double pointsPerGame;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double reboundsPerGame;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double assistsPerGame;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double stealsPerGame;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Integer gamesPlayed;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double minutesPerGame;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double fieldGoalPct;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double threePointPct;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double freeThrowPct;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double blocksPerGame;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double turnoversPerGame;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double efficiency;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double trueShootingPct;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double usagePct;
 
-    @Column(nullable = false, length = 8)
+    @Column(length = 8)
     private String jerseyNumber;
 
-    @Column(nullable = false, length = 32)
+    @Column(length = 32)
     private String height;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Integer weight;
 
-    @Column(nullable = false, length = 64)
+    @Column(length = 64)
     private String country;
 
-    @Column(nullable = false)
-    private Double per = 0.0;
+    @Column(nullable = true)
+    private Double per;
 
-    @Column(nullable = false)
-    private Double winShares = 0.0;
+    @Column(nullable = true)
+    private Double winShares;
 
-    @Column(nullable = false)
-    private Double vorp = 0.0;
+    @Column(nullable = true)
+    private Double vorp;
 
-    @Column(nullable = false)
-    private Double bpm = 0.0;
+    @Column(nullable = true)
+    private Double bpm;
 
-    @Column(nullable = false)
-    private Double offensiveRating = 0.0;
+    @Column(nullable = true)
+    private Double offensiveRating;
 
-    @Column(nullable = false)
-    private Double defensiveRating = 0.0;
+    @Column(nullable = true)
+    private Double defensiveRating;
 
 
+    public String getPosition() { return publishedValue("position", position); }
+    public Double getPointsPerGame() { return publishedValue("pointsPerGame", pointsPerGame); }
+    public Double getReboundsPerGame() { return publishedValue("reboundsPerGame", reboundsPerGame); }
+    public Double getAssistsPerGame() { return publishedValue("assistsPerGame", assistsPerGame); }
+    public Double getStealsPerGame() { return publishedValue("stealsPerGame", stealsPerGame); }
+    public Integer getGamesPlayed() { return publishedValue("gamesPlayed", gamesPlayed); }
+    public Double getMinutesPerGame() { return publishedValue("minutesPerGame", minutesPerGame); }
+    public Double getFieldGoalPct() { return publishedValue("fieldGoalPct", fieldGoalPct); }
+    public Double getThreePointPct() { return publishedValue("threePointPct", threePointPct); }
+    public Double getFreeThrowPct() { return publishedValue("freeThrowPct", freeThrowPct); }
+    public Double getBlocksPerGame() { return publishedValue("blocksPerGame", blocksPerGame); }
+    public Double getTurnoversPerGame() { return publishedValue("turnoversPerGame", turnoversPerGame); }
+    public Double getEfficiency() { return publishedValue("efficiency", efficiency); }
+    public Double getTrueShootingPct() { return publishedValue("trueShootingPct", trueShootingPct); }
+    public Double getUsagePct() { return publishedValue("usagePct", usagePct); }
+    public String getJerseyNumber() { return publishedValue("jerseyNumber", jerseyNumber); }
+    public String getHeight() { return publishedValue("height", height); }
+    public Integer getWeight() { return publishedValue("weight", weight); }
+    public String getCountry() { return publishedValue("country", country); }
+    public Double getPer() { return publishedValue("per", per); }
+    public Double getWinShares() { return publishedValue("winShares", winShares); }
+    public Double getVorp() { return publishedValue("vorp", vorp); }
+    public Double getBpm() { return publishedValue("bpm", bpm); }
+    public Double getOffensiveRating() { return publishedValue("offensiveRating", offensiveRating); }
+    public Double getDefensiveRating() { return publishedValue("defensiveRating", defensiveRating); }
 }

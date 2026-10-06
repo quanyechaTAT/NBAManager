@@ -495,25 +495,33 @@ public class SyncCoordinator {
     }
 
     private SyncResult executeModule(String module, Long jobId, int startProgress, int endProgress) {
+        return executeModule(module, jobId, startProgress, endProgress, null);
+    }
+
+    private SyncResult executeModule(String module, Long jobId, int startProgress, int endProgress,
+            java.util.function.BiConsumer<Integer, String> stepProgress) {
         if (jobStateService.isCancelRequested(jobId)) {
             return SyncResult.cancelled(module);
         }
-        return switch (module) {
-            case "TEAMS" -> teamSyncWorker.sync(jobId, startProgress, endProgress);
-            case "PLAYERS" -> playerSyncWorker.sync(jobId, startProgress, endProgress);
-            case "MATCHES" -> matchSyncWorker.sync(jobId, startProgress, endProgress);
-            case "TODAY_GAMES" -> todayGamesSyncWorker.sync(jobId, startProgress, endProgress);
-            case "NEWS" -> newsSyncWorker.sync(jobId, startProgress, endProgress);
-            case "DRAFT" -> draftSyncWorker.sync(jobId, startProgress, endProgress);
-            case "PLAYOFF" -> playoffSyncWorker.sync(jobId, startProgress, endProgress);
-            case "HISTORICAL" -> historicalSyncWorker.sync(jobId, startProgress, endProgress);
-            case "TRANSLATION" -> translationSyncWorker.sync(jobId, startProgress, endProgress);
-            default -> SyncResult.failed(module, "UNKNOWN_MODULE", "未知模块: " + module);
+        ModuleSyncWorker worker = switch (module) {
+            case "TEAMS" -> teamSyncWorker;
+            case "PLAYERS" -> playerSyncWorker;
+            case "MATCHES" -> matchSyncWorker;
+            case "TODAY_GAMES" -> todayGamesSyncWorker;
+            case "NEWS" -> newsSyncWorker;
+            case "DRAFT" -> draftSyncWorker;
+            case "PLAYOFF" -> playoffSyncWorker;
+            case "HISTORICAL" -> historicalSyncWorker;
+            case "TRANSLATION" -> translationSyncWorker;
+            default -> null;
         };
+        if (worker == null) return SyncResult.failed(module, "UNKNOWN_MODULE", "未知模块: " + module);
+        return stepProgress == null ? worker.sync(jobId, startProgress, endProgress)
+                : worker.sync(jobId, startProgress, endProgress, stepProgress);
     }
 
     private SyncResult executeFullSync(Long jobId) {
-        String[] modules = {"TEAMS", "PLAYERS", "MATCHES", "TODAY_GAMES", "NEWS", "DRAFT", "PLAYOFF", "HISTORICAL", "TRANSLATION"};
+        String[] modules = ALL_MODULES.toArray(String[]::new);
         int totalModules = modules.length;
         int successCount = 0;
         int failedCount = 0;
@@ -546,12 +554,16 @@ public class SyncCoordinator {
 
             int startProgress = 5 + (i * 90 / totalModules);
             int endProgress = 5 + ((i + 1) * 90 / totalModules);
-            SyncResult result = executeModule(modules[i], jobId, startProgress, endProgress);
+            SyncResult result = executeModule(modules[i], jobId, startProgress, endProgress,
+                    (progress, stage) -> stepStateService.updateProgress(step.getId(), progress, stage));
+
+            boolean cancelled = "CANCELLED".equals(result.status()) || jobStateService.isCancelRequested(jobId);
+            if (cancelled) result = SyncResult.cancelled(modules[i]);
 
             // 保存步骤结果
             stepStateService.complete(step.getId(), result);
 
-            if ("CANCELLED".equals(result.status()) || jobStateService.isCancelRequested(jobId)) {
+            if (cancelled) {
                 for (int j = i + 1; j < totalModules; j++) {
                     stepStateService.markCancelled(steps.get(j).getId());
                 }

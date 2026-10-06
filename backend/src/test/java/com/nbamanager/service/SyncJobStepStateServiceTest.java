@@ -44,6 +44,15 @@ class SyncJobStepStateServiceTest {
         assertThat(running.getErrorCode()).isEqualTo("PROVIDER_FAILED");
     }
 
+    @Test
+    void cancellingAnUnstartedStepDoesNotInventCompletedWork() {
+        SyncJobStep queued = step("QUEUED", 0);
+        when(repository.findByIdForUpdate(7L)).thenReturn(Optional.of(queued));
+        service.markCancelled(7L);
+        assertThat(queued.getStatus()).isEqualTo("CANCELLED");
+        assertThat(queued.getProgress()).isZero();
+    }
+
     private SyncJobStep step(String status, int progress) {
         SyncJobStep s = new SyncJobStep();
         s.setId(7L);

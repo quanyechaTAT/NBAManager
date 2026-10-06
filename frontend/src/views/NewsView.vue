@@ -63,7 +63,7 @@
         </article>
       </div>
       </template>
-      <p v-else class="today-inline">今日暂无赛事，赛程同步后在此展示今日对决</p>
+      <p v-else class="today-inline">今日暂无赛事，赛程同步后在此展示今日比赛</p>
     </section>
 
     <section class="news-layout">
@@ -889,9 +889,9 @@ onUnmounted(() => {
 }
 .news-hero-actions :deep(.el-button--primary:hover),
 .news-hero-actions :deep(.el-button--primary:focus) {
-  background: #d94f1d !important;
-  border-color: #d94f1d !important;
-  color: #fff !important;
+  background: var(--accent-hover) !important;
+  border-color: var(--accent-hover) !important;
+  color: var(--accent-contrast, #04202A) !important;
 }
 .search-wrap {
   width: 280px;

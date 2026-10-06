@@ -4,7 +4,7 @@
     <SportsHeader
       eyebrow="NBA PLAYOFFS · ROAD TO THE LARRY O'BRIEN TROPHY"
       title="NBA 季后赛对阵图"
-      :subtitle="`${currentSeason} 赛季东西部十六强巅峰争夺，决战奥布莱恩金杯与季后赛晋级树`"
+      :subtitle="`${currentSeason} 赛季东西部季后赛十六支球队对阵与晋级图`"
     >
       <template #actions>
         <button class="sync-btn" @click="syncData" :disabled="syncing">
@@ -46,6 +46,9 @@
             <div class="bracket-round round-first">
               <div class="round-series">
                 <div v-for="m in eastRounds[1]" :key="m.id" class="series-card">
+                  <span v-if="getSeriesBadge(m)" class="series-badge" :class="`series-badge--${getSeriesBadge(m)?.type}`">
+                    {{ getSeriesBadge(m)?.label }}
+                  </span>
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -71,6 +74,9 @@
             <div class="bracket-round round-semis">
               <div class="round-series">
                 <div v-for="m in eastRounds[2]" :key="m.id" class="series-card">
+                  <span v-if="getSeriesBadge(m)" class="series-badge" :class="`series-badge--${getSeriesBadge(m)?.type}`">
+                    {{ getSeriesBadge(m)?.label }}
+                  </span>
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -96,6 +102,9 @@
             <div class="bracket-round round-conf-final">
               <div class="round-series">
                 <div v-for="m in eastRounds[3]" :key="m.id" class="series-card">
+                  <span v-if="getSeriesBadge(m)" class="series-badge" :class="`series-badge--${getSeriesBadge(m)?.type}`">
+                    {{ getSeriesBadge(m)?.label }}
+                  </span>
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -119,6 +128,9 @@
         <!-- 总决赛横幅（中心轴） -->
         <div class="finals-banner">
           <div class="fb-inner">
+            <span v-if="finalsBadge" class="series-badge" :class="`series-badge--${finalsBadge.type}`">
+              {{ finalsBadge.label }}
+            </span>
             <div class="fb-side fb-left">
               <div class="fb-logo"><img v-if="getLogo(f.t1)" :src="getLogo(f.t1)" alt="" /><span v-else class="sc-fb">{{ f.t1?.charAt(0) }}</span></div>
               <span class="fb-name">{{ f.t1 }}</span>
@@ -146,6 +158,9 @@
               <span class="round-tag">分区决赛</span>
               <div class="round-series">
                 <div v-for="m in westRounds[3]" :key="m.id" class="series-card">
+                  <span v-if="getSeriesBadge(m)" class="series-badge" :class="`series-badge--${getSeriesBadge(m)?.type}`">
+                    {{ getSeriesBadge(m)?.label }}
+                  </span>
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -171,6 +186,9 @@
               <span class="round-tag">半决赛</span>
               <div class="round-series">
                 <div v-for="m in westRounds[2]" :key="m.id" class="series-card">
+                  <span v-if="getSeriesBadge(m)" class="series-badge" :class="`series-badge--${getSeriesBadge(m)?.type}`">
+                    {{ getSeriesBadge(m)?.label }}
+                  </span>
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -196,6 +214,9 @@
               <span class="round-tag">首轮</span>
               <div class="round-series">
                 <div v-for="m in westRounds[1]" :key="m.id" class="series-card">
+                  <span v-if="getSeriesBadge(m)" class="series-badge" :class="`series-badge--${getSeriesBadge(m)?.type}`">
+                    {{ getSeriesBadge(m)?.label }}
+                  </span>
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -226,6 +247,9 @@
               <span class="round-tag">{{ rLabel(r) }}</span>
               <div class="mob-series">
                 <div v-for="m in eastRounds[r]" :key="m.id" class="series-card">
+                  <span v-if="getSeriesBadge(m)" class="series-badge" :class="`series-badge--${getSeriesBadge(m)?.type}`">
+                    {{ getSeriesBadge(m)?.label }}
+                  </span>
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -246,6 +270,9 @@
         </div>
         <div class="finals-banner">
           <div class="fb-inner">
+            <span v-if="finalsBadge" class="series-badge" :class="`series-badge--${finalsBadge.type}`">
+              {{ finalsBadge.label }}
+            </span>
             <div class="fb-side fb-left">
               <div class="fb-logo"><img v-if="getLogo(f.t1)" :src="getLogo(f.t1)" alt="" /><span v-else class="sc-fb">{{ f.t1?.charAt(0) }}</span></div>
               <span class="fb-name">{{ f.t1 }}</span>
@@ -272,6 +299,9 @@
               <span class="round-tag">{{ rLabel(r) }}</span>
               <div class="mob-series">
                 <div v-for="m in westRounds[r]" :key="m.id" class="series-card">
+                  <span v-if="getSeriesBadge(m)" class="series-badge" :class="`series-badge--${getSeriesBadge(m)?.type}`">
+                    {{ getSeriesBadge(m)?.label }}
+                  </span>
                   <div class="sc-team" :class="{ win: m.winnerName === m.team1Name }">
                     <div class="sc-logo"><img v-if="getLogo(m.team1Name)" :src="getLogo(m.team1Name)" alt="" /><span v-else class="sc-fb">{{ m.team1Name?.charAt(0) }}</span></div>
                     <span class="sc-name">{{ m.team1Name }}</span>
@@ -348,6 +378,10 @@ const f = computed(() => {
     winner: raw.winnerName || raw.winner || ''
   }
 })
+const finalsBadge = computed(() => {
+  if (!f.value.t1 || f.value.t1 === '待定' || !f.value.t2 || f.value.t2 === '待定') return null
+  return getSeriesBadge({ team1Wins: f.value.w1, team2Wins: f.value.w2 })
+})
 function rLabel(r: number) { return r === 1 ? '首轮' : r === 2 ? '半决赛' : '分区决赛' }
 
 async function centerBracket() {
@@ -376,10 +410,36 @@ async function load() {
 }
 async function syncData() {
   syncing.value = true
-  try { await request.post('/nba/playoff/sync', null, { params: { season: currentSeason } }); ElMessage.success('同步成功'); await load() }
-  catch { ElMessage.error('同步失败') }
-  finally { syncing.value = false }
+  try {
+    await request.post('/nba/playoff/sync', null, { params: { season: currentSeason } })
+    ElMessage.success('同步成功')
+    await load()
+  } catch {
+    ElMessage.error('同步失败')
+  } finally {
+    syncing.value = false
+  }
 }
+
+function getSeriesBadge(m: any): { type: string; label: string } | null {
+  if (!m) return null
+  const w1 = Number(m.team1Wins) || 0
+  const w2 = Number(m.team2Wins) || 0
+  if (w1 === 4 || w2 === 4) {
+    if ((w1 === 4 && w2 === 0) || (w2 === 4 && w1 === 0)) {
+      return { type: 'sweep', label: '横扫 SWEEP' }
+    }
+    return null
+  }
+  if (w1 === 3 && w2 === 3) {
+    return { type: 'game7', label: '抢七 GAME 7' }
+  }
+  if (w1 === 3 || w2 === 3) {
+    return { type: 'match-point', label: '赛点 MATCH POINT' }
+  }
+  return null
+}
+
 onMounted(load)
 </script>
 
@@ -499,9 +559,54 @@ onMounted(load)
   width: 214px; height: 112px;
   background: var(--bg-card); border: 1px solid var(--border-light);
   border-radius: 14px; padding: 10px 14px;
-  transition: all 0.15s; flex-shrink: 0;
+  transition: all 0.2s var(--ease-out-quart, ease); flex-shrink: 0;
+  position: relative;
 }
-.series-card:hover { border-color: var(--border-medium); box-shadow: var(--shadow-sm); }
+.series-card:hover {
+  border-color: rgba(34, 211, 238, 0.4);
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.25), 0 0 12px -2px rgba(34, 211, 238, 0.15);
+  transform: translateY(-2px);
+}
+
+/* 赛点 / 抢七 / 横扫 徽章 */
+.series-badge {
+  position: absolute;
+  top: -8px;
+  right: 12px;
+  font-family: var(--font-heading);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  line-height: 1.4;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  z-index: 3;
+  text-transform: uppercase;
+}
+.series-badge--match-point {
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  color: #FFF;
+  border: 1px solid rgba(254, 240, 138, 0.6);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.45);
+}
+.series-badge--game7 {
+  background: linear-gradient(135deg, #EF4444, #B91C1C);
+  color: #FFF;
+  border: 1px solid rgba(254, 202, 202, 0.6);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.55);
+  animation: pulseGame7 2s infinite ease-in-out;
+}
+.series-badge--sweep {
+  background: linear-gradient(135deg, #06B6D4, #0891B2);
+  color: #FFF;
+  border: 1px solid rgba(165, 243, 252, 0.6);
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.4);
+}
+@keyframes pulseGame7 {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
+  50% { transform: scale(1.05); box-shadow: 0 0 16px rgba(239, 68, 68, 0.75); }
+}
 
 .sc-team { position: relative; display: flex; box-sizing: border-box; width: 100%; min-width: 0; align-items: center; justify-content: center; padding: 0 34px; text-align: center; }
 .series-card > .sc-team:first-child { grid-column: 1; grid-row: 1; }
@@ -531,11 +636,37 @@ onMounted(load)
 .fb-score { display: flex; align-items: center; gap: 5px; font-size: 24px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
 .fb-sep { font-size: 14px; color: rgba(255,255,255,0.4); }
 .fb-score .win { color: #fbbf24; }
-.fb-trophy { position: absolute; right: -6px; top: -6px; padding: 3px 8px; background: #fbbf24; border-radius: 10px; font-size: 10px; font-weight: 700; color: #0a2463; }
+.fb-trophy {
+  position: absolute;
+  right: -6px;
+  top: -8px;
+  padding: 4px 12px;
+  background: linear-gradient(135deg, #F59E0B 0%, #D97706 50%, #B45309 100%);
+  border: 1px solid rgba(254, 240, 138, 0.7);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #FFF;
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  letter-spacing: 0.3px;
+  z-index: 3;
+}
 
 .bracket-desktop .finals-banner { position: relative; width: 280px; margin: 0 auto; }
-.bracket-desktop .finals-banner::before,
 .bracket-desktop .finals-banner::after {
+  content: '';
+  position: absolute;
+  inset: -12px;
+  background: radial-gradient(circle at center, rgba(245, 158, 11, 0.15) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  border-radius: 24px;
+}
+.bracket-desktop .finals-banner::before,
+.bracket-desktop .finals-banner .connector-center {
   position: absolute;
   top: 50%;
   width: 58px;
@@ -543,7 +674,6 @@ onMounted(load)
   content: '';
 }
 .bracket-desktop .finals-banner::before { right: 100%; }
-.bracket-desktop .finals-banner::after { left: 100%; }
 .bracket-desktop .fb-inner {
   display: grid;
   min-height: 250px;
@@ -551,10 +681,12 @@ onMounted(load)
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 24px 22px;
+  position: relative;
+  z-index: 1;
   background: var(--bg-card);
-  border: 1px solid var(--border-medium);
+  border: 1px solid rgba(245, 158, 11, 0.35);
   border-radius: 18px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 0 24px -4px rgba(245, 158, 11, 0.2), var(--shadow-sm);
 }
 .bracket-desktop .fb-side { position: relative; box-sizing: border-box; width: 100%; min-height: 42px; justify-content: center; padding: 0 52px; }
 .bracket-desktop .fb-left { grid-row: 1; }
@@ -563,12 +695,19 @@ onMounted(load)
 .bracket-desktop .fb-left .fb-logo { position: absolute; left: 0; }
 .bracket-desktop .fb-right .fb-logo { position: absolute; right: 0; }
 .bracket-desktop .fb-logo { width: 42px; height: 42px; background: var(--bg-hover); border-color: var(--border-light); }
-.bracket-desktop .fb-name { width: 100%; overflow: hidden; color: var(--text-primary); font-size: 14px; text-align: center; text-overflow: ellipsis; }
-.bracket-desktop .fb-label { color: var(--text-muted); }
+.bracket-desktop .fb-name { width: 100%; overflow: hidden; color: var(--text-primary); font-size: 14px; text-align: center; text-overflow: ellipsis; font-weight: 700; }
+.bracket-desktop .fb-label { color: #F59E0B; font-weight: 800; letter-spacing: 2px; }
 .bracket-desktop .fb-score { color: var(--text-primary); font-size: 30px; }
 .bracket-desktop .fb-sep { color: var(--text-dim); }
-.bracket-desktop .fb-score .win { color: var(--accent); }
-.bracket-desktop .fb-trophy { right: 12px; top: 12px; max-width: 180px; overflow: hidden; background: var(--accent); color: var(--text-on-accent); text-overflow: ellipsis; white-space: nowrap; }
+.bracket-desktop .fb-score .win { color: #F59E0B; text-shadow: 0 0 10px rgba(245, 158, 11, 0.4); }
+.bracket-desktop .fb-trophy { right: 12px; top: 12px; max-width: 180px; overflow: hidden; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #FFF; text-overflow: ellipsis; white-space: nowrap; }
+
+[data-theme="light"] .bracket-desktop .fb-label { color: #B45309; }
+[data-theme="light"] .bracket-desktop .fb-score .win { color: #B45309; text-shadow: none; }
+[data-theme="light"] .series-badge--match-point {
+  background: linear-gradient(135deg, #D97706, #B45309);
+  border-color: rgba(180, 83, 9, 0.5);
+}
 
 /* ===== 移动端 ===== */
 .mob-conf { margin-bottom: 20px; }

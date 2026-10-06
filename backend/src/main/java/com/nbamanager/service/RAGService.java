@@ -145,12 +145,11 @@ public class RAGService {
             // 后台启动
             pb.start();
 
-            // 等待服务就绪（/health 在模型预加载完成前返回 503，循环会持续等待）
+            // /health 表示 API 可用；向量模型在 Python 内独立预加载。
             for (int i = 0; i < 60; i++) {
                 Thread.sleep(2000);
                 if (isServerRunning()) {
-                    log.info("RAG服务启动成功，预热中...");
-                    warmupQuery();
+                    log.info("RAG服务启动成功，向量模型在后台加载");
                     serverStarted = true;
                     return;
                 }
@@ -161,29 +160,6 @@ public class RAGService {
 
         } catch (Exception e) {
             log.error("启动RAG服务失败", e);
-        }
-    }
-
-    /** 冷启动预热：Chroma 首次初始化与模型首推理耗时数秒~数十秒，
-     *  若留给用户第一问会表现为长时间无响应甚至断流，这里提前消耗掉 */
-    private void warmupQuery() {
-        try {
-            URL url = new URL(ragServerUrl + "/query");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            conn.setRequestProperty("Connection", "close");
-            conn.setConnectTimeout(10000);
-            conn.setReadTimeout(180000);
-            conn.setDoOutput(true);
-            try (OutputStream os = conn.getOutputStream()) {
-                os.write("{\"question\":\"你好\",\"top_k\":1}".getBytes(StandardCharsets.UTF_8));
-            }
-            int code = conn.getResponseCode();
-            conn.getInputStream().readAllBytes();
-            log.info("RAG预热完成 (http {})", code);
-        } catch (Exception e) {
-            log.warn("RAG预热失败（不影响后续使用）: {}", e.getMessage());
         }
     }
 
@@ -276,7 +252,9 @@ public class RAGService {
                 response.optString("answer", ""),
                 sources,
                 response.optInt("response_time", 0),
-                response.optString("model", "ritrieve_zh_v1 + deepseek-v4-flash")
+                response.optString("model", "ritrieve_zh_v1 + deepseek-v4-flash"),
+                response.optJSONArray("sourceDetails") == null ? List.of() : response.getJSONArray("sourceDetails").toList(),
+                response.optJSONArray("follow_ups") == null ? List.of() : response.getJSONArray("follow_ups").toList().stream().filter(String.class::isInstance).map(String.class::cast).limit(3).toList()
         );
     }
 
@@ -561,11 +539,16 @@ public class RAGService {
             List<String> sources,
             int responseTime,
             String model,
-            String error
+            String error, List<Object> sourceDetails, List<String> followUps
     ) {
+        public RAGResult(boolean success, String answer, List<String> sources, int responseTime, String model, String error, List<Object> sourceDetails) { this(success, answer, sources, responseTime, model, error, sourceDetails, List.of()); }
+        public RAGResult(boolean success, String answer, List<String> sources, int responseTime, String model, String error) { this(success, answer, sources, responseTime, model, error, List.of()); }
         public static RAGResult success(String answer, List<String> sources, int responseTime, String model) {
             return new RAGResult(true, answer, sources, responseTime, model, null);
         }
+
+        public static RAGResult success(String answer, List<String> sources, int responseTime, String model, List<Object> details) { return new RAGResult(true, answer, sources, responseTime, model, null, details); }
+        public static RAGResult success(String answer, List<String> sources, int responseTime, String model, List<Object> details, List<String> followUps) { return new RAGResult(true, answer, sources, responseTime, model, null, details, followUps); }
 
         public static RAGResult error(String error) {
             return new RAGResult(false, null, List.of(), 0, null, error);

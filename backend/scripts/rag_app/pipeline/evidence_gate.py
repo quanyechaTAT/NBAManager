@@ -3,12 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-
-FRESHNESS_KEYWORDS = re.compile(
-    r"最新|今天|今日|昨天|明天|实时|目前|现在|刚刚|近期|最近|"
-    r"新闻|资讯|交易|伤病|复出|签约|裁掉|官宣|报道称|报道|"
-    r"夏季联赛|自由市场|自由球员|选秀结果"
-)
+from rag_app.pipeline.game_scope import needs_fresh_evidence
 
 # 明确属于大模型外部知识 / 库外的问题模式
 OUT_OF_SCOPE_PATTERNS = re.compile(
@@ -65,10 +60,4 @@ class EvidenceGate:
         return GateDecision(False, "no_evidence", REFUSAL_MESSAGE)
 
     def _is_freshness_query(self, question: str) -> bool:
-        """检测问题是否需要实时数据。包含具体年份的查询不是时效性查询。"""
-        if not FRESHNESS_KEYWORDS.search(question):
-            return False
-        # 包含具体年份（如2024、2025）→ 不是时效性查询，是历史查询
-        if re.search(r"20\d{2}年", question):
-            return False
-        return True
+        return needs_fresh_evidence(question)

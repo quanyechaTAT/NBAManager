@@ -4,8 +4,8 @@
       <div class="draft-content">
         <SportsHeader
           eyebrow="NBA DRAFT CLASS ARCHIVE"
-          title="历届选秀星河殿堂"
-          subtitle="重温历届选秀顺位、乐透区新秀与黄金一代球员的生涯起点"
+          title="历届选秀大会"
+          subtitle="查阅历届选秀顺位、乐透区新秀与球员选秀记录"
         />
 
         <!-- 紧凑统计摘要 -->
@@ -13,7 +13,7 @@
           <span class="stat"><strong>{{ totalPicks }}</strong>本届新秀总数</span>
           <span class="stat"><strong>{{ round1Count }}</strong>首轮新秀 (R1)</span>
           <span class="stat"><strong>{{ round2Count }}</strong>次轮新秀 (R2)</span>
-          <span class="stat"><strong>{{ topPickTeam }}</strong>囤签大户球队</span>
+          <span class="stat"><strong>{{ topPickTeam }}</strong>选秀权最多球队</span>
         </div>
 
         <!-- 统一工具栏 -->
@@ -36,22 +36,31 @@
             <span class="round-count">{{ round1.length }} 人</span>
           </div>
           <el-table :data="round1" stripe v-loading="loading" class="draft-table">
-            <el-table-column label="顺位" width="105" align="center">
+            <el-table-column label="顺位" width="115" align="center">
               <template #default="{ row }">
-                <span v-if="row.pickNumber === 1" class="pick-badge pick-top1">#1 状元</span>
-                <span v-else-if="row.pickNumber === 2" class="pick-badge pick-top2">#2 榜眼</span>
-                <span v-else-if="row.pickNumber === 3" class="pick-badge pick-top3">#3 探花</span>
-                <span v-else-if="row.pickNumber <= 14" class="pick-badge pick-lottery">#{{ row.pickNumber }}</span>
+                <span v-if="row.pickNumber === 1" class="pick-badge pick-top1">
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" class="pick-icon"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5m14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/></svg>
+                  #1 状元
+                </span>
+                <span v-else-if="row.pickNumber === 2" class="pick-badge pick-top2">
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" class="pick-icon"><path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3z"/></svg>
+                  #2 榜眼
+                </span>
+                <span v-else-if="row.pickNumber === 3" class="pick-badge pick-top3">
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" class="pick-icon"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                  #3 探花
+                </span>
+                <span v-else-if="row.pickNumber <= 14" class="pick-badge pick-lottery">#{{ row.pickNumber }} 乐透</span>
                 <span v-else class="pick-number">#{{ row.pickNumber }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="playerName" label="球员" min-width="160">
               <template #default="{ row }">
                 <div class="player-name-cell" :class="{ 'clickable': row.nbaPlayerId }" @click="row.nbaPlayerId && goPlayerDetail(row.nbaPlayerId)">
-                  <div v-if="row.nbaPlayerId" class="player-avatar-sm">
-                    <img :src="getHeadshotUrl(row.nbaPlayerId)" :alt="row.playerName" class="headshot-sm" @error="onHeadshotError" loading="lazy" />
+                  <div class="player-avatar-sm">
+                    <img v-if="row.nbaPlayerId" :src="getHeadshotUrl(row.nbaPlayerId)" :alt="row.playerName" class="headshot-sm" @error="onHeadshotError" loading="lazy" />
+                    <span class="player-avatar-placeholder" :style="row.nbaPlayerId ? { display: 'none' } : undefined">{{ row.playerName?.charAt(0) }}</span>
                   </div>
-                  <div v-else class="player-avatar-sm player-avatar-placeholder">{{ row.playerName?.charAt(0) }}</div>
                   <div>
                     <span class="player-name-cn">{{ row.playerName }}</span>
                     <span v-if="row.playerNameEn" class="player-name-en">{{ row.playerNameEn }}</span>
@@ -112,10 +121,10 @@
             <el-table-column prop="playerName" label="球员" min-width="160">
               <template #default="{ row }">
                 <div class="player-name-cell" :class="{ 'clickable': row.nbaPlayerId }" @click="row.nbaPlayerId && goPlayerDetail(row.nbaPlayerId)">
-                  <div v-if="row.nbaPlayerId" class="player-avatar-sm">
-                    <img :src="getHeadshotUrl(row.nbaPlayerId)" :alt="row.playerName" class="headshot-sm" @error="onHeadshotError" loading="lazy" />
+                  <div class="player-avatar-sm">
+                    <img v-if="row.nbaPlayerId" :src="getHeadshotUrl(row.nbaPlayerId)" :alt="row.playerName" class="headshot-sm" @error="onHeadshotError" loading="lazy" />
+                    <span class="player-avatar-placeholder" :style="row.nbaPlayerId ? { display: 'none' } : undefined">{{ row.playerName?.charAt(0) }}</span>
                   </div>
-                  <div v-else class="player-avatar-sm player-avatar-placeholder">{{ row.playerName?.charAt(0) }}</div>
                   <div>
                     <span class="player-name-cn">{{ row.playerName }}</span>
                     <span v-if="row.playerNameEn" class="player-name-en">{{ row.playerNameEn }}</span>
@@ -170,10 +179,27 @@
             </div>
             <article v-for="row in round.picks" :key="row.id" class="draft-pick-card">
               <div class="draft-pick-card__top">
-                <span class="draft-pick-card__number">第 {{ row.pickNumber }} 顺位</span>
+                <div class="draft-pick-card__number">
+                  <span v-if="row.pickNumber === 1" class="pick-badge pick-top1">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" class="pick-icon"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5m14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/></svg>
+                    状元秀
+                  </span>
+                  <span v-else-if="row.pickNumber === 2" class="pick-badge pick-top2">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" class="pick-icon"><path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3z"/></svg>
+                    榜眼秀
+                  </span>
+                  <span v-else-if="row.pickNumber === 3" class="pick-badge pick-top3">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" class="pick-icon"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                    探花秀
+                  </span>
+                  <span v-else-if="row.pickNumber <= 14" class="pick-badge pick-lottery">
+                    乐透秀 #{{ row.pickNumber }}
+                  </span>
+                  <span v-else>第 {{ row.pickNumber }} 顺位</span>
+                </div>
                 <span class="draft-pick-card__team">
                   <img v-if="getTeamLogo(row.teamName)" :src="getTeamLogo(row.teamName)" alt="" />
-                  {{ row.teamName }}
+                  <span class="draft-pick-team-name">{{ row.teamName }}</span>
                 </span>
               </div>
               <div class="draft-pick-card__player">
@@ -596,9 +622,10 @@ onMounted(() => load())
   .draft-pick-card__player,
   .draft-pick-card__actions { display: flex; align-items: center; }
   .draft-pick-card__top { justify-content: space-between; gap: 10px; margin-bottom: 12px; }
-  .draft-pick-card__number { color: var(--accent); font-size: 12px; font-weight: 800; white-space: nowrap; }
-  .draft-pick-card__team { gap: 6px; min-width: 0; color: var(--text-secondary); font-size: 12px; text-align: right; }
-  .draft-pick-card__team img { width: 22px; height: 22px; object-fit: contain; }
+  .draft-pick-card__number { color: var(--accent); font-size: 12px; font-weight: 800; white-space: nowrap; flex-shrink: 0; }
+  .draft-pick-card__team { gap: 6px; min-width: 0; color: var(--text-secondary); font-size: 12px; text-align: right; overflow: hidden; }
+  .draft-pick-team-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; }
+  .draft-pick-card__team img { width: 22px; height: 22px; object-fit: contain; flex-shrink: 0; }
   .draft-pick-card__player { gap: 12px; }
   .draft-pick-card__player .player-avatar-sm { width: 44px; height: 44px; }
   .draft-pick-card__name { display: grid; gap: 2px; min-width: 0; }
@@ -656,6 +683,7 @@ onMounted(() => load())
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   padding: 2px 7px;
   border-radius: 4px;
   font-family: var(--font-heading);
@@ -663,6 +691,9 @@ onMounted(() => load())
   font-weight: 800;
   letter-spacing: 0.3px;
   font-variant-numeric: tabular-nums;
+}
+.pick-icon {
+  flex-shrink: 0;
 }
 .pick-top1 {
   background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(245, 158, 11, 0.08));
@@ -684,6 +715,27 @@ onMounted(() => load())
   background: var(--bg-hover);
   color: var(--accent);
   border: 1px solid var(--border-light);
+}
+
+[data-theme="light"] .pick-top1 {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(245, 158, 11, 0.06));
+  color: #B45309;
+  border-color: rgba(217, 119, 6, 0.4);
+}
+[data-theme="light"] .pick-top2 {
+  background: linear-gradient(135deg, rgba(100, 116, 139, 0.16), rgba(100, 116, 139, 0.06));
+  color: #475569;
+  border-color: rgba(100, 116, 139, 0.35);
+}
+[data-theme="light"] .pick-top3 {
+  background: linear-gradient(135deg, rgba(180, 83, 9, 0.16), rgba(180, 83, 9, 0.06));
+  color: #92400E;
+  border-color: rgba(180, 83, 9, 0.35);
+}
+[data-theme="light"] .pick-lottery {
+  background: rgba(8, 145, 178, 0.08);
+  color: #0891B2;
+  border-color: rgba(8, 145, 178, 0.25);
 }
 
 /* 选中球队单元格 */

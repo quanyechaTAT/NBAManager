@@ -87,6 +87,11 @@ public class RedisConfig implements CachingConfigurer {
                                       GenericJackson2JsonRedisSerializer jacksonRedisSerializer) {
         RedisCacheConfiguration defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(Duration.ofSeconds(defaultTtlSeconds))
+                .computePrefixWith(name -> (
+                        java.util.Set.of("matchRecords", "matchRecordsByTeam", "headToHead", "boxScore", "quarterScores").contains(name)
+                                ? "match-status-v2::"
+                                : java.util.Set.of("players", "playerList", "playerDetail", "playerCareer", "leagueAverages", "teams", "rankings", "dashboard", "shotChart").contains(name)
+                                        ? "data-contract-v3::" : "") + name + "::")
                 .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
                 .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(jacksonRedisSerializer))
                 .disableCachingNullValues();

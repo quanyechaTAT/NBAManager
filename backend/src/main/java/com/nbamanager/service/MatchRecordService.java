@@ -18,35 +18,32 @@ public class MatchRecordService {
 
     private final MatchRecordRepository matchRecordRepository;
 
-    /** 查询某支球队的最近比赛记录（最多25场，3个月内） */
+    /** Return the recorded range; callers can apply season and competition filters without truncated samples. */
     @Cacheable(value = "matchRecordsByTeam", key = "#teamName")
     public List<MatchRecordDto> getByTeam(String teamName) {
-        LocalDate threeMonthsAgo = LocalDate.now().minusMonths(3);
         return matchRecordRepository.findByTeamName(teamName).stream()
-                .filter(m -> isValidMatch(m))
-                .filter(m -> m.getMatchDate() != null && m.getMatchDate().isAfter(threeMonthsAgo))
+                .filter(m -> m.getMatchDate() != null)
                 .sorted((a, b) -> b.getMatchDate().compareTo(a.getMatchDate()))
-                .limit(25)
                 .map(MatchRecordDto::from)
                 .collect(Collectors.toList());
     }
 
-    /** 查询两队交锋记录（最近3个月内） */
+    /** Completed, verified head-to-head records in the full recorded range. */
     @Cacheable(value = "headToHead", key = "#team1 + ':' + #team2")
     public List<MatchRecordDto> getHeadToHead(String team1, String team2) {
-        LocalDate threeMonthsAgo = LocalDate.now().minusMonths(3);
         return matchRecordRepository.findHeadToHead(team1, team2).stream()
                 .filter(m -> isValidMatch(m))
-                .filter(m -> m.getMatchDate() != null && m.getMatchDate().isAfter(threeMonthsAgo))
+                .filter(m -> m.getMatchDate() != null)
                 .map(MatchRecordDto::from)
                 .collect(Collectors.toList());
     }
 
-    /** 判断比赛记录是否有效：已完成且双方比分都大于0 */
+    /** Zero is observed data; unknown or unpublished scores cannot determine a result. */
     private boolean isValidMatch(MatchRecord m) {
         return "FINISHED".equals(m.getStatus())
-                && m.getHomeScore() != null && m.getHomeScore() > 0
-                && m.getAwayScore() != null && m.getAwayScore() > 0;
+                && m.getHomeScore() != null && m.getHomeScore() >= 0
+                && m.getAwayScore() != null && m.getAwayScore() >= 0
+                && m.canDisplay("homeScore") && m.canDisplay("awayScore");
     }
 
     /** 查询所有比赛记录 */
@@ -70,6 +67,7 @@ public class MatchRecordService {
         m.setStatus(req.status());
         m.setGameType(MatchGameTypeResolver.resolve(
                 req.gameType(), null, req.matchDate()));
+        m.markData("MANUAL", req.season(), m.getGameType(), "homeScore", "awayScore", "status");
         return MatchRecordDto.from(matchRecordRepository.save(m));
     }
 
@@ -94,7 +92,8 @@ public class MatchRecordService {
     @CacheEvict(value = {"matchRecords", "matchRecordsByTeam", "headToHead"}, allEntries = true)
     public int cleanInvalidData() {
         List<MatchRecord> invalidRecords = matchRecordRepository.findAll().stream()
-                .filter(m -> !isValidMatch(m))
+                .filter(m -> m.getMatchDate() == null || m.getHomeTeam() == null || m.getAwayTeam() == null
+                        || (m.getHomeScore() != null && m.getHomeScore() < 0) || (m.getAwayScore() != null && m.getAwayScore() < 0))
                 .collect(Collectors.toList());
         matchRecordRepository.deleteAll(invalidRecords);
         return invalidRecords.size();

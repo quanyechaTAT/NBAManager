@@ -15,7 +15,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-public class PlayerShotChart {
+public class PlayerShotChart extends DataTracked {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

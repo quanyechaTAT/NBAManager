@@ -70,7 +70,7 @@ public class ReplaySyncState {
     @Column(name = "last_error_code", length = 64)
     private String lastErrorCode;
 
-    @Column(name = "last_error_message", length = 500)
+    @Column(name = "last_error_message", columnDefinition = "TEXT")
     private String lastErrorMessage;
 
     @Column(name = "last_error_at")

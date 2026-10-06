@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from rag_app.api.routes import create_router
 from rag_app.config import RAGSettings
 from rag_app.pipeline.engine import RAGEngine
+from rag_app.indexing.builder import ensure_index_contract
 
 
 settings = RAGSettings.from_env()
@@ -33,14 +34,12 @@ async def preload_models():
     def _preload():
         try:
             engine = get_engine()
-            # Trigger model loading by calling embed_query
-            engine.retriever.embeddings.load()
-            print("Embedding model pre-loaded", file=sys.stderr)
-            # Trigger reranker loading
-            engine.retriever.reranker._load()
-            print("Reranker model pre-loaded", file=sys.stderr)
+            engine.retriever.preload()
+            report = ensure_index_contract(engine)
+            print(f"Index contract check: {report['status']}", file=sys.stderr)
+            print('Vector models ready', file=sys.stderr)
         except Exception as e:
-            print(f"Model pre-load failed: {e}", file=sys.stderr)
+            print(f"Model pre-load failed: {type(e).__name__}", file=sys.stderr)
 
     # Run in background thread to not block startup
     threading.Thread(target=_preload, daemon=True).start()

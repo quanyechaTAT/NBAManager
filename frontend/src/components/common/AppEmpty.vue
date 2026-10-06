@@ -43,7 +43,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const displayDescription = computed(() => {
   if (props.description) return props.description
-  return '球场暂时归于平静，新的对决正蓄势待发'
+  return '暂无相关数据或记录'
 })
 </script>
 

@@ -487,17 +487,20 @@ class TestScoreboardNoGameDay:
         }
 
     def test_explicit_date_no_match_returns_schedule_note(self):
+        from datetime import datetime, timezone, timedelta
+        future = datetime.now(timezone(timedelta(hours=8))) + timedelta(days=7)
+        future_utc = future.replace(hour=23, minute=0, second=0, microsecond=0).astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
         provider = self._provider_with_events([
-            # 夏季联赛旧比分（7月）与未来季前赛（10月），都不是今天
+            # Old score and a genuinely future event; the test must remain stable as today changes.
             self._event("1", "2026-07-19T02:00:00Z", "Brooklyn Nets", 108, "Oklahoma City Thunder", 90, "Final"),
-            self._event("2", "2026-10-03T15:00:00Z", "Miami Heat", 0, "Toronto Raptors", 0, "Scheduled"),
+            self._event("2", future_utc, "Miami Heat", 0, "Toronto Raptors", 0, "Scheduled"),
         ])
         results = provider.search("分析今天所有比赛的胜负关键因素和看点")
         assert len(results) == 1
         assert results[0].title == "NBA 近期赛程说明"
         assert "没有安排 NBA 比赛" in results[0].snippet
         assert "近期赛程" in results[0].snippet
-        assert "10月3日" in results[0].snippet  # UTC 15:00 = 北京时间 23:00，同为 10月3日
+        assert f"{future.month}月{future.day}日" in results[0].snippet
 
     def test_matching_date_keeps_only_today_games(self):
         provider = self._provider_with_events([

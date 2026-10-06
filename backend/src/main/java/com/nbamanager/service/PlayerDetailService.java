@@ -128,7 +128,7 @@ public class PlayerDetailService {
                 p.getVorp(),
                 p.getBpm(),
                 p.getOffensiveRating(),
-                p.getDefensiveRating());
+                p.getDefensiveRating(), p.getDataMeta());
     }
 
     @Cacheable(value = "leagueAverages", key = "#season")
@@ -139,18 +139,35 @@ public class PlayerDetailService {
             return LeagueAveragesDto.empty();
         }
         return new LeagueAveragesDto(
-                nz(agg.getAvgPoints()), nz(agg.getAvgRebounds()), nz(agg.getAvgAssists()),
-                nz(agg.getAvgSteals()), nz(agg.getAvgBlocks()), nz(agg.getAvgFieldGoalPct()),
-                nz(agg.getAvgThreePointPct()),
-                nz(agg.getMaxPoints()), nz(agg.getMaxRebounds()), nz(agg.getMaxAssists()),
-                nz(agg.getMaxSteals()), nz(agg.getMaxBlocks()), nz(agg.getMaxFieldGoalPct()),
-                nz(agg.getMaxThreePointPct()),
-                agg.getPlayerCount());
+                agg.getAvgPoints(), agg.getAvgRebounds(), agg.getAvgAssists(),
+                agg.getAvgSteals(), agg.getAvgBlocks(), agg.getAvgFieldGoalPct(),
+                agg.getAvgThreePointPct(),
+                agg.getMaxPoints(), agg.getMaxRebounds(), agg.getMaxAssists(),
+                agg.getMaxSteals(), agg.getMaxBlocks(), agg.getMaxFieldGoalPct(),
+                agg.getMaxThreePointPct(),
+                agg.getPlayerCount(), new com.nbamanager.web.dto.DataMeta("LOCAL_PLAYER_SAMPLE", null, season,
+                        "REGULAR_SEASON_MIN_10_GAMES", null, null, "PARTIAL", Math.toIntExact(agg.getPlayerCount()), Map.ofEntries(
+                            Map.entry("avgPoints", aggregateState(agg.getAvgPoints())),
+                            Map.entry("avgRebounds", aggregateState(agg.getAvgRebounds())),
+                            Map.entry("avgAssists", aggregateState(agg.getAvgAssists())),
+                            Map.entry("avgSteals", aggregateState(agg.getAvgSteals())),
+                            Map.entry("avgBlocks", aggregateState(agg.getAvgBlocks())),
+                            Map.entry("avgFieldGoalPct", aggregateState(agg.getAvgFieldGoalPct())),
+                            Map.entry("avgThreePointPct", aggregateState(agg.getAvgThreePointPct())),
+                            Map.entry("maxPoints", aggregateState(agg.getMaxPoints())),
+                            Map.entry("maxRebounds", aggregateState(agg.getMaxRebounds())),
+                            Map.entry("maxAssists", aggregateState(agg.getMaxAssists())),
+                            Map.entry("maxSteals", aggregateState(agg.getMaxSteals())),
+                            Map.entry("maxBlocks", aggregateState(agg.getMaxBlocks())),
+                            Map.entry("maxFieldGoalPct", aggregateState(agg.getMaxFieldGoalPct())),
+                            Map.entry("maxThreePointPct", aggregateState(agg.getMaxThreePointPct())))));
     }
 
-    private static java.math.BigDecimal nz(java.math.BigDecimal v) {
-        return v != null ? v : java.math.BigDecimal.ZERO;
+    private static String aggregateState(Object value) {
+        return value == null ? "MISSING" : "DERIVED";
     }
+
+
 
     @Cacheable(value = "playerCareer", key = "#playerId")
     @Transactional
@@ -164,7 +181,8 @@ public class PlayerDetailService {
 
         List<PlayerCareerStats> records = playerCareerStatsRepository.findByPlayerIdOrderBySeasonAsc(actualId);
 
-        if (records.isEmpty()) {
+        if (records.isEmpty() || records.stream().anyMatch(row -> !row.hasRetainedLegacyValues()
+                && "UNVERIFIED".equals(row.getDataMeta().quality()))) {
             // 使用 nbaPlayerId 调用 Python 脚本
             Long nbaPlayerId = (lookupPlayer != null && lookupPlayer.getNbaPlayerId() != null) ? lookupPlayer.getNbaPlayerId() : playerId;
             fetchFromPython("player_career", String.valueOf(nbaPlayerId), actualId);
@@ -174,7 +192,7 @@ public class PlayerDetailService {
         return records.stream().map(this::toCareerStatsDto).collect(Collectors.toList());
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Page<PlayerGameLogDto> getGameLog(Long playerId, String season, Pageable pageable) {
         // page/size 边界与非法 sort 统一在此拦截（此前非法 sort 会在 JPA 层变成 500）
         Pageable safePageable = PageRequestSanitizer.sanitize(
@@ -188,52 +206,26 @@ public class PlayerDetailService {
             return Page.empty(safePageable);
         }
 
-        String teamName = player.getTeam().getName();
-
-        // 优先从球队比赛记录中获取（这是真实可靠的数据）
-        List<MatchRecord> teamMatches = matchRecordRepository.findByTeamName(teamName);
-
-        if (!teamMatches.isEmpty()) {
-            // 有球队比赛记录，使用球队数据
-            List<PlayerGameLogDto> gameLogList = teamMatches.stream()
-                    .filter(m -> "FINISHED".equals(m.getStatus())
-                            && m.getHomeScore() != null && m.getHomeScore() > 0
-                            && m.getAwayScore() != null && m.getAwayScore() > 0)
-                    .sorted((a, b) -> b.getMatchDate().compareTo(a.getMatchDate()))
-                    .map(m -> toGameLogFromMatch(m, teamName))
-                    .collect(Collectors.toList());
-
-            // 手动分页
-            int start = (int) safePageable.getOffset();
-            int end = Math.min(start + safePageable.getPageSize(), gameLogList.size());
-            List<PlayerGameLogDto> pageContent = start < gameLogList.size()
-                    ? gameLogList.subList(start, end)
-                    : List.of();
-
-            return new org.springframework.data.domain.PageImpl<>(
-                    pageContent, safePageable, gameLogList.size());
-        }
-
-        // 没有球队比赛记录，回退到球员个人数据（过滤掉没上场的比赛）
+        Long actualId = player.getId();
         Page<PlayerGameLog> page;
         if (season != null && !season.isBlank()) {
-            page = playerGameLogRepository.findByPlayerIdAndSeasonOrderByMatchDateDesc(playerId, season, safePageable);
+            page = playerGameLogRepository.findByPlayerIdAndSeasonOrderByMatchDateDesc(actualId, season, safePageable);
         } else {
-            page = playerGameLogRepository.findByPlayerIdOrderByMatchDateDesc(playerId, safePageable);
+            page = playerGameLogRepository.findByPlayerIdOrderByMatchDateDesc(actualId, safePageable);
         }
 
         // 如果数据库没有数据，从Python脚本获取
         if (page.isEmpty()) {
             Long nbaPlayerId = player.getNbaPlayerId() != null ? player.getNbaPlayerId() : playerId;
-            fetchFromPython("player_gamelog", String.valueOf(nbaPlayerId), playerId);
+            fetchFromPython("player_gamelog", String.valueOf(nbaPlayerId), actualId, season);
             if (season != null && !season.isBlank()) {
-                page = playerGameLogRepository.findByPlayerIdAndSeasonOrderByMatchDateDesc(playerId, season, safePageable);
+                page = playerGameLogRepository.findByPlayerIdAndSeasonOrderByMatchDateDesc(actualId, season, safePageable);
             } else {
-                page = playerGameLogRepository.findByPlayerIdOrderByMatchDateDesc(playerId, safePageable);
+                page = playerGameLogRepository.findByPlayerIdOrderByMatchDateDesc(actualId, safePageable);
             }
         }
 
-        // 过滤掉球员没上场的比赛（得分、篮板、助攻都为0的比赛）
+        // 保留真实零值；只使用个人记录，不以球队比赛生成个人统计。
         String playerTeamName = player.getTeam().getName();
         List<String> gameIds = page.getContent().stream()
                 .map(PlayerGameLog::getGameId)
@@ -246,44 +238,11 @@ public class PlayerDetailService {
                         .collect(Collectors.toMap(MatchRecord::getNbaGameId, m -> m, (first, ignored) -> first));
         Map<String, List<EspnGameScore>> espnGamesByDate = loadEspnScoresByDate(page.getContent(), matchesByGameId);
         List<PlayerGameLogDto> filteredContent = page.getContent().stream()
-                .filter(g -> g.getPoints() > 0 || g.getRebounds() > 0 || g.getAssists() > 0)
                 .map(g -> toGameLogDto(g, playerTeamName, matchesByGameId.get(g.getGameId()), espnGamesByDate))
                 .collect(Collectors.toList());
 
         return new org.springframework.data.domain.PageImpl<>(
-                filteredContent, pageable, filteredContent.size());
-    }
-
-    /**
-     * 从球队比赛记录转换为球员比赛日志格式
-     */
-    private PlayerGameLogDto toGameLogFromMatch(MatchRecord m, String teamName) {
-        boolean isHome = teamName.equals(m.getHomeTeam());
-        String opponent = isHome ? m.getAwayTeam() : m.getHomeTeam();
-        int teamScore = isHome ? m.getHomeScore() : m.getAwayScore();
-        int opponentScore = isHome ? m.getAwayScore() : m.getHomeScore();
-        String result = teamScore > opponentScore ? "W" : "L";
-
-        return new PlayerGameLogDto(
-                m.getNbaGameId() != null ? m.getNbaGameId() : "",
-                m.getMatchDate() != null ? m.getMatchDate().toString() : "",
-                opponent,
-                isHome,
-                "",  // 球队比赛记录无个人分钟数
-                0,   // 球队比赛记录无个人得分
-                0,   // 篮板
-                0,   // 助攻
-                0,   // 抢断
-                0,   // 盖帽
-                0,   // 失误
-                0.0, // 命中率
-                0.0, // 三分
-                0.0, // 罚球
-                0,   // 正负值
-                result,
-                teamScore,
-                opponentScore
-        );
+                filteredContent, safePageable, page.getTotalElements());
     }
 
     /**
@@ -292,11 +251,11 @@ public class PlayerDetailService {
      * @param nbaPlayerId NBA球员ID（用于调用Python脚本）
      * @param dbPlayerId 数据库中的球员ID（用于保存数据）
      */
-    private void fetchFromPython(String dataType, String nbaPlayerId, Long dbPlayerId) {
+    private void fetchFromPython(String dataType, String nbaPlayerId, Long dbPlayerId, String... season) {
         try {
             log.info("调用Python脚本获取{}数据, nbaPlayerId={}, dbPlayerId={}", dataType, nbaPlayerId, dbPlayerId);
             PythonScriptRunner.PythonResult result = pythonScriptRunner.run(
-                    "nba_data_fetcher.py", new String[]{dataType, nbaPlayerId},
+                    "nba_data_fetcher.py", season.length > 0 && season[0] != null && !season[0].isBlank() ? new String[]{dataType, nbaPlayerId, season[0]} : new String[]{dataType, nbaPlayerId},
                     pythonTimeoutProperties.getDetailSeconds());
             if (!result.success()) {
                 log.error("Python脚本执行失败, exitCode={}, timedOut={}, error={}",
@@ -327,21 +286,22 @@ public class PlayerDetailService {
     private void saveCareerStats(JSONArray careerArray, Long playerId) {
         for (int i = 0; i < careerArray.length(); i++) {
             JSONObject obj = careerArray.getJSONObject(i);
-            PlayerCareerStats stats = new PlayerCareerStats();
+            PlayerCareerStats stats = playerCareerStatsRepository.findFirstByPlayerIdAndSeasonAndTeamName(playerId, obj.getString("season"), obj.getString("teamName")).orElse(new PlayerCareerStats());
             stats.setPlayerId(playerId);
             stats.setSeason(obj.getString("season"));
             stats.setTeamName(obj.getString("teamName"));
-            stats.setGamesPlayed(obj.getInt("gamesPlayed"));
-            stats.setMinutesPerGame(obj.getDouble("minutesPerGame"));
-            stats.setPointsPerGame(obj.getDouble("pointsPerGame"));
-            stats.setReboundsPerGame(obj.getDouble("reboundsPerGame"));
-            stats.setAssistsPerGame(obj.getDouble("assistsPerGame"));
-            stats.setStealsPerGame(obj.getDouble("stealsPerGame"));
-            stats.setBlocksPerGame(obj.getDouble("blocksPerGame"));
-            stats.setFgPct(obj.optDouble("fgPct", 0.0));
-            stats.setThreePct(obj.optDouble("threePct", 0.0));
-            stats.setFtPct(obj.optDouble("ftPct", 0.0));
-            stats.setEfficiency(obj.optDouble("efficiency", 0.0));
+            stats.setGamesPlayed(nullableInteger(obj, "gamesPlayed"));
+            stats.setMinutesPerGame(PlayerSnapshotMapper.number(obj, "minutesPerGame"));
+            stats.setPointsPerGame(PlayerSnapshotMapper.number(obj, "pointsPerGame"));
+            stats.setReboundsPerGame(PlayerSnapshotMapper.number(obj, "reboundsPerGame"));
+            stats.setAssistsPerGame(PlayerSnapshotMapper.number(obj, "assistsPerGame"));
+            stats.setStealsPerGame(PlayerSnapshotMapper.number(obj, "stealsPerGame"));
+            stats.setBlocksPerGame(PlayerSnapshotMapper.number(obj, "blocksPerGame"));
+            stats.setFgPct(PlayerSnapshotMapper.number(obj, "fgPct"));
+            stats.setThreePct(PlayerSnapshotMapper.number(obj, "threePct"));
+            stats.setFtPct(PlayerSnapshotMapper.number(obj, "ftPct"));
+            stats.setEfficiency(PlayerSnapshotMapper.number(obj, "efficiency"));
+            stats.markData("NBA_API", stats.getSeason(), "REGULAR_SEASON", "gamesPlayed", "minutesPerGame", "pointsPerGame", "reboundsPerGame", "assistsPerGame", "stealsPerGame", "blocksPerGame", "fgPct", "threePct", "ftPct", "efficiency");
             playerCareerStatsRepository.save(stats);
         }
         log.info("保存career数据: {}条记录, playerId={}", careerArray.length(), playerId);
@@ -350,25 +310,26 @@ public class PlayerDetailService {
     private void saveGameLog(JSONArray gameLogArray, Long playerId) {
         for (int i = 0; i < gameLogArray.length(); i++) {
             JSONObject obj = gameLogArray.getJSONObject(i);
-            PlayerGameLog gameLog = new PlayerGameLog();
+            PlayerGameLog gameLog = playerGameLogRepository.findFirstByPlayerIdAndGameId(playerId, obj.getString("gameId")).orElse(new PlayerGameLog());
             gameLog.setPlayerId(playerId);
             gameLog.setGameId(obj.getString("gameId"));
             gameLog.setMatchDate(obj.getString("matchDate"));
             gameLog.setOpponent(obj.getString("opponent"));
             gameLog.setHome(obj.optBoolean("isHome", false));
             gameLog.setMinutes(obj.optString("minutes", ""));
-            gameLog.setPoints(obj.optInt("points", 0));
-            gameLog.setRebounds(obj.optInt("rebounds", 0));
-            gameLog.setAssists(obj.optInt("assists", 0));
-            gameLog.setSteals(obj.optInt("steals", 0));
-            gameLog.setBlocks(obj.optInt("blocks", 0));
-            gameLog.setTurnovers(obj.optInt("turnovers", 0));
-            gameLog.setFgPct(obj.optDouble("fgPct", 0.0));
-            gameLog.setThreePct(obj.optDouble("threePct", 0.0));
-            gameLog.setFtPct(obj.optDouble("ftPct", 0.0));
-            gameLog.setPlusMinus(obj.optInt("plusMinus", 0));
+            gameLog.setPoints(nullableInteger(obj, "points"));
+            gameLog.setRebounds(nullableInteger(obj, "rebounds"));
+            gameLog.setAssists(nullableInteger(obj, "assists"));
+            gameLog.setSteals(nullableInteger(obj, "steals"));
+            gameLog.setBlocks(nullableInteger(obj, "blocks"));
+            gameLog.setTurnovers(nullableInteger(obj, "turnovers"));
+            gameLog.setFgPct(PlayerSnapshotMapper.number(obj, "fgPct"));
+            gameLog.setThreePct(PlayerSnapshotMapper.number(obj, "threePct"));
+            gameLog.setFtPct(PlayerSnapshotMapper.number(obj, "ftPct"));
+            gameLog.setPlusMinus(nullableInteger(obj, "plusMinus"));
             gameLog.setResult(obj.optString("result", ""));
             gameLog.setSeason(obj.optString("season", ""));
+            gameLog.markData("NBA_API", gameLog.getSeason(), "REGULAR_SEASON", "points", "rebounds", "assists", "steals", "blocks", "turnovers", "fgPct", "threePct", "ftPct", "plusMinus");
             playerGameLogRepository.save(gameLog);
         }
         log.info("保存gamelog数据: {}条记录, playerId={}", gameLogArray.length(), playerId);
@@ -408,7 +369,7 @@ public class PlayerDetailService {
                 s.getFgPct(),
                 s.getThreePct(),
                 s.getFtPct(),
-                s.getEfficiency());
+                s.getEfficiency(), s.getDataMeta());
     }
 
     private PlayerGameLogDto toGameLogDto(
@@ -418,7 +379,7 @@ public class PlayerDetailService {
             Map<String, List<EspnGameScore>> espnGamesByDate) {
         Integer teamScore = null;
         Integer opponentScore = null;
-        if (match != null) {
+        if (match != null && match.getDataMeta().publishes("homeScore") && match.getDataMeta().publishes("awayScore")) {
             boolean isHome = teamName.equals(match.getHomeTeam());
             teamScore = isHome ? match.getHomeScore() : match.getAwayScore();
             opponentScore = isHome ? match.getAwayScore() : match.getHomeScore();
@@ -448,7 +409,7 @@ public class PlayerDetailService {
                 g.getPlusMinus(),
                 g.getResult(),
                 teamScore,
-                opponentScore);
+                opponentScore, g.getDataMeta());
     }
 
     private Map<String, List<EspnGameScore>> loadEspnScoresByDate(
@@ -598,5 +559,9 @@ public class PlayerDetailService {
 
     private static ApiException notFound(Long id) {
         return new ApiException(HttpStatus.NOT_FOUND, "球员不存在: " + id);
+    }
+    private static Integer nullableInteger(JSONObject data, String key) {
+        Double value = PlayerSnapshotMapper.number(data, key);
+        return value == null ? null : value.intValue();
     }
 }

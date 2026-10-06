@@ -1,38 +1,99 @@
 <template>
   <div class="momentum-area" :class="{ 'away-lead': isAwayLeading }" @mouseleave="handleMouseLeave">
     <div class="chart-head">
-      <span class="chart-label">领先分差</span>
+      <div class="chart-title-group">
+        <span class="chart-label">比赛走势 · 领先分差</span>
+        <span class="chart-sub">流畅贝塞尔动量曲线 / 0 轴基准线</span>
+      </div>
       <div class="inline-legend">
-        <span><i class="home"></i>{{ homeTeam || '主队' }}</span>
-        <span><i class="away"></i>{{ awayTeam || '客队' }}</span>
+        <span class="legend-item"><i class="home"></i>{{ homeTeam || '主队' }}</span>
+        <span class="legend-tied"><i class="tied"></i>平局线</span>
+        <span class="legend-item"><i class="away"></i>{{ awayTeam || '客队' }}</span>
       </div>
     </div>
 
-    <svg
-      :viewBox="`0 0 ${width} ${height}`"
-      role="img"
-      aria-label="比赛领先分差走势"
-      @mousemove="handleMouseMove"
-      @mouseleave="handleMouseLeave"
-    >
+    <div class="chart-viewport">
+      <svg
+        :viewBox="`0 0 ${width} ${height}`"
+        role="img"
+        aria-label="比赛领先分差走势"
+        @mousemove="handleMouseMove"
+        @mouseleave="handleMouseLeave"
+      >
       <defs>
-        <!-- Vertical gradient: home color (top) → zero → away color (bottom) -->
-        <linearGradient id="mainLineGrad" x1="0" x2="0" :y1="padding.top" :y2="height - padding.bottom" gradientUnits="userSpaceOnUse">
+        <!-- Vertical line gradient: home color (top) → zero → away color (bottom) -->
+        <linearGradient
+          id="mainLineGrad"
+          x1="0"
+          x2="0"
+          :y1="padding.top"
+          :y2="height - padding.bottom"
+          gradientUnits="userSpaceOnUse"
+        >
           <stop offset="0%" stop-color="var(--trend-home)" />
-          <stop :offset="`${zeroPercent}%`" stop-color="var(--trend-home)" />
-          <stop :offset="`${zeroPercent}%`" stop-color="var(--trend-away)" />
+          <stop :offset="`${Math.max(0, Math.min(100, zeroPercent - 2))}%`" stop-color="var(--trend-home)" />
+          <stop :offset="`${Math.max(0, Math.min(100, zeroPercent + 2))}%`" stop-color="var(--trend-away)" />
           <stop offset="100%" stop-color="var(--trend-away)" />
         </linearGradient>
-        <!-- Area fill gradient: home color (top) → transparent (zero) → away color (bottom) -->
-        <linearGradient id="areaFillGrad" x1="0" x2="0" :y1="padding.top" :y2="height - padding.bottom" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stop-color="var(--trend-home)" stop-opacity="0.18" />
-          <stop :offset="`${zeroPercent}%`" stop-color="var(--trend-home)" stop-opacity="0.04" />
-          <stop :offset="`${zeroPercent}%`" stop-color="var(--trend-away)" stop-opacity="0.04" />
-          <stop offset="100%" stop-color="var(--trend-away)" stop-opacity="0.18" />
+
+        <!-- Area fill gradient (Home lead: above 0 axis, fades upward) -->
+        <linearGradient
+          id="homeAreaGrad"
+          x1="0"
+          x2="0"
+          :y1="padding.top"
+          :y2="zeroY"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0%" stop-color="var(--trend-home)" stop-opacity="0.32" />
+          <stop offset="65%" stop-color="var(--trend-home)" stop-opacity="0.12" />
+          <stop offset="100%" stop-color="var(--trend-home)" stop-opacity="0.01" />
         </linearGradient>
-        <!-- Single glow filter -->
-        <filter id="mainLineGlow" x="-10%" y="-20%" width="120%" height="140%">
-          <feGaussianBlur stdDeviation="5" result="blur" />
+
+        <!-- Area fill gradient (Away lead: below 0 axis, fades downward) -->
+        <linearGradient
+          id="awayAreaGrad"
+          x1="0"
+          x2="0"
+          :y1="zeroY"
+          :y2="height - padding.bottom"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0%" stop-color="var(--trend-away)" stop-opacity="0.01" />
+          <stop offset="35%" stop-color="var(--trend-away)" stop-opacity="0.12" />
+          <stop offset="100%" stop-color="var(--trend-away)" stop-opacity="0.32" />
+        </linearGradient>
+
+        <!-- Area clip paths for upper & lower regions separated by zero line -->
+        <clipPath id="aboveZeroClip">
+          <rect
+            :x="padding.left"
+            :y="padding.top"
+            :width="plotWidth"
+            :height="Math.max(0, zeroY - padding.top)"
+          />
+        </clipPath>
+        <clipPath id="belowZeroClip">
+          <rect
+            :x="padding.left"
+            :y="zeroY"
+            :width="plotWidth"
+            :height="Math.max(0, height - padding.bottom - zeroY)"
+          />
+        </clipPath>
+
+        <!-- Glow filter for main curve stroke -->
+        <filter id="mainLineGlow" x="-20%" y="-40%" width="140%" height="180%">
+          <feGaussianBlur stdDeviation="4.5" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+
+        <!-- Baseline glow filter -->
+        <filter id="baselineGlow" x="-10%" y="-40%" width="120%" height="180%">
+          <feGaussianBlur stdDeviation="2.5" result="blur" />
           <feMerge>
             <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />
@@ -40,6 +101,7 @@
         </filter>
       </defs>
 
+      <!-- Quarter backgrounds and vertical separators -->
       <g class="quarters">
         <g v-for="(band, index) in model.quarterBands" :key="band.period">
           <rect
@@ -57,32 +119,80 @@
             :y2="height - padding.bottom"
             class="quarter-divider"
           />
-          <text :x="band.x + band.width / 2" :y="padding.top + 22" text-anchor="middle" class="quarter-label">
+          <text
+            :x="band.x + band.width / 2"
+            :y="padding.top + 20"
+            text-anchor="middle"
+            class="quarter-label"
+          >
             {{ band.label }}
           </text>
         </g>
       </g>
 
+      <!-- Horizontal grid lines & ticks -->
       <g class="grid">
-        <g v-for="tick in yTicks" :key="tick.value">
+        <g v-for="tick in nonZeroTicks" :key="tick.value">
           <line
             :x1="padding.left"
             :x2="width - padding.right"
             :y1="tick.y"
             :y2="tick.y"
-            :class="{ zero: tick.value === 0 }"
+            class="grid-line"
           />
-          <text :x="padding.left - 12" :y="tick.y + 4" text-anchor="end">{{ tick.label }}</text>
+          <text :x="padding.left - 10" :y="tick.y + 4" text-anchor="end" class="grid-text">{{ tick.label }}</text>
         </g>
       </g>
 
-      <!-- Single area fill with gradient (home color top → away color bottom) -->
-      <path v-if="mainAreaPath" class="main-area area-fill" :d="mainAreaPath" />
+      <!-- 0-Axis Baseline (Tied line) with glow line and benchmark badge -->
+      <g class="zero-baseline-group">
+        <line
+          :x1="padding.left"
+          :x2="width - padding.right"
+          :y1="zeroY"
+          :y2="zeroY"
+          class="zero-baseline-glow"
+        />
+        <line
+          :x1="padding.left"
+          :x2="width - padding.right"
+          :y1="zeroY"
+          :y2="zeroY"
+          class="zero-baseline"
+        />
+        <g class="zero-badge-g" :transform="`translate(${padding.left + 8}, ${zeroY - 9})`">
+          <rect width="40" height="18" rx="4" class="zero-badge-rect" />
+          <text x="20" y="12" text-anchor="middle" class="zero-badge-text">TIED</text>
+        </g>
+        <text :x="padding.left - 10" :y="zeroY + 4" text-anchor="end" class="zero-tick-text">0</text>
+      </g>
 
-      <!-- Single continuous glow layer -->
+      <!-- Dual Gradient Area Fill: Home lead (above 0) and Away lead (below 0) -->
+      <path
+        v-if="mainAreaPath"
+        class="home-area-fill area-fill"
+        :d="mainAreaPath"
+        clip-path="url(#aboveZeroClip)"
+        fill="url(#homeAreaGrad)"
+      />
+      <path
+        v-if="mainAreaPath"
+        class="away-area-fill area-fill"
+        :d="mainAreaPath"
+        clip-path="url(#belowZeroClip)"
+        fill="url(#awayAreaGrad)"
+      />
+
+      <!-- Main Spline Curve: Glow underlayer + Crisp gradient stroke -->
       <path v-if="mainLinePath" class="main-line-glow smooth-line" :d="mainLinePath" />
-      <!-- Single continuous main line with gradient stroke -->
       <path v-if="mainLinePath" class="main-line smooth-line" :d="mainLinePath" />
+
+      <!-- Breathing/pulsing endpoint at the latest point -->
+      <g v-if="lastPoint" class="latest-endpoint">
+        <circle :cx="lastPoint.x" :cy="lastPoint.y" r="9" class="endpoint-pulse" :class="lastPoint.side" />
+        <circle :cx="lastPoint.x" :cy="lastPoint.y" r="4.5" class="endpoint-core" :class="lastPoint.side" />
+        <circle :cx="lastPoint.x" :cy="lastPoint.y" r="1.6" class="endpoint-dot" />
+      </g>
 
       <!-- Crosshair (hover) -->
       <line
@@ -94,37 +204,72 @@
         class="crosshair-line"
       />
 
-      <!-- Hover dot -->
-      <circle
-        v-if="hoveredPoint"
-        :cx="hoveredPoint.x"
-        :cy="hoveredPoint.y"
-        r="5"
-        class="hover-dot"
-        :class="hoveredPoint.side"
-      />
+      <!-- Hover dot with animated ring -->
+      <g v-if="hoveredPoint" class="hover-point-group">
+        <circle
+          :cx="hoveredPoint.x"
+          :cy="hoveredPoint.y"
+          r="8"
+          class="hover-dot-outer"
+          :class="hoveredPoint.side"
+        />
+        <circle
+          :cx="hoveredPoint.x"
+          :cy="hoveredPoint.y"
+          r="4.5"
+          class="hover-dot"
+          :class="hoveredPoint.side"
+        />
+      </g>
 
       <!-- Hit area for mouse detection -->
       <rect
         :x="padding.left"
         :y="padding.top"
-        :width="width - padding.left - padding.right"
+        :width="plotWidth"
         :height="plotHeight"
         fill="transparent"
         class="hit-area"
       />
     </svg>
 
-    <!-- Hover tooltip (only visible on hover) -->
-    <div
-      v-if="hoveredPoint"
-      class="hover-tooltip"
-      :style="{ left: `${tooltipPixelX}px`, top: `${tooltipPixelY}px` }"
-    >
-      <strong :class="hoveredPoint.side">{{ periodLabel(hoveredPoint.period) }} {{ hoveredPoint.gameClock }}</strong>
-      <span>{{ displayDescription(hoveredPoint.event) }}</span>
-      <b>{{ hoveredPoint.homeScore }} - {{ hoveredPoint.awayScore }}</b>
-      <em :class="hoveredPoint.side">{{ leaderText(homeTeam, awayTeam, hoveredPoint.signedMargin) }}</em>
+    <!-- High-density interactive tooltip (only visible on hover) -->
+      <div
+        v-if="hoveredPoint"
+        class="hover-tooltip"
+        :class="tooltipPositionClass"
+        :style="{ left: `${tooltipLeftPercent}%`, top: `${tooltipTopPercent}%` }"
+      >
+        <div class="tooltip-header">
+          <span class="tooltip-time-badge" :class="hoveredPoint.side">
+            {{ periodLabel(hoveredPoint.period) }} {{ hoveredPoint.gameClock }}
+          </span>
+          <span v-if="hoveredPoint.keyLabel" class="tooltip-key-pill">{{ hoveredPoint.keyLabel }}</span>
+        </div>
+
+        <div class="tooltip-scoreboard">
+          <div class="tooltip-team tooltip-team--home" :class="{ 'is-leader': hoveredPoint.signedMargin > 0 }">
+            <span class="team-name">{{ homeTeam || '主队' }}</span>
+            <span class="team-score">{{ hoveredPoint.homeScore }}</span>
+          </div>
+          <div class="tooltip-vs">:</div>
+          <div class="tooltip-team tooltip-team--away" :class="{ 'is-leader': hoveredPoint.signedMargin < 0 }">
+            <span class="team-score">{{ hoveredPoint.awayScore }}</span>
+            <span class="team-name">{{ awayTeam || '客队' }}</span>
+          </div>
+        </div>
+
+        <div class="tooltip-lead-row">
+          <span class="lead-badge" :class="hoveredPoint.side">
+            {{ leaderText(homeTeam, awayTeam, hoveredPoint.signedMargin) }}
+          </span>
+        </div>
+
+        <div class="tooltip-desc-row">
+          <span class="event-icon" aria-hidden="true">{{ eventIcon(eventKind(hoveredPoint.event)) }}</span>
+          <span class="event-desc">{{ displayDescription(hoveredPoint.event) }}</span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -133,7 +278,7 @@
 import { computed, ref } from 'vue'
 import type { TrendDisplayMode, TrendModel, TrendPoint } from './types'
 import { areaPath, findNearestHoverPoint, smoothPath } from './trendGeometry'
-import { displayDescription, leaderText, periodLabel } from './trendUtils'
+import { displayDescription, eventIcon, eventKind, leaderText, periodLabel } from './trendUtils'
 
 const props = defineProps<{
   model: TrendModel
@@ -150,9 +295,9 @@ defineEmits<{
 }>()
 
 const hoveredPoint = ref<TrendPoint | null>(null)
-const svgRect = ref<DOMRect | null>(null)
 
-const plotHeight = computed(() => props.height - props.padding.top - props.padding.bottom)
+const plotWidth = computed(() => Math.max(1, props.width - props.padding.left - props.padding.right))
+const plotHeight = computed(() => Math.max(1, props.height - props.padding.top - props.padding.bottom))
 const zeroY = computed(() => scaleMargin(0))
 
 // Gradient zero-line position (percentage from top)
@@ -167,6 +312,8 @@ const isAwayLeading = computed(() => {
   return last ? last.signedMargin < 0 : false
 })
 
+const lastPoint = computed(() => props.model.points.at(-1) || null)
+
 const yTicks = computed(() => {
   const ticks: number[] = []
   for (let value = props.model.yMax; value >= -props.model.yMax; value -= 5) ticks.push(value)
@@ -177,18 +324,29 @@ const yTicks = computed(() => {
   }))
 })
 
-// Tooltip pixel position relative to the parent .momentum-area div
-const tooltipPixelX = computed(() => {
-  if (!hoveredPoint.value || !svgRect.value) return 0
-  // SVG margin-left is 10px, so offset from parent left edge
-  return 10 + (hoveredPoint.value.x / props.width) * svgRect.value.width
-})
-const tooltipPixelY = computed(() => {
-  if (!hoveredPoint.value || !svgRect.value) return 0
-  return (hoveredPoint.value.y / props.height) * svgRect.value.height
+const nonZeroTicks = computed(() => yTicks.value.filter((t) => t.value !== 0))
+
+// Precise percentage-based tooltip positioning within chart-viewport
+const tooltipLeftPercent = computed(() => {
+  if (!hoveredPoint.value) return 0
+  return (hoveredPoint.value.x / props.width) * 100
 })
 
-// Single continuous path through ALL points
+const tooltipTopPercent = computed(() => {
+  if (!hoveredPoint.value) return 0
+  return (hoveredPoint.value.y / props.height) * 100
+})
+
+const tooltipPositionClass = computed(() => {
+  if (!hoveredPoint.value) return ''
+  const xRatio = hoveredPoint.value.x / props.width
+  const yRatio = hoveredPoint.value.y / props.height
+  const horizontal = xRatio < 0.16 ? 'align-left' : xRatio > 0.84 ? 'align-right' : 'align-center'
+  const vertical = yRatio < 0.38 ? 'valign-bottom' : 'valign-top'
+  return `${horizontal} ${vertical}`
+})
+
+// Single continuous smooth bezier spline through ALL points
 const mainLinePath = computed(() => {
   if (props.model.points.length === 0) return ''
   return smoothPath(props.model.points)
@@ -207,17 +365,15 @@ function scaleMargin(value: number): number {
 function handleMouseMove(event: MouseEvent) {
   const svg = event.currentTarget as SVGSVGElement
   const rect = svg.getBoundingClientRect()
-  svgRect.value = rect
-  const svgX = (event.clientX - rect.left) / rect.width * props.width
-  const svgY = (event.clientY - rect.top) / rect.height * props.height
+  const svgX = ((event.clientX - rect.left) / rect.width) * props.width
+  const svgY = ((event.clientY - rect.top) / rect.height) * props.height
 
-  hoveredPoint.value = findNearestHoverPoint(props.model.points, svgX, svgY, 30)
+  hoveredPoint.value = findNearestHoverPoint(props.model.points, svgX, svgY, 32)
 }
 
 function handleMouseLeave() {
   hoveredPoint.value = null
 }
-
 </script>
 
 <style scoped>
@@ -229,7 +385,7 @@ function handleMouseLeave() {
   border: 1px solid var(--trend-border);
   border-radius: 18px;
   --glow-color: var(--trend-home-soft);
-  --crosshair-color: rgba(255, 255, 255, 0.1);
+  --crosshair-color: rgba(255, 255, 255, 0.15);
 }
 
 .momentum-area.away-lead {
@@ -241,10 +397,10 @@ function handleMouseLeave() {
   inset: 0;
   border-radius: inherit;
   background:
-    radial-gradient(ellipse 60% 50% at 50% 50%, var(--glow-color), transparent),
+    radial-gradient(ellipse 65% 55% at 50% 50%, var(--glow-color), transparent 70%),
     radial-gradient(circle at 18% 12%, var(--trend-home-soft), transparent 30%),
     radial-gradient(circle at 82% 16%, var(--trend-away-soft), transparent 28%);
-  opacity: 0.25;
+  opacity: 0.3;
   pointer-events: none;
   content: '';
   transition: background 0.8s ease;
@@ -257,25 +413,47 @@ function handleMouseLeave() {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 36px;
-  padding: 0 14px;
+  min-height: 40px;
+  padding: 0 16px;
   color: var(--trend-text);
-  font-size: 13px;
-  font-weight: 800;
   border-bottom: 1px solid var(--trend-border);
 }
 
+.chart-viewport {
+  position: relative;
+  width: 100%;
+}
+
+.chart-viewport svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .chart-label {
-  color: var(--trend-muted);
-  font-size: 12px;
+  color: var(--trend-text);
+  font-size: 13px;
   font-weight: 850;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
+}
+
+.chart-sub {
+  color: var(--trend-muted);
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.75;
 }
 
 .inline-legend {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   color: var(--trend-muted);
   font-size: 11px;
   font-weight: 700;
@@ -284,25 +462,30 @@ function handleMouseLeave() {
 .inline-legend span {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   white-space: nowrap;
 }
 
 .inline-legend i {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: var(--radius-full);
   flex-shrink: 0;
 }
 
 .inline-legend .home {
   background: var(--trend-home);
-  box-shadow: 0 0 6px var(--trend-home-soft);
+  box-shadow: 0 0 8px var(--trend-home);
 }
 
 .inline-legend .away {
   background: var(--trend-away);
-  box-shadow: 0 0 6px var(--trend-away-soft);
+  box-shadow: 0 0 8px var(--trend-away);
+}
+
+.inline-legend .tied {
+  background: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.3);
 }
 
 svg {
@@ -319,76 +502,125 @@ svg {
     var(--bg-panel);
   background-size: 56px 56px, 56px 56px, auto, auto;
   border: 1px solid var(--trend-border);
-  border-radius: 10px;
+  border-radius: 12px;
   box-shadow: inset 0 1px 0 var(--border-subtle);
   transition: background 0.8s ease;
   cursor: crosshair;
 }
 
-.quarters rect {
-  fill: var(--quarter-fill-a);
+/* Quarter bands */
+.quarters rect.quarter-a {
+  fill: rgba(var(--bg-panel-rgb, 18, 24, 38), 0.22);
 }
 
 .quarters rect.quarter-b {
-  fill: var(--quarter-fill-b);
+  fill: rgba(var(--border-light-rgb, 255, 255, 255), 0.03);
 }
 
 .quarter-divider {
   stroke: var(--trend-border-strong);
-  stroke-dasharray: 5 6;
+  stroke-dasharray: 4 6;
   stroke-width: 1;
+  opacity: 0.6;
 }
 
-.quarter-label,
-.grid text {
+.quarter-label {
   fill: var(--trend-muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
-  letter-spacing: 0.1em;
-}
-
-.grid line {
-  stroke: var(--trend-grid);
-  stroke-width: 0.5;
-  opacity: 0.5;
-}
-
-.grid line.zero {
-  stroke: var(--trend-border-strong);
-  stroke-dasharray: 8 4;
-  stroke-width: 1;
+  letter-spacing: 0.12em;
   opacity: 0.8;
 }
 
-/* Area fill */
-.main-area {
-  fill: url(#areaFillGrad);
+/* Grid */
+.grid-line {
+  stroke: var(--trend-grid);
+  stroke-width: 0.5;
+  opacity: 0.4;
 }
 
-/* Main line — gradient stroke */
+.grid-text {
+  fill: var(--trend-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+/* 0 Axis Baseline with glow & badge */
+.zero-baseline-glow {
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 3.5;
+  filter: url(#baselineGlow);
+  pointer-events: none;
+}
+
+.zero-baseline {
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-dasharray: 5 4;
+  stroke-width: 1.2;
+  pointer-events: none;
+}
+
+.zero-badge-rect {
+  fill: rgba(18, 24, 38, 0.85);
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 0.8;
+  rx: 4px;
+}
+
+.zero-badge-text {
+  fill: rgba(255, 255, 255, 0.85);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+}
+
+.zero-tick-text {
+  fill: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+/* Area fill */
+.area-fill {
+  animation: area-in 1.2s ease 0.3s both;
+  pointer-events: none;
+}
+
+@keyframes area-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Main smooth curve stroke */
 .main-line,
 .main-line-glow {
   fill: none;
   stroke: url(#mainLineGrad);
   stroke-linecap: round;
   stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .main-line {
-  stroke-width: 2.5;
+  stroke-width: 2.8;
 }
 
 .main-line-glow {
-  stroke-width: 7;
-  opacity: 0.25;
+  stroke-width: 8;
+  opacity: 0.35;
   filter: url(#mainLineGlow);
 }
 
-/* Smooth line draw animation */
 .smooth-line {
-  stroke-dasharray: 2400;
-  stroke-dashoffset: 2400;
-  animation: draw-line 1.8s ease forwards;
+  stroke-dasharray: 2800;
+  stroke-dashoffset: 2800;
+  animation: draw-line 1.6s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
 @keyframes draw-line {
@@ -397,13 +629,55 @@ svg {
   }
 }
 
-/* Area fade-in */
-.area-fill {
-  animation: area-in 1.2s ease 0.5s both;
+/* Breathing / Pulsing Endpoint */
+.latest-endpoint {
+  pointer-events: none;
 }
 
-@keyframes area-in {
-  from {
+.endpoint-pulse {
+  fill: none;
+  stroke-width: 1.5;
+  animation: pulse-ring 2.2s cubic-bezier(0.2, 0.8, 0.4, 1) infinite;
+}
+
+.endpoint-pulse.home {
+  stroke: var(--trend-home);
+}
+
+.endpoint-pulse.away {
+  stroke: var(--trend-away);
+}
+
+.endpoint-core {
+  stroke: var(--bg-card);
+  stroke-width: 2;
+}
+
+.endpoint-core.home {
+  fill: var(--trend-home);
+  filter: drop-shadow(0 0 6px var(--trend-home));
+}
+
+.endpoint-core.away {
+  fill: var(--trend-away);
+  filter: drop-shadow(0 0 6px var(--trend-away));
+}
+
+.endpoint-dot {
+  fill: #ffffff;
+}
+
+@keyframes pulse-ring {
+  0% {
+    r: 4.5px;
+    opacity: 0.9;
+  }
+  70% {
+    r: 13px;
+    opacity: 0;
+  }
+  100% {
+    r: 13px;
     opacity: 0;
   }
 }
@@ -417,17 +691,34 @@ svg {
 }
 
 /* Hover dot */
+.hover-point-group {
+  pointer-events: none;
+}
+
+.hover-dot-outer {
+  fill: none;
+  stroke-width: 1.5;
+  opacity: 0.6;
+}
+
+.hover-dot-outer.home {
+  stroke: var(--trend-home);
+}
+
+.hover-dot-outer.away {
+  stroke: var(--trend-away);
+}
+
 .hover-dot {
   stroke: var(--bg-card);
   stroke-width: 2.5;
-  pointer-events: none;
   fill: var(--trend-home);
-  filter: drop-shadow(0 0 8px var(--trend-home-soft));
+  filter: drop-shadow(0 0 10px var(--trend-home));
 }
 
 .hover-dot.away {
   fill: var(--trend-away);
-  filter: drop-shadow(0 0 8px var(--trend-away-soft));
+  filter: drop-shadow(0 0 10px var(--trend-away));
 }
 
 /* Hit area */
@@ -435,96 +726,206 @@ svg {
   cursor: crosshair;
 }
 
-/* Hover tooltip */
+/* High-density interactive tooltip */
 .hover-tooltip {
   position: absolute;
-  z-index: 20;
-  min-width: 160px;
-  max-width: 240px;
-  padding: 10px 13px;
-  border: 1px solid var(--trend-border-strong);
-  border-radius: 12px;
+  z-index: 25;
+  min-width: 200px;
+  max-width: 280px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
   color: var(--trend-text);
   background:
-    linear-gradient(180deg, rgba(var(--bg-card-rgb), 0.95), rgba(var(--bg-panel-rgb), 0.9));
+    linear-gradient(180deg, rgba(18, 24, 38, 0.94), rgba(12, 16, 26, 0.96));
   box-shadow:
-    var(--shadow-lg),
-    inset 0 1px 0 var(--border-subtle);
-  backdrop-filter: blur(16px);
+    0 16px 36px -6px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px);
   pointer-events: none;
-  transform: translate(-50%, calc(-100% - 14px));
-  animation: tooltip-in 0.15s ease;
+  animation: tooltip-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.12s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.hover-tooltip strong,
-.hover-tooltip span,
-.hover-tooltip b,
-.hover-tooltip em {
-  display: block;
+.hover-tooltip.align-center.valign-top { transform: translate(-50%, calc(-100% - 14px)); }
+.hover-tooltip.align-left.valign-top { transform: translate(-8%, calc(-100% - 14px)); }
+.hover-tooltip.align-right.valign-top { transform: translate(-92%, calc(-100% - 14px)); }
+
+.hover-tooltip.align-center.valign-bottom { transform: translate(-50%, 14px); }
+.hover-tooltip.align-left.valign-bottom { transform: translate(-8%, 14px); }
+.hover-tooltip.align-right.valign-bottom { transform: translate(-92%, 14px); }
+
+.tooltip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
-.hover-tooltip strong {
+.tooltip-time-badge {
   font-size: 11px;
-  font-weight: 950;
-  letter-spacing: 0.06em;
+  font-weight: 900;
+  letter-spacing: 0.04em;
   color: var(--trend-home);
 }
 
-.hover-tooltip strong.away {
+.tooltip-time-badge.away {
   color: var(--trend-away);
 }
 
-.hover-tooltip span {
-  margin-top: 4px;
-  color: var(--trend-muted);
+.tooltip-key-pill {
+  font-size: 10px;
+  font-weight: 850;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fbbf24;
+}
+
+.tooltip-scoreboard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+}
+
+.tooltip-team {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.tooltip-team--home {
+  justify-content: flex-start;
+}
+
+.tooltip-team--away {
+  justify-content: flex-end;
+}
+
+.tooltip-team .team-name {
   font-size: 12px;
-  line-height: 1.4;
+  font-weight: 750;
+  color: var(--trend-muted);
 }
 
-.hover-tooltip b {
-  margin-top: 6px;
-  font-size: 17px;
+.tooltip-team .team-score {
+  font-size: 18px;
   font-weight: 950;
-  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--trend-text);
 }
 
-.hover-tooltip em {
-  margin-top: 2px;
-  font-style: normal;
+.tooltip-team.is-leader .team-score {
+  color: var(--trend-home);
+  text-shadow: 0 0 10px rgba(var(--gi-home-rgb, 34, 211, 238), 0.4);
+}
+
+.tooltip-team--away.is-leader .team-score {
+  color: var(--trend-away);
+  text-shadow: 0 0 10px rgba(var(--gi-away-rgb, 251, 146, 60), 0.4);
+}
+
+.tooltip-vs {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--trend-muted);
+  opacity: 0.5;
+}
+
+.tooltip-lead-row {
+  margin-top: 8px;
+}
+
+.lead-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
   font-size: 11px;
   font-weight: 850;
+  background: rgba(var(--gi-home-rgb, 34, 211, 238), 0.12);
   color: var(--trend-home);
 }
 
-.hover-tooltip em.away {
+.lead-badge.away {
+  background: rgba(var(--gi-away-rgb, 251, 146, 60), 0.12);
   color: var(--trend-away);
 }
 
-.hover-tooltip em.tie {
+.lead-badge.tie {
+  background: rgba(255, 255, 255, 0.08);
   color: var(--trend-text);
+}
+
+.tooltip-desc-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--trend-muted);
+}
+
+.event-icon {
+  flex-shrink: 0;
+  font-weight: 900;
+  color: var(--trend-text);
+}
+
+.event-desc {
+  flex: 1;
 }
 
 @keyframes tooltip-in {
   from {
     opacity: 0;
-    transform: translate(-50%, calc(-100% - 8px));
+    transform: translate(-50%, calc(-100% - 10px));
   }
   to {
     opacity: 1;
-    transform: translate(-50%, calc(-100% - 14px));
+    transform: translate(-50%, calc(-100% - 16px));
   }
 }
 
 @media (max-width: 720px) {
   .chart-head {
-    grid-template-columns: 1fr;
-    align-items: start;
-    padding: 10px 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 8px 12px;
+    gap: 6px;
   }
 
-  .chart-head > strong,
   .inline-legend {
-    justify-self: start;
+    align-self: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .smooth-line {
+    stroke-dasharray: none !important;
+    stroke-dashoffset: 0 !important;
+    animation: none !important;
+  }
+
+  .area-fill {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+
+  .endpoint-pulse {
+    animation: none !important;
+    opacity: 0.35 !important;
+  }
+
+  .hover-tooltip {
+    animation: none !important;
+    transition: none !important;
   }
 }
 </style>

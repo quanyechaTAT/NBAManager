@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from rag_app.config import RAGSettings
 from rag_app.pipeline.query_classifier import QueryClassification
-from rag_app.retrieval.dedupe import dedupe_texts
+from rag_app.retrieval.dedupe import dedupe_texts, text_hash
 from rag_app.retrieval.embeddings import SentenceTransformerEmbeddings
 from rag_app.retrieval.reranker import CrossEncoderReranker
 from rag_app.retrieval.vector_store import ChromaVectorStore
@@ -40,13 +40,65 @@ class HybridRetriever:
         self.embeddings = SentenceTransformerEmbeddings(settings)
         self.store = ChromaVectorStore(settings, self.embeddings)
         self.reranker = CrossEncoderReranker(settings)
+        self._index_status = 'unchecked'
+
+    def retrieve_plan(self, plan, extra_queries=()) -> RetrievalResult:
+        queries = list(dict.fromkeys((plan.retrieval_queries or (plan.resolved_question,)) + tuple(extra_queries)))[:5]
+        request_k = min(60, max(plan.top_k * 3, self.settings.vector_k))
+        where = self._build_filter(plan.classification)
+        if plan.semantic and not plan.game_scope and where:
+            # Reports can explain a mechanism that a player/team summary cannot.
+            where = {'$or': [where, {'type': 'news'}, {'type': 'historical'}]}
+        if callable(getattr(type(self.store), 'search_many', None)):
+            batches = self.store.search_many(queries, request_k, where=where)
+        else:
+            batches = [self.store.search(q, request_k, where=where) for q in queries]
+        candidates, seen = {}, set()
+        for batch in batches:
+            batch_seen = set()
+            for rank, (doc, meta, distance) in enumerate(zip(batch.documents, batch.metadatas, batch.distances), 1):
+                key = text_hash(doc)
+                seen.add(key)
+                if key in batch_seen:
+                    continue
+                batch_seen.add(key)
+                if distance > self.settings.max_vector_distance or not plan.accepts_document(doc, meta):
+                    continue
+                previous = candidates.get(key)
+                fusion_score = (previous[3] if previous else 0) + 1 / (60 + rank)
+                if previous and previous[2] <= distance:
+                    doc, meta, distance = previous[:3]
+                candidates[key] = (doc, meta, distance, fusion_score)
+        quality = RetrievalQuality(candidate_count=len(seen), rejected_count=len(seen) - len(candidates))
+        if not candidates:
+            quality.reason = 'no_scope_matching_evidence'
+            quality.confidence_level = 'none'
+            return RetrievalResult([], [], [], [], quality)
+        fused = sorted(candidates.values(), key=lambda row: (-row[3], row[2]))[:60]
+        docs, metas, distances, scores = self.reranker.rerank_with_scores(plan.resolved_question,
+            [r[0] for r in fused], [r[1] for r in fused], [r[2] for r in fused], plan.top_k)
+        accepted = [(d, m, dist, score) for d, m, dist, score in zip(docs, metas, distances, scores)
+                    if score >= self.settings.min_rerank_score]
+        quality.rejected_count += len(docs) - len(accepted)
+        quality.accepted_count = len(accepted)
+        if not accepted:
+            quality.reason = 'no_documents_above_rerank_threshold'
+            quality.confidence_level = 'none'
+            return RetrievalResult([], [], [], [], quality)
+        docs, metas, distances, scores = map(list, zip(*accepted))
+        quality.best_vector_distance = min(distances)
+        quality.average_vector_distance = sum(distances) / len(distances)
+        quality.best_rerank_score = max(scores)
+        quality.average_rerank_score = sum(scores) / len(scores)
+        quality.confidence_level = 'high' if max(scores) >= .7 else 'medium' if max(scores) >= .4 else 'low'
+        quality.directly_answerable = max(scores) >= .7
+        quality.reason = 'multi_query_fusion' if len(queries) > 1 else 'single_query'
+        return RetrievalResult(docs, metas, distances, scores, quality)
 
     def retrieve(self, query: str, top_k: int, classification: QueryClassification | None = None) -> RetrievalResult:
         request_k = max(top_k * 3, self.settings.vector_k)
         where = self._build_filter(classification)
         result = self.store.search(query, request_k, where=where)
-        if where and not result.documents:
-            result = self.store.search(query, request_k, where=None)
 
         docs, metas, distances = dedupe_texts(result.documents, result.metadatas, result.distances)
         quality = RetrievalQuality(candidate_count=len(docs))
@@ -90,12 +142,18 @@ class HybridRetriever:
                 for d, m, dist, rs in zip(docs, metas, distances, rerank_scores)
                 if rs >= self.settings.min_rerank_score
             ]
-            if filtered:
-                docs = [x[0] for x in filtered]
-                metas = [x[1] for x in filtered]
-                distances = [x[2] for x in filtered]
-                rerank_scores = [x[3] for x in filtered]
-                quality.accepted_count = len(docs)
+            quality.rejected_count += len(docs) - len(filtered)
+            docs = [x[0] for x in filtered]
+            metas = [x[1] for x in filtered]
+            distances = [x[2] for x in filtered]
+            rerank_scores = [x[3] for x in filtered]
+            quality.accepted_count = len(docs)
+        if not docs:
+            quality.confidence_level = 'none'
+            quality.reason = 'no_documents_above_rerank_threshold'
+            quality.best_rerank_score = 0.0
+            quality.directly_answerable = False
+            return RetrievalResult([], [], [], [], quality)
 
         # 置信度
         if quality.best_rerank_score >= 0.7:
@@ -112,17 +170,29 @@ class HybridRetriever:
         if not classification:
             return None
         if classification.players:
-            return {"type": "player"}
+            return {'$and': [{'type': 'player'}, {'name': {'$in': classification.players}}]}
+        if classification.query_type.value == 'match':
+            return {'type': 'match'}
         if classification.teams:
             return {"team": {"$in": classification.teams}}
         return None
+
+    @property
+    def ready(self):
+        return (getattr(self, '_index_status', 'ready') not in {'building', 'failed'} and
+                self.embeddings._model is not None and (not self.settings.reranker_enabled or self.reranker._model is not None or not self.reranker._available))
 
     def stats(self) -> dict:
         return {
             "document_count": self.store.count(),
             "embedding_model": self.settings.embedding_model,
             "reranker_model": self.settings.reranker_model,
+            'index_status': getattr(self, '_index_status', 'unchecked'),
         }
 
     def clear(self) -> None:
         self.store.clear()
+
+    def preload(self):
+        self.embeddings.load()
+        self.reranker._load()

@@ -42,6 +42,8 @@ class ReplayFactsPersistenceServiceTest {
     @Mock private MatchRecordRepository matchRecordRepository;
     @Mock private ReplayFactsHashService factsHashService;
     @Mock private ReplayQualityService qualityService;
+    @Mock private org.springframework.cache.CacheManager cacheManager;
+    @Mock private GameIdMappingService gameIdMappingService;
 
     @InjectMocks
     private ReplayFactsPersistenceService service;

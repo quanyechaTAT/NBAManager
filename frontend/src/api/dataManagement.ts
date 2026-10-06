@@ -1,6 +1,8 @@
 import request from '@/utils/request'
 
-export type SyncTriggerType = 'SCHEDULED' | 'MANUAL' | 'LOGIN_CATCHUP'
+export type SyncTriggerType = 'SCHEDULED' | 'MANUAL' | 'LOGIN_CATCHUP' | 'STARTUP_CATCHUP'
+
+interface ReadOptions { signal?: AbortSignal; timeout?: number }
 
 export interface SyncJobResponse {
   jobId: number
@@ -54,6 +56,7 @@ export interface SyncModuleOverview {
   latestJob: SyncJobResponse | null
   activeJob: SyncJobResponse | null
   activeFullStep: SyncJobStepResponse | null
+  latestFullStep: SyncJobStepResponse | null
 }
 
 export interface JobHistoryFilters {
@@ -75,10 +78,12 @@ export interface SyncJobPageResponse {
 export interface SyncOverviewResponse {
   currentSeason: string
   modules: SyncModuleOverview[]
+  activeFullJob: SyncJobResponse | null
+  latestFullJob: SyncJobDetailResponse | null
 }
 
-export function getSyncOverview() {
-  return request.get<SyncOverviewResponse>('/admin/overview')
+export function getSyncOverview(options?: ReadOptions) {
+  return request.get<SyncOverviewResponse>('/admin/overview', options)
 }
 
 /** 同步指定模块 → 返回 202 + jobId */
@@ -112,13 +117,13 @@ export function cancelJob(jobId: number) {
 }
 
 /** 查询任务详情（含步骤） */
-export function getJobDetail(jobId: number) {
-  return request.get<SyncJobDetailResponse>(`/admin/jobs/${jobId}`)
+export function getJobDetail(jobId: number, options?: ReadOptions) {
+  return request.get<SyncJobDetailResponse>(`/admin/jobs/${jobId}`, options)
 }
 
 /** 任务历史分页查询 */
-export function getJobHistory(filters: JobHistoryFilters) {
-  return request.get<SyncJobPageResponse>('/admin/jobs', { params: filters })
+export function getJobHistory(filters: JobHistoryFilters, options?: ReadOptions) {
+  return request.get<SyncJobPageResponse>('/admin/jobs', { ...options, params: filters })
 }
 
 /** 旧接口兼容：同步状态 */

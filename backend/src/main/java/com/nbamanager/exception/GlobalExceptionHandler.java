@@ -29,6 +29,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(org.springframework.core.task.TaskRejectedException.class)
+    public ResponseEntity<Map<String, Object>> handleAsyncCapacity(
+            org.springframework.core.task.TaskRejectedException ex) {
+        return body(HttpStatus.TOO_MANY_REQUESTS, "AI 助手请求过多，请稍后重试");
+    }
+
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<Map<String, Object>> handleApi(ApiException ex) {
         return body(ex.getStatus(), ex.getMessage());

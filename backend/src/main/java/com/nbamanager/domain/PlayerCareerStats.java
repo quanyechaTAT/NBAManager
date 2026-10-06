@@ -18,7 +18,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-public class PlayerCareerStats {
+public class PlayerCareerStats extends DataTracked {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -33,25 +33,25 @@ public class PlayerCareerStats {
     @Column(nullable = false, length = 80)
     private String teamName;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Integer gamesPlayed;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double minutesPerGame;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double pointsPerGame;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double reboundsPerGame;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double assistsPerGame;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double stealsPerGame;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double blocksPerGame;
 
     private Double fgPct;
@@ -63,4 +63,15 @@ public class PlayerCareerStats {
     private Double efficiency;
 
 
+    public Integer getGamesPlayed() { return publishedValue("gamesPlayed", gamesPlayed); }
+    public Double getMinutesPerGame() { return publishedValue("minutesPerGame", minutesPerGame); }
+    public Double getPointsPerGame() { return publishedValue("pointsPerGame", pointsPerGame); }
+    public Double getReboundsPerGame() { return publishedValue("reboundsPerGame", reboundsPerGame); }
+    public Double getAssistsPerGame() { return publishedValue("assistsPerGame", assistsPerGame); }
+    public Double getStealsPerGame() { return publishedValue("stealsPerGame", stealsPerGame); }
+    public Double getBlocksPerGame() { return publishedValue("blocksPerGame", blocksPerGame); }
+    public Double getFgPct() { return publishedValue("fgPct", fgPct); }
+    public Double getThreePct() { return publishedValue("threePct", threePct); }
+    public Double getFtPct() { return publishedValue("ftPct", ftPct); }
+    public Double getEfficiency() { return publishedValue("efficiency", efficiency); }
 }

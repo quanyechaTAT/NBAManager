@@ -219,3 +219,15 @@ def test_stream_impl_reuses_the_shared_gate():
     assert "finally:" in gated_body, "闸门释放必须在 finally，以覆盖异常/客户端断开"
     assert "_leave_query_gate()" in gated_body
     assert "yield" in gated_body, "闸门必须包住生成器的产出过程"
+
+
+def test_overloaded_stream_is_a_json_error_event_not_a_double_encoded_string():
+    import json
+    engine = _StreamEngine()
+    client = _client(engine)
+    for _ in range(_QUERY_LIMIT):
+        assert _QUERY_GATE.enter()
+    response = client.get('/stream', params={'question': '湖人比赛'})
+    data = next(line.removeprefix('data: ') for line in response.text.splitlines() if line.startswith('data: '))
+    event = json.loads(data)
+    assert isinstance(event, dict) and event['type'] == 'error' and event['overloaded']

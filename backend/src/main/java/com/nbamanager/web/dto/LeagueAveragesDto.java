@@ -21,12 +21,12 @@ public record LeagueAveragesDto(
         BigDecimal maxBlocks,
         BigDecimal maxFieldGoalPct,
         BigDecimal maxThreePointPct,
-        long playerCount) {
+        long playerCount,
+        DataMeta dataMeta) {
 
-    /** 空赛季兜底：全部置零，前端据此隐藏对比条 */
+    /** An empty sample has missing statistics, not measured zeroes. */
     public static LeagueAveragesDto empty() {
-        BigDecimal zero = BigDecimal.ZERO;
-        return new LeagueAveragesDto(zero, zero, zero, zero, zero, zero, zero,
-                zero, zero, zero, zero, zero, zero, zero, 0L);
+        return new LeagueAveragesDto(null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, 0L, DataMeta.unverified());
     }
 }

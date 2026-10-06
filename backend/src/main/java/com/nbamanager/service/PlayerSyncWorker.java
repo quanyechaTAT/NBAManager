@@ -66,31 +66,14 @@ public class PlayerSyncWorker extends ModuleSyncWorker {
                 if (existing == null) existing = playerRepository.findByNameAndTeamId(name, team.getId());
                 if (existing == null && nbaPlayerId <= 0) existing = playerRepository.findByName(name);
 
-                if (existing != null) {
-                    existing.setNbaPlayerId(nbaPlayerId > 0 ? nbaPlayerId : existing.getNbaPlayerId());
-                    existing.setName(name);
-                    existing.setTeam(team);
-                    existing.setPosition(p.getString("position"));
-                    existing.setPointsPerGame(p.getDouble("ppg"));
-                    existing.setReboundsPerGame(p.getDouble("rpg"));
-                    existing.setAssistsPerGame(p.getDouble("apg"));
-                    existing.setStealsPerGame(p.getDouble("spg"));
-                    playerRepository.save(existing);
-                    updated++;
-                } else {
-                    var newPlayer = new com.nbamanager.domain.Player();
-                    newPlayer.setNbaPlayerId(nbaPlayerId > 0 ? nbaPlayerId : null);
-                    newPlayer.setName(name);
-                    newPlayer.setTeam(team);
-                    newPlayer.setPosition(p.getString("position"));
-                    newPlayer.setPointsPerGame(p.getDouble("ppg"));
-                    newPlayer.setReboundsPerGame(p.getDouble("rpg"));
-                    newPlayer.setAssistsPerGame(p.getDouble("apg"));
-                    newPlayer.setStealsPerGame(p.getDouble("spg"));
-                    newPlayer.setGamesPlayed(p.optInt("gp", 65));
-                    playerRepository.save(newPlayer);
-                    inserted++;
-                }
+                var player = existing != null ? existing : new com.nbamanager.domain.Player();
+                player.setNbaPlayerId(nbaPlayerId > 0 ? nbaPlayerId : player.getNbaPlayerId());
+                player.setName(name); player.setTeam(team);
+                String season = p.optString("season", data.optString("season", null));
+                PlayerSnapshotMapper.apply(player, p, season);
+                playerRepository.save(player);
+                if (existing == null) inserted++; else updated++;
+
             }
 
             updateProgress(jobId, 95);

@@ -7,4 +7,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface PlayerCareerStatsRepository extends JpaRepository<PlayerCareerStats, Long> {
 
     List<PlayerCareerStats> findByPlayerIdOrderBySeasonAsc(Long playerId);
+    java.util.Optional<PlayerCareerStats> findFirstByPlayerIdAndSeasonAndTeamName(Long playerId, String season, String teamName);
 }

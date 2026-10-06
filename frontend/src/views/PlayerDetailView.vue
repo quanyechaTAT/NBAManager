@@ -18,7 +18,7 @@
       </div>
 
       <!-- 球员信息卡片 -->
-      <div class="player-hero" v-loading="detailLoading">
+      <div class="player-hero glass-card" v-loading="detailLoading" :style="{ '--hero-team-color': player?.teamName ? getTeamPrimaryColor(player.teamName) : 'var(--accent)' }">
         <div class="player-hero-inner">
           <div class="player-hero-left">
             <div class="player-avatar" :class="{ 'player-avatar--clickable': player?.nbaPlayerId }" :role="player?.nbaPlayerId ? 'button' : undefined" :tabindex="player?.nbaPlayerId ? 0 : -1" aria-label="查看球员头像" @click="player?.nbaPlayerId && (showHeadshotPreview = true)" @keydown.enter="player?.nbaPlayerId && (showHeadshotPreview = true)">
@@ -28,30 +28,48 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
               </div>
             </div>
-            <div>
+            <div class="player-hero-main-info">
+              <div class="player-hero-meta-pills">
+                <span v-if="player?.jerseyNumber" class="hero-pill hero-pill--jersey">#{{ player.jerseyNumber }}</span>
+                <span class="hero-pill hero-pill--pos">{{ player?.position || '球员' }}</span>
+                <span v-if="player?.country" class="hero-pill hero-pill--country">{{ player.country }}</span>
+              </div>
               <h1 class="player-name">{{ player?.name }}</h1>
-              <p class="player-sub">{{ player?.teamName }} · {{ player?.position }} · #{{ player?.jerseyNumber }}</p>
-              <p class="player-extra">{{ player?.height }} · {{ player?.weight }}磅 · {{ player?.country }}</p>
-              <el-button v-if="auth.token" :type="isFollowed ? 'success' : 'primary'" plain size="small" @click="toggleFollow" class="follow-btn">
-                {{ isFollowed ? '★ 已关注' : '+ 关注' }}
-              </el-button>
-              <el-button plain size="small" @click="goCompare" class="follow-btn"><span class="btn-icon" style="display:inline-flex;margin-right:4px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg></span>双星对决</el-button>
+              <p class="player-sub">
+                <img v-if="player?.teamName && getTeamLogo(player.teamName)" :src="getTeamLogo(player.teamName)" class="player-hero-team-logo" alt="" />
+                <span class="player-hero-team-name">{{ player?.teamName }}</span>
+              </p>
+              <div class="player-biometrics">
+                <span class="bio-item"><span class="bio-lbl">身高</span><strong>{{ player?.height || '—' }}</strong></span>
+                <span class="bio-sep" aria-hidden="true">·</span>
+                <span class="bio-item"><span class="bio-lbl">体重</span><strong>{{ player?.weight ? `${player.weight} 磅` : '—' }}</strong></span>
+                <span class="bio-sep" aria-hidden="true">·</span>
+                <span class="bio-item"><span class="bio-lbl">出场</span><strong>{{ player?.gamesPlayed ? `${player.gamesPlayed} 场` : '—' }}</strong></span>
+                <span class="bio-sep" aria-hidden="true">·</span>
+                <span class="bio-item"><span class="bio-lbl">时间</span><strong>{{ player?.minutesPerGame ? `${player.minutesPerGame.toFixed(1)} 分` : '—' }}</strong></span>
+              </div>
+              <div class="player-hero-actions">
+                <el-button v-if="auth.token" :type="isFollowed ? 'success' : 'primary'" plain size="small" @click="toggleFollow" class="follow-btn">
+                  {{ isFollowed ? '★ 已关注' : '+ 关注' }}
+                </el-button>
+                <el-button plain size="small" @click="goCompare" class="follow-btn"><span class="btn-icon" style="display:inline-flex;margin-right:4px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg></span>球员对比</el-button>
+              </div>
             </div>
           </div>
           <div class="player-hero-stats">
             <div class="hero-stat">
-              <span class="hero-stat-num hero-stat-num--pts">{{ player?.pointsPerGame?.toFixed(1) ?? '—' }}</span>
-              <span class="hero-stat-label">场均得分</span>
+              <span class="hero-stat-num hero-stat-num--pts font-tabular">{{ player?.pointsPerGame?.toFixed(1) ?? '—' }}</span>
+              <span class="hero-stat-label">场均得分 PPG</span>
             </div>
             <div class="hero-stat-divider"></div>
             <div class="hero-stat">
-              <span class="hero-stat-num">{{ player?.reboundsPerGame?.toFixed(1) ?? '—' }}</span>
-              <span class="hero-stat-label">场均篮板</span>
+              <span class="hero-stat-num font-tabular">{{ player?.reboundsPerGame?.toFixed(1) ?? '—' }}</span>
+              <span class="hero-stat-label">场均篮板 RPG</span>
             </div>
             <div class="hero-stat-divider"></div>
             <div class="hero-stat">
-              <span class="hero-stat-num">{{ player?.assistsPerGame?.toFixed(1) ?? '—' }}</span>
-              <span class="hero-stat-label">场均助攻</span>
+              <span class="hero-stat-num font-tabular">{{ player?.assistsPerGame?.toFixed(1) ?? '—' }}</span>
+              <span class="hero-stat-label">场均助攻 APG</span>
             </div>
           </div>
         </div>
@@ -218,8 +236,8 @@
           <el-table-column label="对手" min-width="90">
             <template #default="{ row }">
               <router-link
-                v-if="getTeamIdByName(row.opponent)"
-                :to="{ path: '/teams/detail', query: { id: getTeamIdByName(row.opponent) } }"
+                v-if="row.opponent"
+                :to="{ path: '/teams/detail', query: { name: row.opponent, id: getTeamIdByName(row.opponent) } }"
                 class="opponent-link"
               >{{ row.opponent }}</router-link>
               <span v-else>{{ row.opponent }}</span>
@@ -302,6 +320,8 @@ import type { ShotData } from '@/api/types'
 import request from '@/utils/request'
 import { useChartTheme } from '@/composables/useChartTheme'
 import { formatGameScoreValue } from '@/utils/gameScore'
+import { getTeamLogo } from '@/utils/teamLogos'
+import { getTeamPrimaryColor } from '@/utils/teamColors'
 
 use([RadarChart, LineChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, RadarComponent, CanvasRenderer])
 
@@ -378,10 +398,14 @@ const keyStats = computed(() => {
     scaled: avg > 0 && max > 0 && max > avg,
   })
   return [
-    mk('得分', p.pointsPerGame, one, lg?.avgPoints, lg?.maxPoints),
-    mk('篮板', p.reboundsPerGame, one, lg?.avgRebounds, lg?.maxRebounds),
-    mk('助攻', p.assistsPerGame, one, lg?.avgAssists, lg?.maxAssists),
-    mk('命中率', p.fieldGoalPct, pct, lg?.avgFieldGoalPct, lg?.maxFieldGoalPct),
+    mk('得分 PPG', p.pointsPerGame, one, lg?.avgPoints, lg?.maxPoints),
+    mk('篮板 RPG', p.reboundsPerGame, one, lg?.avgRebounds, lg?.maxRebounds),
+    mk('助攻 APG', p.assistsPerGame, one, lg?.avgAssists, lg?.maxAssists),
+    mk('投篮命中率 FG%', p.fieldGoalPct, pct, lg?.avgFieldGoalPct, lg?.maxFieldGoalPct),
+    mk('三分命中率 3P%', p.threePointPct, pct, 0.36, 0.46),
+    mk('综合效率 EFF', p.efficiency, one, 14, 32),
+    mk('真实命中率 TS%', p.trueShootingPct, pct, 0.56, 0.68),
+    mk('回合占有率 USG%', (p.usagePct || 20) / 100, pct, 0.20, 0.36),
   ]
 })
 
@@ -396,15 +420,15 @@ const radarOption = computed(() => {
     radar: {
       indicator: [
         { name: '得分终结 (PPG)', max: 100 },
-        { name: '篮板冲抢 (RPG)', max: 100 },
+        { name: '外线投射 (3P%)', max: 100 },
         { name: '组织串联 (APG)', max: 100 },
-        { name: '外线抢断 (SPG)', max: 100 },
-        { name: '护筐盖帽 (BPG)', max: 100 },
-        { name: '投篮准星 (FG%)', max: 100 },
+        { name: '篮板保护 (RPG)', max: 100 },
+        { name: '防守威慑 (DEF)', max: 100 },
+        { name: '战术权重 (USG%)', max: 100 },
       ],
       shape: 'polygon',
       splitNumber: 4,
-      axisName: { color: c.textMuted, fontSize: 12 },
+      axisName: { color: c.textMuted, fontSize: 12, fontWeight: 'bold' },
       splitLine: { lineStyle: { color: c.axisLine } },
       splitArea: { areaStyle: { color: [c.splitArea1, c.splitArea2] } },
       axisLine: { lineStyle: { color: c.axisLine } },
@@ -414,16 +438,27 @@ const radarOption = computed(() => {
       data: [{
         value: [
           normalize(p.pointsPerGame, 35),
-          normalize(p.reboundsPerGame, 15),
+          normalize((p.threePointPct || 0.3) * 100, 45),
           normalize(p.assistsPerGame, 12),
-          normalize(p.stealsPerGame, 3),
-          normalize(p.blocksPerGame, 4),
-          normalize(p.fieldGoalPct, 0.65),
+          normalize(p.reboundsPerGame, 15),
+          normalize((p.stealsPerGame * 1.5 + p.blocksPerGame * 1.5), 6),
+          normalize(p.usagePct || ((p.minutesPerGame || 20) / 40 * 25), 35),
         ],
         name: p.name,
-        areaStyle: { color: `${c.purple}40` },
-        lineStyle: { color: c.purple, width: 2 },
-        itemStyle: { color: c.purpleLight },
+        areaStyle: {
+          color: {
+            type: 'radial',
+            x: 0.5,
+            y: 0.5,
+            r: 0.5,
+            colorStops: [
+              { offset: 0, color: 'rgba(34, 211, 238, 0.45)' },
+              { offset: 1, color: 'rgba(34, 211, 238, 0.12)' },
+            ],
+          },
+        },
+        lineStyle: { color: '#22D3EE', width: 2.5 },
+        itemStyle: { color: '#67E8F9', borderColor: '#0891B2', borderWidth: 2 },
       }],
     }],
   }
@@ -460,7 +495,17 @@ const careerOption = computed(() => {
         type: 'line',
         smooth: true,
         data: rows.map((r) => r.pointsPerGame),
-        lineStyle: { color: c.purple, width: 2 },
+        lineStyle: { color: c.purple, width: 2.5 },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: `${c.purple}30` },
+              { offset: 1, color: `${c.purple}00` },
+            ],
+          },
+        },
         itemStyle: { color: c.purple },
         symbol: 'circle',
         symbolSize: 6,
@@ -471,6 +516,16 @@ const careerOption = computed(() => {
         smooth: true,
         data: rows.map((r) => r.reboundsPerGame),
         lineStyle: { color: c.cyan, width: 2 },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: `${c.cyan}25` },
+              { offset: 1, color: `${c.cyan}00` },
+            ],
+          },
+        },
         itemStyle: { color: c.cyan },
         symbol: 'circle',
         symbolSize: 6,
@@ -481,6 +536,16 @@ const careerOption = computed(() => {
         smooth: true,
         data: rows.map((r) => r.assistsPerGame),
         lineStyle: { color: c.accent, width: 2 },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: `${c.accent}25` },
+              { offset: 1, color: `${c.accent}00` },
+            ],
+          },
+        },
         itemStyle: { color: c.accent },
         symbol: 'circle',
         symbolSize: 6,
@@ -847,7 +912,7 @@ const displayShots = computed<ShotData[]>(() => {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--accent-light), var(--accent));
+  background: var(--hero-team-color, linear-gradient(90deg, var(--accent-light), var(--accent)));
 }
 .player-hero::after {
   content: '';
@@ -1053,17 +1118,88 @@ const displayShots = computed<ShotData[]>(() => {
   -webkit-background-clip: text;
   background-clip: text;
 }
+.player-hero-meta-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.hero-pill {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  letter-spacing: 0.3px;
+}
+.hero-pill--jersey {
+  background: rgba(34, 211, 238, 0.12);
+  color: var(--accent);
+  border-color: rgba(34, 211, 238, 0.35);
+}
+.hero-pill--pos {
+  background: rgba(139, 92, 246, 0.12);
+  color: #A78BFA;
+  border-color: rgba(139, 92, 246, 0.35);
+}
+.hero-pill--country {
+  color: var(--text-muted);
+}
+.player-hero-team-logo {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.player-hero-team-name {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.player-biometrics {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.bio-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.bio-lbl {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+.bio-sep {
+  color: var(--border-medium);
+  font-size: 12px;
+}
+.player-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
 .player-sub {
   margin: 4px 0 0;
   font-size: 14px;
   color: var(--text-muted);
+  display: flex;
+  align-items: center;
 }
 .player-extra {
   margin: 2px 0 0;
   font-size: 13px;
   color: var(--text-dim);
 }
-.follow-btn { margin-top: 8px !important; }
+.follow-btn { margin-top: 0 !important; }
 .player-hero-stats {
   display: flex;
   align-items: center;

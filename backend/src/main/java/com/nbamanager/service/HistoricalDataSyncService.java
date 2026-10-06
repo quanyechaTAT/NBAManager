@@ -37,53 +37,8 @@ public class HistoricalDataSyncService {
     @Async("taskExecutor")
     @Transactional
     public void syncSeasonData(String season) {
-        if (!syncing.compareAndSet(false, true)) {
-            log.info("历史数据同步正在进行中，跳过: {}", season);
-            return;
-        }
-
-        log.info("开始同步 {} 赛季常规赛数据", season);
-
-        // 更新同步状态
-        seasonService.updateSyncStatus(season, "SYNCING", 0, 0);
-
-        try {
-            // 1. 获取球员常规赛数据
-            JSONObject playerData = scriptRunner.execute(
-                    "historical_players",
-                    new String[]{season},
-                    180
-            );
-
-            int playerCount = 0;
-            if (playerData != null && playerData.has("players")) {
-                playerCount = savePlayerStats(playerData.getJSONArray("players"), season);
-            }
-
-            // 2. 获取球队常规赛数据
-            JSONObject teamData = scriptRunner.execute(
-                    "historical_teams",
-                    new String[]{season},
-                    120
-            );
-
-            int teamCount = 0;
-            if (teamData != null && teamData.has("teams")) {
-                teamCount = saveTeamStats(teamData.getJSONArray("teams"), season);
-            }
-
-            // 3. 更新同步状态
-            seasonService.updateSyncStatus(season, "COMPLETED", playerCount, teamCount);
-            historicalStatsCache.evictAll();
-
-            log.info("{} 赛季数据同步完成: {} 名球员, {} 支球队", season, playerCount, teamCount);
-
-        } catch (Exception e) {
-            log.error("{} 赛季数据同步失败", season, e);
-            seasonService.updateSyncStatus(season, "FAILED", 0, 0);
-        } finally {
-            syncing.set(false);
-        }
+        try { syncSeasonDataSync(season); }
+        catch (RuntimeException error) { log.error("历史赛季同步失败: {}", season, error); }
     }
 
     /**
@@ -99,15 +54,18 @@ public class HistoricalDataSyncService {
         }
         log.info("开始同步 {} 赛季常规赛数据（同步模式）", season);
         seasonService.updateSyncStatus(season, "SYNCING", 0, 0);
+        boolean attemptedWrite = false;
         try {
             JSONObject playerData = executeForJob("historical_players", season, 180, jobId);
             int playerCount = 0;
             if (playerData != null && playerData.has("players")) {
+                attemptedWrite |= playerData.getJSONArray("players").length() > 0;
                 playerCount = savePlayerStats(playerData.getJSONArray("players"), season);
             }
             JSONObject teamData = executeForJob("historical_teams", season, 180, jobId);
             int teamCount = 0;
             if (teamData != null && teamData.has("teams")) {
+                attemptedWrite |= teamData.getJSONArray("teams").length() > 0;
                 teamCount = saveTeamStats(teamData.getJSONArray("teams"), season);
             }
             if (playerCount == 0 && teamCount == 0) {
@@ -119,7 +77,6 @@ public class HistoricalDataSyncService {
                 throw new PartialSyncException(String.format("历史赛季数据不完整: %s, 球员%d条, 球队%d条", season, playerCount, teamCount));
             }
             seasonService.updateSyncStatus(season, "COMPLETED", playerCount, teamCount);
-            historicalStatsCache.evictAll();
             log.info("同步完成: {} 赛季, 球员{}条, 球队{}条", season, playerCount, teamCount);
         } catch (PartialSyncException e) {
             // 部分失败：状态已在上方写入 PARTIAL，不再覆盖
@@ -133,6 +90,7 @@ public class HistoricalDataSyncService {
             seasonService.updateSyncStatus(season, "FAILED", 0, 0);
             throw e;
         } finally {
+            if (attemptedWrite) historicalStatsCache.evictAll();
             syncing.set(false);
         }
     }
@@ -197,19 +155,21 @@ public class HistoricalDataSyncService {
             stats.setJerseyNumber(p.optString("jersey", ""));
 
             // 常规赛数据
-            stats.setGamesPlayed(p.optInt("gp", 0));
-            stats.setGamesStarted(p.optInt("gs", 0));
-            stats.setMinutesPerGame(BigDecimal.valueOf(p.optDouble("mpg", 0)));
-            stats.setPointsPerGame(BigDecimal.valueOf(p.optDouble("ppg", 0)));
-            stats.setReboundsPerGame(BigDecimal.valueOf(p.optDouble("rpg", 0)));
-            stats.setAssistsPerGame(BigDecimal.valueOf(p.optDouble("apg", 0)));
-            stats.setStealsPerGame(BigDecimal.valueOf(p.optDouble("spg", 0)));
-            stats.setBlocksPerGame(BigDecimal.valueOf(p.optDouble("bpg", 0)));
-            stats.setFieldGoalPct(BigDecimal.valueOf(p.optDouble("fgPct", 0)));
-            stats.setThreePointPct(BigDecimal.valueOf(p.optDouble("threePct", 0)));
-            stats.setFreeThrowPct(BigDecimal.valueOf(p.optDouble("ftPct", 0)));
-            stats.setTurnoversPerGame(BigDecimal.valueOf(p.optDouble("topg", 0)));
+            stats.setGamesPlayed(nullableInteger(p, "gp"));
+            stats.setGamesStarted(nullableInteger(p, "gs"));
+            stats.setMinutesPerGame(nullableDecimal(p, "mpg"));
+            stats.setPointsPerGame(nullableDecimal(p, "ppg"));
+            stats.setReboundsPerGame(nullableDecimal(p, "rpg"));
+            stats.setAssistsPerGame(nullableDecimal(p, "apg"));
+            stats.setStealsPerGame(nullableDecimal(p, "spg"));
+            stats.setBlocksPerGame(nullableDecimal(p, "bpg"));
+            stats.setFieldGoalPct(nullableDecimal(p, "fgPct"));
+            stats.setThreePointPct(nullableDecimal(p, "threePct"));
+            stats.setFreeThrowPct(nullableDecimal(p, "ftPct"));
+            stats.setTurnoversPerGame(nullableDecimal(p, "topg"));
 
+            stats.markData("NBA_API", season, "REGULAR_SEASON", "gamesPlayed", "gamesStarted", "minutesPerGame", "pointsPerGame", "reboundsPerGame", "assistsPerGame", "stealsPerGame", "blocksPerGame", "fieldGoalPct", "threePointPct", "freeThrowPct", "turnoversPerGame");
+            stats.setDataSourceUrl("https://www.nba.com/stats");
             playerStatsRepo.save(stats);
             saved++;
         }
@@ -240,17 +200,22 @@ public class HistoricalDataSyncService {
             stats.setNbaTeamId(t.optLong("teamId", 0));
             stats.setConference(t.optString("conference", ""));
             stats.setDivision(t.optString("division", ""));
-            stats.setWins(t.optInt("wins", 0));
-            stats.setLosses(t.optInt("losses", 0));
-            stats.setWinPct(BigDecimal.valueOf(t.optDouble("winPct", 0)));
-            stats.setConferenceRank(t.optInt("conferenceRank", 0));
-            stats.setDivisionRank(t.optInt("divisionRank", 0));
-            stats.setLeagueRank(t.optInt("leagueRank", 0));
-            stats.setPointsPerGame(BigDecimal.valueOf(t.optDouble("ppg", 0)));
-            stats.setOpponentsPointsPerGame(BigDecimal.valueOf(t.optDouble("oppg", 0)));
-            stats.setReboundsPerGame(BigDecimal.valueOf(t.optDouble("rpg", 0)));
-            stats.setAssistsPerGame(BigDecimal.valueOf(t.optDouble("apg", 0)));
+            stats.setWins(nullableInteger(t, "wins"));
+            stats.setLosses(nullableInteger(t, "losses"));
+            stats.setWinPct(nullableDecimal(t, "winPct"));
+            stats.setConferenceRank(nullableInteger(t, "conferenceRank"));
+            stats.setDivisionRank(nullableInteger(t, "divisionRank"));
+            stats.setLeagueRank(nullableInteger(t, "leagueRank"));
+            stats.setPointsPerGame(nullableDecimal(t, "ppg"));
+            stats.setOpponentsPointsPerGame(nullableDecimal(t, "oppg"));
+            stats.setReboundsPerGame(nullableDecimal(t, "rpg"));
+            stats.setAssistsPerGame(nullableDecimal(t, "apg"));
+            stats.setHomeRecord(t.has("homeRecord") && !t.isNull("homeRecord") ? t.optString("homeRecord") : null);
+            stats.setAwayRecord(t.has("awayRecord") && !t.isNull("awayRecord") ? t.optString("awayRecord") : null);
+            stats.setStreak(t.has("streak") && !t.isNull("streak") ? t.optString("streak") : null);
 
+            stats.markData("NBA_API", season, "REGULAR_SEASON", "wins", "losses", "winPct", "conferenceRank", "divisionRank", "leagueRank", "pointsPerGame", "opponentsPointsPerGame", "reboundsPerGame", "assistsPerGame", "homeRecord", "awayRecord", "streak");
+            stats.setDataSourceUrl("https://www.nba.com/stats");
             teamStatsRepo.save(stats);
             saved++;
         }
@@ -264,5 +229,13 @@ public class HistoricalDataSyncService {
      */
     public boolean isSyncing() {
         return syncing.get();
+    }
+    private static BigDecimal nullableDecimal(JSONObject value, String key) {
+        Double number = PlayerSnapshotMapper.number(value, key);
+        return number == null ? null : BigDecimal.valueOf(number);
+    }
+    private static Integer nullableInteger(JSONObject value, String key) {
+        Double number = PlayerSnapshotMapper.number(value, key);
+        return number == null ? null : number.intValue();
     }
 }

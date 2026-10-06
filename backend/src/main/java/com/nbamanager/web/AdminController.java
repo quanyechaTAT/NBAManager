@@ -51,7 +51,7 @@ public class AdminController {
     /** 同步指定模块 → 新任务 202 / 复用活动任务 200 */
     @PostMapping("/sync/{module}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<SyncJobResponse> syncModule(
+    public ResponseEntity<?> syncModule(
             @PathVariable String module,
             @AuthenticationPrincipal UserPrincipal user) {
         String upper = module.toUpperCase();
@@ -66,7 +66,8 @@ public class AdminController {
             }
             return ResponseEntity.accepted().body(response);
         } catch (SyncJobConflictException e) {
-            return ResponseEntity.status(HttpStatus.valueOf(e.getStatus().value())).build();
+            return ResponseEntity.status(HttpStatus.valueOf(e.getStatus().value()))
+                    .body(Map.of("code", e.getErrorCode(), "message", e.getMessage()));
         }
     }
 
@@ -106,7 +107,7 @@ public class AdminController {
         return syncJobRepository.findById(jobId)
                 .map(job -> {
                     List<SyncJobStepResponse> steps = syncJobStepRepository.findByJobIdOrderByStepOrder(jobId)
-                            .stream().map(SyncJobStepResponse::from).toList();
+                            .stream().map(step -> SyncJobStepResponse.from(step, job)).toList();
                     return ResponseEntity.ok(SyncJobDetailResponse.from(job, steps));
                 })
                 .orElse(ResponseEntity.notFound().build());

@@ -65,6 +65,8 @@ function saveTodayCache(games: GameNews[]) {
   } catch { /* ignore */ }
 }
 
+let todayFetchInFlight = false
+
 export function useDashboardCache() {
   const stats = ref<DashboardStats | null>(null)
   const todayGames = ref<GameNews[]>([])
@@ -75,14 +77,20 @@ export function useDashboardCache() {
   const docCount = ref(0)
   const loading = ref(true)
 
-  let todayFetchInFlight = false
+  const INVALID_TEAMS = new Set(['待定', 'TBD', 'tbd', ''])
+
+  function isValidGame(g: GameNews): boolean {
+    const home = g.homeTeam?.trim()
+    const away = g.awayTeam?.trim()
+    return Boolean(g.nbaGameId && home && !INVALID_TEAMS.has(home) && away && !INVALID_TEAMS.has(away))
+  }
 
   async function fetchTodayGames() {
     if (todayFetchInFlight) return
     todayFetchInFlight = true
     try {
       const { data } = await import('@/api/news').then(m => m.fetchTodayNews())
-      const games = data ?? []
+      const games = (data ?? []).filter(isValidGame)
       todayGames.value = games
       saveTodayCache(games)
     } catch {
@@ -100,6 +108,10 @@ export function useDashboardCache() {
     topScorers.value = data.topScorers ?? data.stats?.topScorers ?? []
     hotPosts.value = data.hotPosts ?? []
     docCount.value = data.docCount || 0
+
+    if (Array.isArray(data.todayGames) && data.todayGames.length > 0 && todayGames.value.length === 0) {
+      todayGames.value = data.todayGames.filter(isValidGame)
+    }
 
     saveDashboardCache({
       stats: stats.value,
@@ -131,7 +143,7 @@ export function useDashboardCache() {
     // Load todayGames from cache immediately
     const todayCached = loadTodayCache()
     if (todayCached) {
-      todayGames.value = todayCached.games
+      todayGames.value = (todayCached.games || []).filter(isValidGame)
     }
 
     // Load dashboard from cache immediately

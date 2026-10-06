@@ -2,9 +2,12 @@ package com.nbamanager.service;
 
 import com.nbamanager.domain.MatchRecord;
 import com.nbamanager.domain.Team;
+import com.nbamanager.domain.TeamSeasonStats;
 import com.nbamanager.exception.ApiException;
 import com.nbamanager.repository.MatchRecordRepository;
 import com.nbamanager.repository.TeamRepository;
+import com.nbamanager.repository.TeamSeasonStatsRepository;
+import com.nbamanager.web.dto.DataMeta;
 import com.nbamanager.web.dto.TeamDto;
 import com.nbamanager.web.dto.TeamRankDto;
 import com.nbamanager.web.dto.TeamRequest;
@@ -26,11 +29,27 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@RequiredArgsConstructor
 public class TeamService {
 
     private final TeamRepository teamRepository;
     private final MatchRecordRepository matchRecordRepository;
+    private SeasonManagementService seasonService;
+    private TeamSeasonStatsRepository teamStatsRepo;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public TeamService(TeamRepository teamRepository,
+                       MatchRecordRepository matchRecordRepository,
+                       @org.springframework.beans.factory.annotation.Autowired(required = false) SeasonManagementService seasonService,
+                       @org.springframework.beans.factory.annotation.Autowired(required = false) TeamSeasonStatsRepository teamStatsRepo) {
+        this.teamRepository = teamRepository;
+        this.matchRecordRepository = matchRecordRepository;
+        this.seasonService = seasonService;
+        this.teamStatsRepo = teamStatsRepo;
+    }
+
+    public TeamService(TeamRepository teamRepository, MatchRecordRepository matchRecordRepository) {
+        this(teamRepository, matchRecordRepository, null, null);
+    }
 
     /** 球队列表允许的排序字段（默认按胜场降序，与前端期望一致）。 */
     private static final Set<String> ALLOWED_SORTS = Set.of(
@@ -84,101 +103,102 @@ public class TeamService {
         teamRepository.deleteById(id);
     }
 
-    /** 东西部分区排名（按胜率排序，含胜场差 + 主客场/得分/失分/连胜） */
     @Cacheable(value = "rankings", key = "'all'")
     @Transactional(readOnly = true)
     public Map<String, List<TeamRankDto>> getConferenceRankings() {
+        return rankings(false);
+    }
+
+    private Map<String, List<TeamRankDto>> rankings(boolean divisions) {
         List<Team> all = teamRepository.findAll();
-        Map<String, List<Team>> grouped = all.stream()
-                .collect(Collectors.groupingBy(Team::getConference));
-
-        // 加载所有已完赛记录用于统计
-        List<MatchRecord> finishedMatches = matchRecordRepository.findByStatus("FINISHED");
-
+        List<MatchRecord> matches = matchRecordRepository.findByStatus("FINISHED");
+        String season = seasonService != null ? seasonService.getCurrentSeason() : "2025-26";
+        Map<String, TeamSeasonStats> seasonStatsMap = (teamStatsRepo != null && season != null)
+                ? teamStatsRepo.findBySeasonOrderByWinsDesc(season).stream()
+                        .collect(Collectors.toMap(TeamSeasonStats::getTeamName, s -> s, (a, b) -> a))
+                : Map.of();
         Map<String, List<TeamRankDto>> result = new java.util.LinkedHashMap<>();
-        for (String conf : List.of("东部", "西部")) {
-            List<Team> confTeams = grouped.getOrDefault(conf, List.of());
-            List<Team> sorted = confTeams.stream()
-                    .sorted(Comparator
-                            .comparingDouble((Team t) -> {
-                                int total = t.getWins() + t.getLosses();
-                                return total == 0 ? 0.0 : (double) t.getWins() / total;
-                            }).reversed()
-                            .thenComparing(Comparator.comparingInt((Team t) -> t.getWins() - t.getLosses()).reversed()))
-                    .collect(Collectors.toList());
-            if (sorted.isEmpty()) {
-                result.put(conf, List.of());
-                continue;
-            }
-            Team first = sorted.get(0);
-            double firstGb = first.getWins() - first.getLosses();
+        List<String> groups = divisions ? List.of("大西洋", "中部", "东南", "西北", "太平洋", "西南") : List.of("东部", "西部");
+        for (String group : groups) {
+            var sorted = all.stream().filter(t -> group.equals(divisions ? t.getDivision() : t.getConference()))
+                    .sorted(Comparator.comparing((Team t) -> effectiveWinRate(t, season, seasonStatsMap), Comparator.nullsLast(Comparator.reverseOrder()))
+                            .thenComparing(t -> effectiveDiff(t, season, seasonStatsMap),
+                                    Comparator.nullsLast(Comparator.reverseOrder()))
+                            .thenComparing(Team::getName)).toList();
             List<TeamRankDto> ranks = new ArrayList<>();
-            for (int i = 0; i < sorted.size(); i++) {
-                Team t = sorted.get(i);
-                double gb = i == 0 ? 0.0 : (firstGb - (t.getWins() - t.getLosses())) / 2.0;
-
-                // 从比赛记录计算详细数据
-                String teamName = t.getName();
-                int homeWins = 0, homeLosses = 0, awayWins = 0, awayLosses = 0;
-                int totalScored = 0, totalAllowed = 0, gamesPlayed = 0;
-                int currentStreak = 0; // 正数=连胜，负数=连败
-                boolean streakSet = false;
-
-                // 按日期排序比赛记录
-                List<MatchRecord> teamMatches = finishedMatches.stream()
-                        .filter(m -> teamName.equals(m.getHomeTeam()) || teamName.equals(m.getAwayTeam()))
-                        .sorted(Comparator.comparing(MatchRecord::getMatchDate).reversed())
-                        .collect(Collectors.toList());
-
-                for (MatchRecord m : teamMatches) {
-                    boolean isHome = teamName.equals(m.getHomeTeam());
-                    int myScore = isHome ? m.getHomeScore() : m.getAwayScore();
-                    int oppScore = isHome ? m.getAwayScore() : m.getHomeScore();
-                    boolean won = myScore > oppScore;
-
-                    totalScored += myScore;
-                    totalAllowed += oppScore;
-                    gamesPlayed++;
-
-                    if (isHome) {
-                        if (won) homeWins++; else homeLosses++;
-                    } else {
-                        if (won) awayWins++; else awayLosses++;
-                    }
-
-                    // 计算连胜/连败（从最近比赛开始）
-                    if (!streakSet) {
-                        currentStreak = won ? 1 : -1;
-                        streakSet = true;
-                    } else if (streakSet) {
-                        boolean prevWon = currentStreak > 0;
-                        if (won == prevWon) {
-                            currentStreak = currentStreak > 0 ? currentStreak + 1 : currentStreak - 1;
-                        } else {
-                            break; // 连胜/连败中断
-                        }
-                    }
+            Team first = sorted.isEmpty() ? null : sorted.get(0);
+            Integer firstWins = first != null ? getEffectiveWins(first, season, seasonStatsMap) : null;
+            Integer firstLosses = first != null ? getEffectiveLosses(first, season, seasonStatsMap) : null;
+            for (Team team : sorted) {
+                Integer wins = getEffectiveWins(team, season, seasonStatsMap);
+                Integer losses = getEffectiveLosses(team, season, seasonStatsMap);
+                Double gb = (firstWins != null && firstLosses != null && wins != null && losses != null)
+                        ? ((firstWins - firstLosses) - (wins - losses)) / 2.0 : null;
+                if (gb != null) {
+                    gb = Math.round(gb * 10.0) / 10.0;
                 }
+                var sample = TeamMatchStatistics.calculate(team.getName(), season, matches);
+                TeamSeasonStats tss = seasonStatsMap.get(team.getName());
 
-                String homeRecord = homeWins + "-" + homeLosses;
-                String awayRecord = awayWins + "-" + awayLosses;
-                double ppg = gamesPlayed > 0 ? (double) totalScored / gamesPlayed : 0;
-                double oppg = gamesPlayed > 0 ? (double) totalAllowed / gamesPlayed : 0;
-                double netRating = ppg - oppg;
-                String streak = currentStreak > 0 ? currentStreak + "连胜" : (currentStreak < 0 ? Math.abs(currentStreak) + "连败" : "—");
-
-                ranks.add(new TeamRankDto(
-                        teamName, t.getWins(), t.getLosses(), gb, conf,
-                        homeRecord, awayRecord,
-                        Math.round(ppg * 10.0) / 10.0,
-                        Math.round(oppg * 10.0) / 10.0,
-                        Math.round(netRating * 10.0) / 10.0,
-                        streak
-                ));
+                String homeRecord = sample.homeRecord() != null ? sample.homeRecord() : (tss != null ? tss.getHomeRecord() : null);
+                String awayRecord = sample.awayRecord() != null ? sample.awayRecord() : (tss != null ? tss.getAwayRecord() : null);
+                Double ppg = sample.pointsPerGame() != null ? sample.pointsPerGame() : (tss != null && tss.getPointsPerGame() != null ? tss.getPointsPerGame().doubleValue() : null);
+                Double oppg = sample.oppPointsPerGame() != null ? sample.oppPointsPerGame() : (tss != null && tss.getOpponentsPointsPerGame() != null ? tss.getOpponentsPointsPerGame().doubleValue() : null);
+                Double diff = sample.pointDifferential() != null ? sample.pointDifferential() : ((ppg != null && oppg != null) ? Math.round((ppg - oppg) * 10.0) / 10.0 : null);
+                String streak = sample.streak() != null ? sample.streak() : (tss != null ? tss.getStreak() : null);
+                DataMeta sampleMeta = (sample.homeRecord() != null || sample.pointsPerGame() != null)
+                        ? sample.dataMeta()
+                        : (tss != null && tss.getDataMeta() != null ? tss.getDataMeta() : sample.dataMeta());
+                DataMeta teamMeta = team.getDataMeta();
+                if (teamMeta == null && tss != null) {
+                    teamMeta = tss.getDataMeta();
+                }
+                ranks.add(new TeamRankDto(team.getName(), wins, losses,
+                        gb, team.getConference(), homeRecord, awayRecord, ppg,
+                        oppg, diff, streak, diff,
+                        sampleMeta, teamMeta));
             }
-            result.put(conf, ranks);
+            result.put(group, ranks);
         }
         return result;
+    }
+
+    private Integer getEffectiveWins(Team team, String season, Map<String, TeamSeasonStats> seasonStatsMap) {
+        if (hasDisplayableRecord(team, season)) return team.getWins();
+        TeamSeasonStats tss = seasonStatsMap.get(team.getName());
+        return tss != null ? tss.getWins() : null;
+    }
+
+    private Integer getEffectiveLosses(Team team, String season, Map<String, TeamSeasonStats> seasonStatsMap) {
+        if (hasDisplayableRecord(team, season)) return team.getLosses();
+        TeamSeasonStats tss = seasonStatsMap.get(team.getName());
+        return tss != null ? tss.getLosses() : null;
+    }
+
+    private Double effectiveWinRate(Team team, String season, Map<String, TeamSeasonStats> seasonStatsMap) {
+        Integer w = getEffectiveWins(team, season, seasonStatsMap);
+        Integer l = getEffectiveLosses(team, season, seasonStatsMap);
+        if (w == null || l == null) return null;
+        int total = w + l;
+        return total == 0 ? 0.0 : (double) w / total;
+    }
+
+    private Integer effectiveDiff(Team team, String season, Map<String, TeamSeasonStats> seasonStatsMap) {
+        Integer w = getEffectiveWins(team, season, seasonStatsMap);
+        Integer l = getEffectiveLosses(team, season, seasonStatsMap);
+        return (w != null && l != null) ? (w - l) : null;
+    }
+
+    private static Double winRate(Team team, String season) {
+        if (!hasDisplayableRecord(team, season)) return null;
+        int total = team.getWins() + team.getLosses();
+        return total == 0 ? 0.0 : (double) team.getWins() / total;
+    }
+
+    private static boolean hasDisplayableRecord(Team team, String season) {
+        return (team.hasRetainedLegacyValues() || java.util.Objects.equals(season, team.getDataMeta().season()))
+                && team.canDisplay("wins") && team.canDisplay("losses")
+                && team.getWins() != null && team.getLosses() != null;
     }
 
     /** 初始化球队分区数据 */
@@ -219,100 +239,9 @@ public class TeamService {
         return updated;
     }
 
-    /** 分区排名（按赛区分组） */
     @Cacheable(value = "rankings", key = "'divisions'")
     @Transactional(readOnly = true)
-    public Map<String, List<TeamRankDto>> getDivisionRankings() {
-        List<Team> all = teamRepository.findAll();
-
-        // 按 division 分组
-        Map<String, List<Team>> grouped = all.stream()
-                .filter(t -> t.getDivision() != null && !t.getDivision().isBlank())
-                .collect(Collectors.groupingBy(Team::getDivision));
-
-        // 加载比赛记录
-        List<MatchRecord> finishedMatches = matchRecordRepository.findByStatus("FINISHED");
-
-        Map<String, List<TeamRankDto>> result = new java.util.LinkedHashMap<>();
-        // 按固定顺序排列赛区
-        List<String> divisionOrder = List.of("大西洋", "中部", "东南", "西北", "太平洋", "西南");
-        for (String div : divisionOrder) {
-            List<Team> divTeams = grouped.getOrDefault(div, List.of());
-            if (divTeams.isEmpty()) continue;
-
-            List<Team> sorted = divTeams.stream()
-                    .sorted(Comparator
-                            .comparingDouble((Team t) -> {
-                                int total = t.getWins() + t.getLosses();
-                                return total == 0 ? 0.0 : (double) t.getWins() / total;
-                            }).reversed())
-                    .collect(Collectors.toList());
-
-            Team first = sorted.get(0);
-            double firstGb = first.getWins() - first.getLosses();
-            List<TeamRankDto> ranks = new ArrayList<>();
-            for (int i = 0; i < sorted.size(); i++) {
-                Team t = sorted.get(i);
-                double gb = i == 0 ? 0.0 : (firstGb - (t.getWins() - t.getLosses())) / 2.0;
-                String teamName = t.getName();
-
-                // 复用比赛记录统计
-                int homeWins = 0, homeLosses = 0, awayWins = 0, awayLosses = 0;
-                int totalScored = 0, totalAllowed = 0, gamesPlayed = 0;
-                int currentStreak = 0;
-                boolean streakSet = false;
-
-                List<MatchRecord> teamMatches = finishedMatches.stream()
-                        .filter(m -> teamName.equals(m.getHomeTeam()) || teamName.equals(m.getAwayTeam()))
-                        .sorted(Comparator.comparing(MatchRecord::getMatchDate).reversed())
-                        .collect(Collectors.toList());
-
-                for (MatchRecord m : teamMatches) {
-                    boolean isHome = teamName.equals(m.getHomeTeam());
-                    int myScore = isHome ? m.getHomeScore() : m.getAwayScore();
-                    int oppScore = isHome ? m.getAwayScore() : m.getHomeScore();
-                    boolean won = myScore > oppScore;
-
-                    totalScored += myScore;
-                    totalAllowed += oppScore;
-                    gamesPlayed++;
-
-                    if (isHome) { if (won) homeWins++; else homeLosses++; }
-                    else { if (won) awayWins++; else awayLosses++; }
-
-                    if (!streakSet) {
-                        currentStreak = won ? 1 : -1;
-                        streakSet = true;
-                    } else {
-                        boolean prevWon = currentStreak > 0;
-                        if (won == prevWon) {
-                            currentStreak = currentStreak > 0 ? currentStreak + 1 : currentStreak - 1;
-                        } else {
-                            break;
-                        }
-                    }
-                }
-
-                String homeRecord = homeWins + "-" + homeLosses;
-                String awayRecord = awayWins + "-" + awayLosses;
-                double ppg = gamesPlayed > 0 ? (double) totalScored / gamesPlayed : 0;
-                double oppg = gamesPlayed > 0 ? (double) totalAllowed / gamesPlayed : 0;
-                double netRating = ppg - oppg;
-                String streak = currentStreak > 0 ? currentStreak + "连胜" : (currentStreak < 0 ? Math.abs(currentStreak) + "连败" : "—");
-
-                ranks.add(new TeamRankDto(
-                        teamName, t.getWins(), t.getLosses(), gb, t.getConference(),
-                        homeRecord, awayRecord,
-                        Math.round(ppg * 10.0) / 10.0,
-                        Math.round(oppg * 10.0) / 10.0,
-                        Math.round(netRating * 10.0) / 10.0,
-                        streak
-                ));
-            }
-            result.put(div, ranks);
-        }
-        return result;
-    }
+    public Map<String, List<TeamRankDto>> getDivisionRankings() { return rankings(true); }
 
     private void apply(Team t, TeamRequest req) {
         t.setName(req.name());
@@ -322,10 +251,11 @@ public class TeamService {
         t.setWins(req.wins());
         t.setLosses(req.losses());
         if (req.logoUrl() != null) t.setLogoUrl(req.logoUrl());
+        t.markData("MANUAL", seasonService.getCurrentSeason(), "REGULAR_SEASON", "wins", "losses");
     }
 
     private TeamDto toDto(Team t) {
-        return new TeamDto(t.getId(), t.getName(), t.getNameEn(), t.getAbbreviation(), t.getCity(), t.getConference(), t.getDivision(), t.getWins(), t.getLosses(), t.getLogoUrl());
+        return new TeamDto(t.getId(), t.getName(), t.getNameEn(), t.getAbbreviation(), t.getCity(), t.getConference(), t.getDivision(), t.canDisplay("wins") ? t.getWins() : null, t.canDisplay("losses") ? t.getLosses() : null, t.getLogoUrl(), t.getDataMeta());
     }
 
     private static ApiException notFound(Long id) {

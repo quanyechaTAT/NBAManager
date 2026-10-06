@@ -4,5 +4,7 @@ import java.util.List;
 
 public record SyncOverviewResponse(
         String currentSeason,
-        List<SyncModuleOverview> modules
+        List<SyncModuleOverview> modules,
+        SyncJobResponse activeFullJob,
+        SyncJobDetailResponse latestFullJob
 ) {}

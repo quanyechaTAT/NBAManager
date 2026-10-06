@@ -290,17 +290,26 @@ class SyncCoordinatorTest {
             return null;
         }).when(manualSyncExecutor).execute(any(Runnable.class));
         when(jobStateService.isCancelRequested(1L)).thenReturn(false, false, true);
-        when(teamSyncWorker.sync(1L, 5, 15))
-                .thenReturn(com.nbamanager.web.dto.SyncResult.failed("TEAMS", "PYTHON_FAILED", "cancelled"));
+        when(teamSyncWorker.sync(eq(1L), eq(5), eq(15), any()))
+                .thenAnswer(invocation -> {
+                    java.util.function.BiConsumer<Integer, String> progress = invocation.getArgument(3);
+                    progress.accept(50, "FETCHING");
+                    return com.nbamanager.web.dto.SyncResult.failed("TEAMS", "PYTHON_FAILED", "cancelled");
+                });
 
         coordinator.submitFullSync("admin");
         captured.get().run();
 
         verify(jobStateService, never()).updateProgress(1L, 15);
+        verify(stepStateService).updateProgress(null, 50, "FETCHING");
         ArgumentCaptor<com.nbamanager.web.dto.SyncResult> resultCaptor =
                 ArgumentCaptor.forClass(com.nbamanager.web.dto.SyncResult.class);
         verify(jobStateService).complete(eq(1L), resultCaptor.capture());
         assertThat(resultCaptor.getValue().status()).isEqualTo("CANCELLED");
+        ArgumentCaptor<com.nbamanager.web.dto.SyncResult> stepResultCaptor =
+                ArgumentCaptor.forClass(com.nbamanager.web.dto.SyncResult.class);
+        verify(stepStateService).complete(isNull(), stepResultCaptor.capture());
+        assertThat(stepResultCaptor.getValue().status()).isEqualTo("CANCELLED");
     }
 
 }

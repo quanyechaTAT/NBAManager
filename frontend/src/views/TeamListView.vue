@@ -70,7 +70,7 @@
                     <td class="col-away">{{ t.awayRecord || '—' }}</td>
                     <td class="col-ppg">{{ t.pointsPerGame != null ? t.pointsPerGame.toFixed(1) : '—' }}</td>
                     <td class="col-oppg">{{ t.oppPointsPerGame != null ? t.oppPointsPerGame.toFixed(1) : '—' }}</td>
-                    <td class="col-net" :class="{ 'net-pos': (t.netRating ?? 0) > 0, 'net-neg': (t.netRating ?? 0) < 0 }">{{ t.netRating != null ? (t.netRating > 0 ? '+' : '') + t.netRating.toFixed(1) : '—' }}</td>
+                    <td class="col-net" :class="{ 'net-pos': (effectiveNet(t) ?? 0) > 0, 'net-neg': (effectiveNet(t) ?? 0) < 0 }">{{ formatNet(t) }}</td>
                     <td class="col-streak"><span class="streak-pill" :class="{ 'streak-w': t.streak?.includes('连胜'), 'streak-l': t.streak?.includes('连败') }">{{ t.streak || '—' }}</span></td>
                   </template>
                 </tr>
@@ -120,7 +120,7 @@
                     <td class="col-away">{{ t.awayRecord || '—' }}</td>
                     <td class="col-ppg">{{ t.pointsPerGame != null ? t.pointsPerGame.toFixed(1) : '—' }}</td>
                     <td class="col-oppg">{{ t.oppPointsPerGame != null ? t.oppPointsPerGame.toFixed(1) : '—' }}</td>
-                    <td class="col-net" :class="{ 'net-pos': (t.netRating ?? 0) > 0, 'net-neg': (t.netRating ?? 0) < 0 }">{{ t.netRating != null ? (t.netRating > 0 ? '+' : '') + t.netRating.toFixed(1) : '—' }}</td>
+                    <td class="col-net" :class="{ 'net-pos': (effectiveNet(t) ?? 0) > 0, 'net-neg': (effectiveNet(t) ?? 0) < 0 }">{{ formatNet(t) }}</td>
                     <td class="col-streak"><span class="streak-pill" :class="{ 'streak-w': t.streak?.includes('连胜'), 'streak-l': t.streak?.includes('连败') }">{{ t.streak || '—' }}</span></td>
                   </template>
                 </tr>
@@ -178,7 +178,7 @@
                     <td class="col-away">{{ t.awayRecord || '—' }}</td>
                     <td class="col-ppg">{{ t.pointsPerGame != null ? t.pointsPerGame.toFixed(1) : '—' }}</td>
                     <td class="col-oppg">{{ t.oppPointsPerGame != null ? t.oppPointsPerGame.toFixed(1) : '—' }}</td>
-                    <td class="col-net" :class="{ 'net-pos': (t.netRating ?? 0) > 0, 'net-neg': (t.netRating ?? 0) < 0 }">{{ t.netRating != null ? (t.netRating > 0 ? '+' : '') + t.netRating.toFixed(1) : '—' }}</td>
+                    <td class="col-net" :class="{ 'net-pos': (effectiveNet(t) ?? 0) > 0, 'net-neg': (effectiveNet(t) ?? 0) < 0 }">{{ formatNet(t) }}</td>
                     <td class="col-streak"><span class="streak-pill" :class="{ 'streak-w': t.streak?.includes('连胜'), 'streak-l': t.streak?.includes('连败') }">{{ t.streak || '—' }}</span></td>
                   </template>
                 </tr>
@@ -241,7 +241,23 @@ function goTeamDetail(teamName: string) {
   router.push({ path: '/teams/detail', query: { name: teamName } })
 }
 
-function winPct(w: number, l: number) {
+function effectiveNet(t: TeamRank): number | null {
+  if (t.netRating != null) return t.netRating
+  if (t.pointDifferential != null) return t.pointDifferential
+  if (t.pointsPerGame != null && t.oppPointsPerGame != null) {
+    return Math.round((t.pointsPerGame - t.oppPointsPerGame) * 10) / 10
+  }
+  return null
+}
+
+function formatNet(t: TeamRank): string {
+  const net = effectiveNet(t)
+  if (net == null) return '—'
+  return (net > 0 ? '+' : '') + net.toFixed(1)
+}
+
+function winPct(w: number | null | undefined, l: number | null | undefined) {
+  if (w == null || l == null) return '—'
   const t = w + l
   return t === 0 ? '0.0%' : ((w / t) * 100).toFixed(1) + '%'
 }
@@ -251,8 +267,42 @@ async function loadRankings() {
   try {
     if (isCurrentSeason.value) {
       const { data } = await fetchRankings()
-      eastStandings.value = data?.东部 ?? data?.eastern ?? []
-      westStandings.value = data?.西部 ?? data?.western ?? []
+      let east = data?.东部 ?? data?.eastern ?? []
+      let west = data?.西部 ?? data?.western ?? []
+      if (east.length === 0 && west.length === 0) {
+        const hData = await getHistoricalRankings(selectedSeason.value)
+        east = hData?.东部 ?? hData?.eastern ?? []
+        west = hData?.西部 ?? hData?.western ?? []
+      } else {
+        const hasMissing = [...east, ...west].some(t => t.pointsPerGame == null || !t.homeRecord)
+        if (hasMissing) {
+          try {
+            const hData = await getHistoricalRankings(selectedSeason.value)
+            const hEast = hData?.东部 ?? hData?.eastern ?? []
+            const hWest = hData?.西部 ?? hData?.western ?? []
+            const hMap = new Map([...hEast, ...hWest].map(item => [item.teamName, item]))
+            const mergeRank = (t: TeamRank) => {
+              const h = hMap.get(t.teamName)
+              if (!h) return t
+              return {
+                ...t,
+                homeRecord: t.homeRecord || h.homeRecord,
+                awayRecord: t.awayRecord || h.awayRecord,
+                pointsPerGame: t.pointsPerGame ?? h.pointsPerGame,
+                oppPointsPerGame: t.oppPointsPerGame ?? h.oppPointsPerGame,
+                netRating: t.netRating ?? h.netRating,
+                streak: t.streak || h.streak,
+              }
+            }
+            east = east.map(mergeRank)
+            west = west.map(mergeRank)
+          } catch {
+            // ignore fallback merge error
+          }
+        }
+      }
+      eastStandings.value = east
+      westStandings.value = west
     } else {
       const data = await getHistoricalRankings(selectedSeason.value)
       eastStandings.value = data?.东部 ?? data?.eastern ?? []
@@ -270,7 +320,43 @@ async function loadDivisionRankings() {
   try {
     if (isCurrentSeason.value) {
       const { data } = await fetchDivisionRankings()
-      divisionStandings.value = data || {}
+      let divs = data || {}
+      if (Object.keys(divs).length === 0) {
+        const hData = await getHistoricalDivisionRankings(selectedSeason.value)
+        divs = hData || {}
+      } else {
+        const allTeams = Object.values(divs).flat() as TeamRank[]
+        const hasMissing = allTeams.some(t => t.pointsPerGame == null || !t.homeRecord)
+        if (hasMissing) {
+          try {
+            const hData = await getHistoricalDivisionRankings(selectedSeason.value)
+            if (hData) {
+              const hTeams = Object.values(hData).flat() as TeamRank[]
+              const hMap = new Map(hTeams.map(item => [item.teamName, item]))
+              const merged: Record<string, TeamRank[]> = {}
+              for (const [key, list] of Object.entries(divs)) {
+                merged[key] = list.map(t => {
+                  const h = hMap.get(t.teamName)
+                  if (!h) return t
+                  return {
+                    ...t,
+                    homeRecord: t.homeRecord || h.homeRecord,
+                    awayRecord: t.awayRecord || h.awayRecord,
+                    pointsPerGame: t.pointsPerGame ?? h.pointsPerGame,
+                    oppPointsPerGame: t.oppPointsPerGame ?? h.oppPointsPerGame,
+                    netRating: t.netRating ?? h.netRating,
+                    streak: t.streak || h.streak,
+                  }
+                })
+              }
+              divs = merged
+            }
+          } catch {
+            // ignore fallback merge error
+          }
+        }
+      }
+      divisionStandings.value = divs
     } else {
       const data = await getHistoricalDivisionRankings(selectedSeason.value)
       divisionStandings.value = data || {}
@@ -306,8 +392,11 @@ async function onSeasonChange() {
 onMounted(async () => {
   try {
     const seasonsData = await getAvailableSeasons()
-    currentSeason.value = seasonsData.current
+    currentSeason.value = seasonsData.current || '2025-26'
     availableSeasons.value = seasonsData.available || []
+    if (currentSeason.value && !availableSeasons.value.includes(currentSeason.value)) {
+      availableSeasons.value.unshift(currentSeason.value)
+    }
     selectedSeason.value = currentSeason.value
   } catch {
     currentSeason.value = '2025-26'

@@ -75,6 +75,8 @@ public class MatchSyncWorker extends ModuleSyncWorker {
                     if (nbaGameId != null && !nbaGameId.isEmpty()) existing.setNbaGameId(nbaGameId);
                     existing.setGameType(MatchGameTypeResolver.resolve(
                             g.optString("gameType", existing.getGameType()), nbaGameId, matchDate));
+                    existing.setSeason(MatchSeasonResolver.resolve(g.optString("season", null), nbaGameId, matchDate));
+                    existing.markData("NBA_API", existing.getSeason(), existing.getGameType(), "homeScore", "awayScore", "status");
                     matchRecordRepository.save(existing);
                     updated++;
                 } else {
@@ -86,11 +88,12 @@ public class MatchSyncWorker extends ModuleSyncWorker {
                     record.setHomeScore(homeScore);
                     record.setAwayScore(awayScore);
                     record.setMatchDate(matchDate);
-                    record.setSeason(getCurrentSeason());
+                    record.setSeason(MatchSeasonResolver.resolve(g.optString("season", null), nbaGameId, matchDate));
                     record.setStatus(status);
                     record.setNbaGameId(nbaGameId);
                     record.setGameType(MatchGameTypeResolver.resolve(
                             g.optString("gameType", null), nbaGameId, matchDate));
+                    record.markData("NBA_API", record.getSeason(), record.getGameType(), "homeScore", "awayScore", "status");
                     matchRecordRepository.save(record);
                     inserted++;
                 }
@@ -106,10 +109,4 @@ public class MatchSyncWorker extends ModuleSyncWorker {
         }
     }
 
-    private String getCurrentSeason() {
-        LocalDate now = LocalDate.now();
-        int year = now.getYear();
-        int month = now.getMonthValue();
-        return month >= 10 ? year + "-" + String.valueOf(year + 1).substring(2) : (year - 1) + "-" + String.valueOf(year).substring(2);
-    }
 }

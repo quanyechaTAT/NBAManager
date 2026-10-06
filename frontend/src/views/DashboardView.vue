@@ -13,7 +13,7 @@
           </template>
           <template v-else>
             <div class="metric-card">
-              <span class="metric-value" :class="{ 'is-zero': todayGames.length === 0 }" v-count-up="todayGames.length">{{ todayGames.length }}</span>
+              <span class="metric-value" :class="{ 'is-zero': validTodayGamesCount === 0 }" v-count-up="validTodayGamesCount">{{ validTodayGamesCount }}</span>
               <span class="metric-label">今日赛事</span>
               <span class="metric-accent-bar"></span>
             </div>
@@ -25,7 +25,7 @@
             </div>
             <div class="metric-card">
               <span class="metric-value" :class="{ 'is-zero': docCount === 0 }" v-count-up:locale="docCount">{{ docCount.toLocaleString() }}</span>
-              <span class="metric-label" title="涵盖全联盟赛事数据、球星档案与高阶战术指标">战术情报档案</span>
+              <span class="metric-label" title="涵盖全联盟赛事数据、球员数据与高阶技术指标">赛事与技术数据</span>
               <span class="metric-accent-bar"></span>
             </div>
             <div class="metric-card">
@@ -60,7 +60,7 @@
             <span class="game-type">{{ gameTypeLabel(g) }}</span>
             <span class="game-time">{{ formatGameTime(g.matchDate) }}</span>
           </div>
-          <div class="game-title">{{ g.awayTeam }} @ {{ g.homeTeam }}</div>
+          <div class="game-title">{{ g.awayTeam }} vs {{ g.homeTeam }}</div>
           <div class="game-teams">
             <div class="game-team">
               <img v-if="getLogo(g.awayTeam)" :src="getLogo(g.awayTeam)" class="game-logo" alt="" />
@@ -91,7 +91,7 @@
         <!-- 排名摘要 -->
         <div class="summary-card">
           <div class="summary-header">
-            <h3>分区排位先锋榜</h3>
+            <h3>分区球队战绩榜</h3>
             <router-link to="/teams" class="section-link">完整战绩榜 →</router-link>
           </div>
           <template v-if="loading && currentRank.length === 0">
@@ -108,11 +108,12 @@
               <button class="rank-tab" :class="{ active: rankTab === 'east' }" @click="rankTab = 'east'">东部</button>
             </div>
             <div class="rank-list">
-              <div v-for="(t, i) in currentRank.slice(0, 5)" :key="t.teamName" class="rank-row clickable" @click="goTeamDetail(t.teamName)">
+              <div v-for="(t, i) in currentRank" :key="t.teamName" class="rank-row clickable" @click="goTeamDetail(t.teamName)">
+                <span class="tier-bar" :class="i < 6 ? 'tier-bar--playoff' : (i < 10 ? 'tier-bar--playin' : 'tier-bar--lottery')" :title="i < 6 ? '季后赛直通资格 (1-6)' : (i < 10 ? '附加赛争夺区 (7-10)' : '乐透抽签区 (11-15)')"></span>
                 <span class="rank-num" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
                 <img v-if="getLogo(t.teamName)" :src="getLogo(t.teamName)" class="rank-logo" alt="" />
                 <span class="rank-name">{{ t.teamName }}</span>
-                <span class="rank-record">{{ t.wins }}-{{ t.losses }}</span>
+                <span class="rank-record">{{ (t.wins != null && t.losses != null) ? `${t.wins}-${t.losses}` : '—' }}</span>
                 <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
               </div>
             </div>
@@ -122,7 +123,7 @@
         <!-- 得分榜 -->
         <div class="summary-card summary-card--with-footer">
           <div class="summary-header">
-            <h3>得分领袖风云榜 (PPG Leaders)</h3>
+            <h3>得分领袖榜 (PPG Leaders)</h3>
           </div>
           <template v-if="loading && topScorers.length === 0">
             <div v-for="i in 9" :key="i" class="skeleton-row">
@@ -151,15 +152,15 @@
                 <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
               </div>
             </div>
-            <router-link to="/players" class="view-all-link">进入球星档案库 →</router-link>
+            <router-link to="/players" class="view-all-link">进入球员数据中心 →</router-link>
           </template>
         </div>
 
         <!-- 热门讨论 -->
         <div class="summary-card" v-if="visibleHotPosts.length > 0">
           <div class="summary-header">
-            <h3>球迷看台热议先锋</h3>
-            <router-link to="/community" class="section-link">看台广场 →</router-link>
+            <h3>社区热门讨论</h3>
+            <router-link to="/community" class="section-link">社区讨论 →</router-link>
           </div>
           <div class="hot-list">
             <div v-for="p in visibleHotPosts" :key="p.id" class="hot-row" @click="$router.push({ path: '/community/post', query: { id: String(p.id) } })">
@@ -177,7 +178,7 @@
     <!-- 核心功能入口 -->
     <section class="section">
       <div class="section-header">
-        <h2 class="section-title">联盟核心智能矩阵 (Core Analytics Matrix)</h2>
+        <h2 class="section-title">核心数据与分析 (Core Analytics)</h2>
       </div>
       <div class="features-grid">
         <router-link to="/playoff" class="feature-card feature-card--playoff">
@@ -187,8 +188,8 @@
             </div>
             <svg class="feature-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </div>
-          <span class="feature-title">季后赛争霸树状图</span>
-          <span class="feature-desc">决战奥布莱恩杯 · 分区突围与晋级总决赛路径</span>
+          <span class="feature-title">季后赛对阵图</span>
+          <span class="feature-desc">东西部季后赛对阵与晋级总决赛路径</span>
         </router-link>
 
         <router-link to="/teams" class="feature-card feature-card--teams">
@@ -198,8 +199,8 @@
             </div>
             <svg class="feature-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </div>
-          <span class="feature-title">三十路豪强巡礼</span>
-          <span class="feature-desc">攻防效率净值 (Net Rtg) · 分区阶梯与胜负走势</span>
+          <span class="feature-title">球队战绩与数据</span>
+          <span class="feature-desc">攻防效率净值 (Net Rtg) · 分区排名与战绩走势</span>
         </router-link>
 
         <router-link to="/players" class="feature-card feature-card--players">
@@ -209,8 +210,8 @@
             </div>
             <svg class="feature-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </div>
-          <span class="feature-title">MVP 竞逐与球星档案</span>
-          <span class="feature-desc">真实正负值 (BPM) · 六维战术雷达与高阶风云榜</span>
+          <span class="feature-title">球员数据与榜单</span>
+          <span class="feature-desc">真实正负值 (BPM) · 能力雷达与高阶效率数据</span>
         </router-link>
 
         <router-link to="/news" class="feature-card feature-card--news">
@@ -231,7 +232,7 @@
             </div>
             <svg class="feature-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </div>
-          <span class="feature-title">AI 战术智囊 (Copilot)</span>
+          <span class="feature-title">AI 智能助手 (Copilot)</span>
           <span class="feature-desc">技战术攻防博弈推演 · 阵容克制与关键球透视</span>
         </router-link>
 
@@ -242,8 +243,8 @@
             </div>
             <svg class="feature-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </div>
-          <span class="feature-title">历史丰碑长卷 (NBA Vault)</span>
-          <span class="feature-desc">数十年王朝兴衰 · 单场神迹与赛季历史极值</span>
+          <span class="feature-title">历史数据归档 (NBA Vault)</span>
+          <span class="feature-desc">历年球队战绩 · 单场纪录与历史赛季数据</span>
         </router-link>
 
         <router-link to="/drafts" class="feature-card feature-card--draft">
@@ -253,8 +254,8 @@
             </div>
             <svg class="feature-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </div>
-          <span class="feature-title">历届选秀星河殿堂</span>
-          <span class="feature-desc">乐透造星脉络 · 黄金一代与生涯起点溯源</span>
+          <span class="feature-title">历届选秀大会</span>
+          <span class="feature-desc">历届选秀顺位 · 乐透区新秀与选秀数据</span>
         </router-link>
       </div>
     </section>
@@ -276,6 +277,16 @@ import type { MatchRecord } from '@/api/types'
 const router = useRouter()
 const { stats, todayGames, westStandings, eastStandings, topScorers, hotPosts, docCount, loading } = useDashboardCache()
 const { tickerMatches, groups, headline, headlineLabel, refresh: refreshFeed } = useMatchFeed()
+
+const INVALID_TEAMS = new Set(['待定', 'TBD', 'tbd', ''])
+const validTodayGames = computed(() => {
+  return (todayGames.value || []).filter(g => {
+    const home = g.homeTeam?.trim()
+    const away = g.awayTeam?.trim()
+    return Boolean(g.nbaGameId && home && !INVALID_TEAMS.has(home) && away && !INVALID_TEAMS.has(away))
+  })
+})
+const validTodayGamesCount = computed(() => validTodayGames.value.length)
 
 /** 赛事看板数据：直播中 → 今日赛程 → 最近赛果 */
 const feedMatches = computed(() => tickerMatches.value)

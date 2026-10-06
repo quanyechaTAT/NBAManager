@@ -7,6 +7,14 @@ from time import time
 from rag_app.config import DEFAULT_RUNTIME_DIR
 
 
+def read_report():
+    try:
+        value = json.loads((DEFAULT_RUNTIME_DIR / 'index_report.json').read_text(encoding='utf-8'))
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def write_report(report: dict) -> None:
     DEFAULT_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     report = {**report, "generated_at": int(time())}

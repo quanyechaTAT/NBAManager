@@ -39,8 +39,9 @@ const typeOptions = [
 
 function isScoringEvent(event: TimelineEvent): boolean {
   if (event.isScoringPlay === true) return true
-  const text = `${event.eventType || ''} ${event.actionType || ''} ${event.description || ''}`.toLowerCase()
-  const missed = text.includes('miss') || text.includes('missed') || text.includes('不中')
+  if (event.isScoringPlay === false) return false
+  const text = `${event.eventType || ''} ${event.actionType || ''} ${event.description || ''} ${event.descriptionEn || ''}`.toLowerCase()
+  const missed = text.includes('miss') || text.includes('不中') || text.includes('未命中')
   const scoringKeyword =
     text.includes('made') || text.includes('makes') || text.includes('命中') ||
     text.includes('free throw') || text.includes('freethrow') || text.includes('罚球') ||
@@ -147,14 +148,19 @@ function centerRowInScroller(id: number) {
   const row = rowRefs.get(id)
   if (!scroller || !row) return
 
-  const targetTop = row.offsetTop - (scroller.clientHeight / 2) + (row.clientHeight / 2)
-  scroller.scrollTop = Math.max(0, targetTop)
+  // Both rectangles use viewport coordinates; offsetTop may belong to an outer positioned ancestor.
+  const containerRect = scroller.getBoundingClientRect()
+  const rowRect = row.getBoundingClientRect()
+  const targetTop = scroller.scrollTop + rowRect.top - containerRect.top - scroller.clientTop
+    - (scroller.clientHeight - rowRect.height) / 2
+  const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+  scroller.scrollTop = Math.min(maxTop, Math.max(0, targetTop))
 }
 
 watch(
-  () => props.selectedEvent?.id,
-  async (id) => {
-    if (!id) return
+  () => [props.selectedEvent?.id, props.events] as const,
+  async ([id]) => {
+    if (id == null) return
     const visible = filteredEvents.value.some(event => event.id === id)
     if (!visible) {
       periodFilter.value = 'all'
@@ -162,8 +168,10 @@ watch(
       searchQuery.value = ''
     }
     await nextTick()
+    if (props.selectedEvent?.id !== id) return
     centerRowInScroller(id)
-  }
+  },
+  { immediate: true, flush: 'post' }
 )
 </script>
 

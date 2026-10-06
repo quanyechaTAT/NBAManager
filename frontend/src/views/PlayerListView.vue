@@ -4,8 +4,8 @@
       <!-- 页面头部 -->
       <SportsHeader
         eyebrow="NBA ROSTER & METRICS"
-        title="联盟球星档案库"
-        subtitle="全景透视 30 支球队现役球员名单、赛季场均数据与综合效率值"
+        title="球员数据中心"
+        subtitle="浏览 30 支球队现役球员名单、赛季场均数据与综合效率指标"
       >
         <template #actions>
           <div class="view-toggle" aria-label="球员展示方式">
@@ -42,30 +42,63 @@
       <!-- 卡片视图（默认） -->
       <template v-if="viewMode === 'cards'">
         <div class="player-grid" v-loading="loading">
-          <div v-for="row in rows" :key="row.id" class="player-card" role="link" tabindex="0" @click="goToPlayerDetail(row)" @keydown.enter="goToPlayerDetail(row)">
-            <div class="player-card-avatar">
-              <img v-if="row.nbaPlayerId && !brokenAvatars.has(row.id)" :src="`https://cdn.nba.com/headshots/nba/latest/260x190/${row.nbaPlayerId}.png`" :alt="row.name" loading="lazy" @error="onThumbError(row)" />
-              <span v-else class="player-card-avatar-fallback">{{ row.name?.charAt(0) }}</span>
-            </div>
-            <div class="player-card-info">
-              <span class="player-card-name">{{ row.name }}</span>
-              <span class="player-card-meta">
-                <img v-if="getTeamLogo(row.teamName)" :src="getTeamLogo(row.teamName)" class="player-card-team-logo" alt="" />
-                {{ row.teamName }} · {{ row.position }}
-              </span>
-            </div>
-            <div class="player-card-stats">
-              <div class="player-card-stat">
-                <span class="stat-val">{{ row.pointsPerGame?.toFixed(1) ?? '—' }}</span>
-                <span class="stat-lbl">得分</span>
+          <div
+            v-for="row in rows"
+            :key="row.id"
+            class="player-card glass-card hoverable"
+            :style="{ '--team-accent': getTeamPrimaryColor(row.teamName) }"
+            role="link"
+            tabindex="0"
+            @click="goToPlayerDetail(row)"
+            @keydown.enter="goToPlayerDetail(row)"
+          >
+            <!-- 球队品牌色微细条纹 -->
+            <span class="player-card-stripe" aria-hidden="true" />
+
+            <!-- 背景艺术化半透明球衣号水印 -->
+            <span v-if="row.jerseyNumber" class="player-jersey-watermark" aria-hidden="true">
+              #{{ row.jerseyNumber }}
+            </span>
+
+            <div class="player-card-top">
+              <div class="player-card-avatar">
+                <img
+                  v-if="row.nbaPlayerId && !brokenAvatars.has(row.id)"
+                  :src="`https://cdn.nba.com/headshots/nba/latest/260x190/${row.nbaPlayerId}.png`"
+                  :alt="row.name"
+                  loading="lazy"
+                  @error="onThumbError(row)"
+                />
+                <span v-else class="player-card-avatar-fallback">{{ row.name?.charAt(0) }}</span>
               </div>
-              <div class="player-card-stat">
-                <span class="stat-val">{{ row.reboundsPerGame?.toFixed(1) ?? '—' }}</span>
-                <span class="stat-lbl">篮板</span>
+              <div class="player-card-info">
+                <div class="player-card-badges">
+                  <span class="pos-badge" :class="getPosBadgeClass(row.position)">{{ getPosBadgeLabel(row.position) }}</span>
+                  <span v-if="row.jerseyNumber" class="jersey-badge">#{{ row.jerseyNumber }}</span>
+                </div>
+                <span class="player-card-name" :title="row.name">{{ row.name }}</span>
+                <span class="player-card-meta">
+                  <img v-if="getTeamLogo(row.teamName)" :src="getTeamLogo(row.teamName)" class="player-card-team-logo" alt="" />
+                  <span class="player-card-team-name">{{ row.teamName }}</span>
+                </span>
               </div>
-              <div class="player-card-stat">
-                <span class="stat-val">{{ row.assistsPerGame?.toFixed(1) ?? '—' }}</span>
-                <span class="stat-lbl">助攻</span>
+            </div>
+
+            <!-- 三项核心数据对齐底座 -->
+            <div class="player-card-stats-dock">
+              <div class="player-stat-col">
+                <span class="stat-val font-tabular">{{ row.pointsPerGame?.toFixed(1) ?? '—' }}</span>
+                <span class="stat-lbl">得分 PTS</span>
+              </div>
+              <span class="dock-sep" aria-hidden="true" />
+              <div class="player-stat-col">
+                <span class="stat-val font-tabular">{{ row.reboundsPerGame?.toFixed(1) ?? '—' }}</span>
+                <span class="stat-lbl">篮板 REB</span>
+              </div>
+              <span class="dock-sep" aria-hidden="true" />
+              <div class="player-stat-col">
+                <span class="stat-val font-tabular">{{ row.assistsPerGame?.toFixed(1) ?? '—' }}</span>
+                <span class="stat-lbl">助攻 AST</span>
               </div>
             </div>
           </div>
@@ -171,8 +204,33 @@ import { createPlayer, deletePlayer, fetchPlayers, updatePlayer } from '@/api/pl
 import { fetchTeams } from '@/api/team'
 import type { Player, Team } from '@/api/types'
 import { getTeamLogo } from '@/utils/teamLogos'
+import { getTeamPrimaryColor } from '@/utils/teamColors'
 import AppEmpty from '@/components/common/AppEmpty.vue'
 import SportsHeader from '@/components/common/SportsHeader.vue'
+
+function getPosBadgeLabel(pos?: string): string {
+  if (!pos) return 'UTIL'
+  if (pos.includes('控') || pos === 'PG' || pos.startsWith('PG')) return 'PG 控卫'
+  if (pos.includes('分') || pos === 'SG' || pos.startsWith('SG')) return 'SG 分卫'
+  if (pos.includes('小前') || pos === 'SF' || pos.startsWith('SF')) return 'SF 小前'
+  if (pos.includes('大前') || pos === 'PF' || pos.startsWith('PF')) return 'PF 大前'
+  if (pos.includes('中') || pos === 'C' || pos.startsWith('C')) return 'C 中锋'
+  if (pos === 'G' || pos.includes('后卫')) return 'G 后卫'
+  if (pos === 'F' || pos.includes('前锋')) return 'F 前锋'
+  return pos
+}
+
+function getPosBadgeClass(pos?: string): string {
+  if (!pos) return 'pos-badge--util'
+  if (pos.includes('控') || pos === 'PG' || pos.startsWith('PG')) return 'pos-badge--pg'
+  if (pos.includes('分') || pos === 'SG' || pos.startsWith('SG')) return 'pos-badge--sg'
+  if (pos.includes('小前') || pos === 'SF' || pos.startsWith('SF')) return 'pos-badge--sf'
+  if (pos.includes('大前') || pos === 'PF' || pos.startsWith('PF')) return 'pos-badge--pf'
+  if (pos.includes('中') || pos === 'C' || pos.startsWith('C')) return 'pos-badge--c'
+  if (pos === 'G' || pos.includes('后卫')) return 'pos-badge--sg'
+  if (pos === 'F' || pos.includes('前锋')) return 'pos-badge--sf'
+  return 'pos-badge--util'
+}
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -444,9 +502,9 @@ onMounted(async () => { await loadTeams(); await load() })
 }
 .player-card {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px 18px 14px;
   background: var(--bg-card);
   border: 1px solid var(--border-light);
   border-radius: 14px;
@@ -457,34 +515,160 @@ onMounted(async () => { await loadTeams(); await load() })
     box-shadow 0.22s var(--ease-out-quart, ease);
   position: relative;
   overflow: hidden;
+  min-height: 146px;
 }
 .player-card:hover {
-  border-color: var(--border-medium);
-  box-shadow: var(--shadow-sm);
+  border-color: rgba(34, 211, 238, 0.4);
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.35), 0 0 12px -2px rgba(34, 211, 238, 0.18);
   transform: translateY(-3px);
 }
 .player-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 球队品牌色微细条纹 */
+.player-card-stripe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--team-accent, var(--accent));
+  opacity: 0.85;
+}
+
+/* 背景半透明球衣号水印 */
+.player-jersey-watermark {
+  position: absolute;
+  right: 12px;
+  top: 6px;
+  font-family: var(--font-heading);
+  font-size: 46px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--text-primary);
+  opacity: 0.045;
+  pointer-events: none;
+  user-select: none;
+  letter-spacing: -2px;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.player-card:hover .player-jersey-watermark {
+  opacity: 0.09;
+  transform: scale(1.06) translateX(-2px);
+}
+
+/* 顶部球员主信息 */
+.player-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .player-card-avatar {
   width: 48px;
   height: 48px;
-  border-radius: 50%;
+  border-radius: 12px;
   overflow: hidden;
   flex-shrink: 0;
   background: var(--bg-hover);
   display: flex;
   align-items: center;
   justify-content: center;
+  border: 1px solid var(--border-light);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 .player-card-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .player-card-avatar-fallback { font-size: 18px; font-weight: 700; color: var(--text-muted); }
+
 .player-card-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.player-card-name { font-size: 14px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.player-card-meta { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.player-card-badges { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+
+/* 位置色彩编码微标签 */
+.pos-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+.pos-badge--pg {
+  background: rgba(34, 211, 238, 0.14);
+  color: #22D3EE;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+}
+.pos-badge--sg {
+  background: rgba(139, 92, 246, 0.14);
+  color: #A78BFA;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+}
+.pos-badge--sf {
+  background: rgba(16, 185, 129, 0.14);
+  color: #34D399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+.pos-badge--pf {
+  background: rgba(245, 158, 11, 0.14);
+  color: #FBBF24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+.pos-badge--c {
+  background: rgba(244, 63, 94, 0.14);
+  color: #FB7185;
+  border: 1px solid rgba(244, 63, 94, 0.35);
+}
+.pos-badge--util {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--border-light);
+}
+
+[data-theme="light"] .pos-badge--pg { background: rgba(8, 145, 178, 0.1); color: #0891B2; border-color: rgba(8, 145, 178, 0.28); }
+[data-theme="light"] .pos-badge--sg { background: rgba(124, 58, 237, 0.1); color: #7C3AED; border-color: rgba(124, 58, 237, 0.28); }
+[data-theme="light"] .pos-badge--sf { background: rgba(5, 150, 105, 0.1); color: #059669; border-color: rgba(5, 150, 105, 0.28); }
+[data-theme="light"] .pos-badge--pf { background: rgba(217, 119, 6, 0.1); color: #D97706; border-color: rgba(217, 119, 6, 0.28); }
+[data-theme="light"] .pos-badge--c  { background: rgba(225, 29, 72, 0.1); color: #E11D48; border-color: rgba(225, 29, 72, 0.28); }
+
+.jersey-badge {
+  font-family: var(--font-heading);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  padding: 1px 4px;
+}
+
+.player-card-name { font-size: 14px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player-card-meta { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); }
 .player-card-team-logo { width: 14px; height: 14px; object-fit: contain; }
-.player-card-stats { display: flex; gap: 12px; flex-shrink: 0; }
-.player-card-stat { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; width: 40px; }
-.stat-val { font-size: 14px; font-weight: 700; color: var(--text-primary); font-family: var(--font-heading); font-variant-numeric: tabular-nums; }
-.stat-lbl { font-size: 10px; color: var(--text-muted); }
+.player-card-team-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 三项核心数据对齐底座 */
+.player-card-stats-dock {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin-top: 12px;
+}
+.player-stat-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  flex: 1;
+}
+.dock-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border-light);
+}
+.stat-val { font-size: 13px; font-weight: 700; color: var(--text-primary); font-family: var(--font-heading); font-variant-numeric: tabular-nums; }
+.stat-lbl { font-size: 9px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.3px; }
 
 /* 表格视图 */
 .card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 16px; }
@@ -526,7 +710,9 @@ onMounted(async () => { await loadTeams(); await load() })
   .page,
   .page--table { max-width: 100%; padding: 0 16px; }
   .player-grid { grid-template-columns: repeat(2, 1fr); }
-  .player-card-stats { gap: 8px; }
+  .player-card-stats-dock { padding: 4px 6px; }
+  .stat-val { font-size: 12px; }
+  .stat-lbl { font-size: 8px; }
   .filter-search { max-width: 100%; }
 }
 @media (max-width: 480px) {

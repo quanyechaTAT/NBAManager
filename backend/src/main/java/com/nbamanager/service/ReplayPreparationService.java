@@ -225,9 +225,10 @@ public class ReplayPreparationService {
     }
 
     private String safeMessage(Throwable failure) {
-        return failure.getMessage() == null || failure.getMessage().isBlank()
+        String msg = failure.getMessage() == null || failure.getMessage().isBlank()
                 ? failure.getClass().getSimpleName()
                 : failure.getMessage();
+        return msg.length() > 2000 ? msg.substring(0, 2000) : msg;
     }
 
     private String instanceId() {

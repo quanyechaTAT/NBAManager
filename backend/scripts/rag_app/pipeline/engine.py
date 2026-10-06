@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from rag_app.structured.provenance import source_details
 import re
-import sys
 import time
 from typing import Iterable
 
@@ -19,11 +19,17 @@ from rag_app.pipeline.evidence_gate import (
 )
 from rag_app.pipeline.output_cleaner import clean_repetition
 from rag_app.pipeline.query_classifier import QueryClassifier, QueryType
+from rag_app.pipeline.game_scope import game_context, explicit_game_date
+from rag_app.pipeline.follow_ups import build_follow_ups
+from rag_app.pipeline.planning import QueryPlan, ANALYSIS_INTENT
+from rag_app.pipeline.query_planner import QueryPlanner
+from rag_app.pipeline.evidence import EvidenceResolver, EvidenceBundle
+from rag_app.pipeline.evidence_gate import GateDecision
 from rag_app.retrieval.formatter import format_documents
-from rag_app.retrieval.retriever import HybridRetriever, RetrievalQuality, RetrievalResult
+from rag_app.retrieval.retriever import HybridRetriever
 from rag_app.structured.db import Database
 from rag_app.structured.repository import StructuredRepository
-from rag_app.tools.search_tool import SearchService, SearchExecution, SearchQueryRewriter, format_search_results
+from rag_app.tools.search_tool import SearchService, SearchQueryRewriter, format_search_results
 
 
 @dataclass
@@ -42,23 +48,39 @@ class RAGAnswer:
     retrieval_quality: dict | None = None
     success: bool = True
     error: str = ""
+    sourceDetails: list[dict] = field(default_factory=list)
+    follow_ups: list[str] = field(default_factory=list)
 
 
 class RAGEngine:
-    def __init__(self, settings: RAGSettings):
+    def __init__(self, settings: RAGSettings, *, structured=None, retriever=None,
+                 search_service=None, llm=None, memory=None, query_rewriter=None, query_planner=None):
         self.settings = settings
         self.classifier = QueryClassifier()
         self.evidence_gate = EvidenceGate()
-        self.retriever = HybridRetriever(settings)
-        self.structured = StructuredRepository(Database(settings))
-        self.search_service = SearchService(settings)
-        self.query_rewriter = SearchQueryRewriter()
-        self.llm = LLMClient(settings)
-        self.memory = ConversationMemory(settings.memory_window)
+        self.retriever = retriever or HybridRetriever(settings)
+        self.structured = structured or StructuredRepository(Database(settings))
+        self.search_service = search_service or SearchService(settings)
+        self.query_rewriter = query_rewriter or SearchQueryRewriter()
+        self.llm = llm or LLMClient(settings)
+        self.query_planner = query_planner or QueryPlanner(settings, self.llm, self.query_rewriter)
+        self.memory = memory or ConversationMemory(getattr(settings, 'memory_window', 5),
+            max_sessions=getattr(settings, 'memory_max_sessions', 256),
+            ttl_seconds=getattr(settings, 'memory_ttl_seconds', 3600))
+        self.evidence = EvidenceResolver(settings, self.structured, self.retriever, self.search_service,
+                                         self.evidence_gate, self.query_rewriter, self.query_planner)
 
     def ask(self, question: str, top_k: int = 5, session_id: str | None = None,
             force_web_search: bool = False,
             conversation_history: list[dict] | None = None) -> RAGAnswer:
+        with self.memory.turn(session_id) as granted:
+            if not granted:
+                return RAGAnswer('', [], [], [], 0, self.model_name, success=False,
+                                 error='该会话的上一条回答尚未结束，请稍后再问')
+            return self._ask(question, top_k, session_id, force_web_search, conversation_history)
+
+    def _ask(self, question: str, top_k: int, session_id: str | None,
+             force_web_search: bool, conversation_history: list[dict] | None) -> RAGAnswer:
         start = time.time()
         try:
             self._hydrate_memory(session_id, conversation_history)
@@ -93,51 +115,71 @@ class RAGEngine:
                 response_time=round((time.time() - start) * 1000),
                 model=self.model_name,
                 success=False,
-                error=str(exc),
+                error='服务暂时不可用，请稍后重试',
             )
 
     def stream(self, question: str, top_k: int = 5, session_id: str | None = None,
                force_web_search: bool = False,
                conversation_history: list[dict] | None = None) -> Iterable[dict]:
+        with self.memory.turn(session_id) as granted:
+            if not granted:
+                yield {'type': 'error', 'error': '该会话的上一条回答尚未结束，请稍后再问', 'code': 'CONVERSATION_BUSY'}
+                return
+            yield from self._stream(question, top_k, session_id, force_web_search, conversation_history)
+
+    def _stream(self, question: str, top_k: int, session_id: str | None,
+                force_web_search: bool, conversation_history: list[dict] | None) -> Iterable[dict]:
         start = time.time()
         self._hydrate_memory(session_id, conversation_history)
+        yield {'type': 'status', 'message': '正在检索比赛和数据来源...'}
         prepared = self.prepare(question, top_k, force_web_search, session_id)
         yield {
             "type": "sources",
             "sources": prepared["documents"],
             "metadatas": prepared["metadatas"],
+            "sourceDetails": self._source_details(prepared),
             "search_results": [item.to_dict() for item in prepared["search_results"]],
             "used_tools": prepared["used_tools"],
             "tool_trace": prepared["tool_trace"],
             "structured_data": bool(prepared["structured_text"]),
             "search_execution": prepared["search_execution"],
             "retrieval_quality": prepared["retrieval_quality"],
+            "query_plan": prepared['query_plan'],
         }
 
         if prepared["direct_answer"]:
             answer = prepared["direct_answer"]
             yield {"type": "chunk", "content": answer}
             self.memory.add(session_id, question, answer)
-            yield {"type": "done", "response_time": round((time.time() - start) * 1000)}
+            yield {"type": "done", "response_time": round((time.time() - start) * 1000), "follow_ups": build_follow_ups(prepared, answer)}
             return
 
         if not prepared["allowed"]:
             answer = prepared["refusal_message"] or REFUSAL_MESSAGE
             yield {"type": "chunk", "content": answer}
             self.memory.add(session_id, question, answer)
-            yield {"type": "done", "response_time": round((time.time() - start) * 1000)}
+            yield {"type": "done", "response_time": round((time.time() - start) * 1000), "follow_ups": []}
             return
 
         budget = self._response_token_budget(prepared["classification"], prepared["resolved_question"])
         prompt = self._build_prompt(prepared, session_id, budget)
         full_answer = ""
         streamed = False
-        for chunk in self.llm.stream(prompt, max_tokens=budget):
-            streamed = True
-            full_answer += chunk
-            yield {"type": "chunk", "content": chunk}
+        degraded = False
+        try:
+            for chunk in self.llm.stream(prompt, max_tokens=budget):
+                streamed = True
+                full_answer += chunk
+                yield {"type": "chunk", "content": chunk}
+        except RuntimeError as exc:
+            if streamed:
+                yield {'type': 'error', 'error': str(exc)}
+                return
+            degraded = True
+            yield {'type': 'status', 'message': '模型暂不可用，正在整理已核实的数据...'}
 
         if not streamed:
+            degraded = True
             full_answer = self._fallback_answer(
                 prepared["structured_text"],
                 prepared["documents"],
@@ -147,235 +189,62 @@ class RAGEngine:
 
         cleaned = clean_repetition(full_answer)
         self.memory.add(session_id, question, cleaned)
-        yield {"type": "done", "response_time": round((time.time() - start) * 1000)}
+        yield {"type": "done", "response_time": round((time.time() - start) * 1000), "follow_ups": build_follow_ups(prepared, cleaned), 'degraded': degraded}
 
     def prepare(self, question: str, top_k: int, force_web_search: bool = False,
                 session_id: str | None = None) -> dict:
-        resolved_question = self._resolve_question(question, session_id)
-        classification = self.classifier.classify(resolved_question)
-        tool_trace = []
-
+        resolved = self._resolve_question(question, session_id)
+        classification = self.classifier.classify(resolved)
+        plan = QueryPlan.create(question, resolved, classification, top_k,
+                               force_web_search or self.settings.force_web_search)
         if not self._is_valid_question(question):
-            return self._empty_prepared(
-                classification, question, resolved_question,
-                allowed=False, refusal_message=INVALID_QUESTION_MESSAGE,
-            )
-        if self.evidence_gate.is_out_of_scope(resolved_question):
-            return self._empty_prepared(
-                classification, question, resolved_question,
-                allowed=False, refusal_message=OUT_OF_SCOPE_MESSAGE,
-            )
-
-        # 1. 结构化数据
-        structured_text = ""
-        if classification.needs_structured_data:
-            structured_text = self.structured.search(classification, top_k, resolved_question)
-            tool_trace.append({"tool": "sql", "query_type": classification.query_type.value})
-        if not structured_text:
-            structured_text = self.structured.search_by_keywords(resolved_question, top_k)
-            if structured_text:
-                tool_trace.append({"tool": "sql", "query_type": "keyword"})
-
-        used_tools: list[str] = ["sql"] if structured_text else []
-        if self._can_answer_direct(classification, resolved_question, structured_text, force_web_search):
-            return self._empty_prepared(
-                classification, question, resolved_question,
-                structured_text=structured_text,
-                direct_answer=structured_text,
-                allowed=True,
-                used_tools=used_tools,
-                tool_trace=tool_trace,
-            )
-
-        # 2. 时效问题直接使用联网证据，避免旧向量资料污染答案。
-        web_first = (
-            force_web_search
-            or self.settings.force_web_search
-            or classification.needs_web_search
-        ) and self.settings.search_enabled
-        if web_first:
-            quality = RetrievalQuality(
-                confidence_level="not_needed",
-                reason="freshness_web_first",
-            )
-            retrieved = RetrievalResult([], [], [], [], quality)
-            tool_trace.append({"tool": "rag", "skipped": True, "reason": "freshness_web_first"})
+            bundle = EvidenceBundle(decision=GateDecision(False, 'invalid_question', INVALID_QUESTION_MESSAGE))
+        elif self.evidence_gate.is_out_of_scope(resolved):
+            bundle = EvidenceBundle(decision=GateDecision(False, 'out_of_scope', OUT_OF_SCOPE_MESSAGE))
         else:
-            try:
-                retrieved = self.retriever.retrieve(resolved_question, top_k, classification)
-            except Exception as exc:
-                # 向量库故障时降级为空证据（联网/结构化路径仍可作答），绝不让流中断
-                print(f"RAG retrieve failed, degrading to empty evidence: {exc}", file=sys.stderr)
-                quality = RetrievalQuality(
-                    confidence_level="unavailable",
-                    reason="retrieval_error",
-                )
-                retrieved = RetrievalResult([], [], [], [], quality)
-            tool_trace.append({
-                "tool": "rag",
-                "accepted": retrieved.quality.accepted_count,
-                "rejected": retrieved.quality.rejected_count,
-                "best_distance": round(retrieved.quality.best_vector_distance, 3),
-                "best_rerank_score": round(retrieved.quality.best_rerank_score, 3),
-                "confidence": retrieved.quality.confidence_level,
-            })
-
-        # 3. 联网搜索决策
-        should_search = (
-            force_web_search
-            or self.settings.force_web_search
-            or classification.needs_web_search
-            or (
-                retrieved.quality.accepted_count == 0
-                and not structured_text.strip()
-                and getattr(self.settings, "allow_general_web_search", False)
-            )
-        )
-
-        search_results = []
-        search_execution = SearchExecution()
-        search_attempted = False
-        search_success = False
-        if should_search and self.settings.search_enabled:
-            search_attempted = True
-            # 查询改写
-            queries = self.query_rewriter.rewrite(resolved_question)
-            all_results = []
-            search_query = self._select_search_query(resolved_question, queries)
-            results, execution = self.search_service.search(search_query, self.settings.search_top_k)
-            all_results.extend(results)
-            search_execution = execution
-            # 去重
-            seen_urls = set()
-            for r in all_results:
-                if r.url not in seen_urls:
-                    seen_urls.add(r.url)
-                    search_results.append(r)
-            search_results = search_results[:self.settings.search_top_k]
-            search_success = len(search_results) > 0
-
-            # 只要尝试过联网，就必须记录到 used_tools
-            used_tools.append("web_search")
-            tool_trace.append({
-                "tool": "web_search",
-                "providers_tried": search_execution.attempted_providers,
-                "provider_results": [
-                    {"provider": pr.provider, "status": pr.status, "count": pr.result_count, "error": pr.error}
-                    for pr in search_execution.provider_results
-                ],
-                "successful_provider": search_execution.successful_provider,
-                "status": search_execution.status,
-                "result_count": len(search_results),
-                "elapsed_ms": search_execution.elapsed_ms,
-            })
-
-        # 4. 证据融合与决策
-        search_documents = [r.snippet or r.title for r in search_results]
-        all_documents = retrieved.documents + search_documents
-        decision = self.evidence_gate.assess(
-            structured_text, all_documents, resolved_question,
-            search_attempted=search_attempted, search_success=search_success,
-        )
-
-        # 5. 构建 used_tools（web_search 在步骤 3 中已添加）
-        if retrieved.documents:
-            used_tools.append("rag")
-        if structured_text and "sql" not in used_tools:
-            used_tools.append("sql")
-
-        direct_web_answer = ""
-        if decision.allowed:
-            direct_web_answer = self._scoreboard_answer(classification, search_results, resolved_question)
-            if not direct_web_answer and decision.reason == "structured_stale_fallback":
-                direct_web_answer = f"{STALE_DATA_MESSAGE}\n{structured_text}"
-
-        return {
-            "classification": classification,
-            "question": question,
-            "resolved_question": resolved_question,
-            "structured_text": structured_text,
-            "direct_answer": direct_web_answer,
-            "refusal_message": decision.message,
-            "documents": retrieved.documents,
-            "metadatas": retrieved.metadatas,
-            "distances": retrieved.distances,
-            "rerank_scores": retrieved.rerank_scores,
-            "search_results": search_results,
-            "used_tools": used_tools,
-            "tool_trace": tool_trace,
-            "allowed": decision.allowed,
-            "search_execution": {
-                "attempted": search_execution.attempted,
-                "status": search_execution.status,
-                "reasons": search_execution.reasons,
-                "providers": search_execution.attempted_providers,
-                "successful": search_execution.successful_provider,
-                "result_count": len(search_results),
-                "elapsed_ms": search_execution.elapsed_ms,
-            },
-            "retrieval_quality": {
-                "candidate_count": retrieved.quality.candidate_count,
-                "accepted_count": retrieved.quality.accepted_count,
-                "rejected_count": retrieved.quality.rejected_count,
-                "best_distance": round(retrieved.quality.best_vector_distance, 3),
-                "confidence": retrieved.quality.confidence_level,
-                "reason": retrieved.quality.reason,
-            },
-        }
+            plan = self.query_planner.plan(question, resolved, classification, top_k,
+                force_web_search or self.settings.force_web_search)
+            bundle = self.evidence.resolve(plan)
+            if bundle.decision.allowed and not bundle.direct_answer:
+                bundle.direct_answer = self._scoreboard_answer(classification, bundle.search_results, resolved)
+                if not bundle.direct_answer and bundle.decision.reason == 'structured_stale_fallback':
+                    bundle.direct_answer = f'{STALE_DATA_MESSAGE}\n{bundle.structured_text}'
+        prepared = bundle.prepared(plan)
+        prepared['recent_questions'] = [item['content'] for item in self.memory.get(session_id) if item.get('role') == 'user']
+        return prepared
 
     def _hydrate_memory(self, session_id: str | None,
                         conversation_history: list[dict] | None) -> None:
         if session_id and conversation_history:
-            self.memory.replace(session_id, conversation_history)
-
-    def _empty_prepared(
-        self,
-        classification,
-        question: str,
-        resolved_question: str,
-        *,
-        structured_text: str = "",
-        direct_answer: str = "",
-        allowed: bool,
-        refusal_message: str = "",
-        used_tools: list[str] | None = None,
-        tool_trace: list[dict] | None = None,
-    ) -> dict:
-        return {
-            "classification": classification,
-            "question": question,
-            "resolved_question": resolved_question,
-            "structured_text": structured_text,
-            "direct_answer": direct_answer,
-            "refusal_message": refusal_message,
-            "documents": [],
-            "metadatas": [],
-            "distances": [],
-            "rerank_scores": [],
-            "search_results": [],
-            "used_tools": used_tools or [],
-            "tool_trace": tool_trace or [],
-            "allowed": allowed,
-            "search_execution": {
-                "attempted": False,
-                "status": "not_requested",
-                "reasons": [],
-                "providers": [],
-                "successful": "",
-                "result_count": 0,
-                "elapsed_ms": 0,
-            },
-            "retrieval_quality": {
-                "candidate_count": 0,
-                "accepted_count": 0,
-                "rejected_count": 0,
-                "best_distance": 0.0,
-                "confidence": "not_needed",
-                "reason": "direct_answer" if direct_answer else "short_circuit",
-            },
-        }
+            self.memory.hydrate(session_id, conversation_history)
 
     def _resolve_question(self, question: str, session_id: str | None) -> str:
+        if session_id and re.search(r'这场|该场|这次比赛|这两队|双方|这项|这一点|数据来源|依据', question):
+            current = self.classifier.classify(question)
+            current_scope = game_context(question, current.teams)
+            if len(current.teams) >= 2 and any(current_scope.get(key) for key in ('date', 'season', 'year')):
+                return question
+            history = self.memory.get(session_id)
+            for index in range(len(history) - 1, -1, -1):
+                item = history[index]
+                if item.get('role') != 'user' or item.get('content') == question:
+                    continue
+                previous = self.classifier.classify(str(item.get('content') or ''))
+                if len(previous.teams) >= 2:
+                    if current.teams and set(current.teams) != set(previous.teams):
+                        break
+                    selected_date = explicit_game_date(question) or explicit_game_date(str(item.get('content') or ''))
+                    if not selected_date:
+                        for reply in history[index + 1:]:
+                            if reply.get('role') == 'assistant':
+                                selected_date = explicit_game_date(str(reply.get('content') or ''))
+                                if selected_date:
+                                    break
+                    subject = '对'.join(previous.teams)
+                    resolved = re.sub(r'这场比赛|该场比赛|这次比赛|这场|该场|这两队', subject + '的比赛', question).replace('双方', '两队')
+                    if subject not in resolved:
+                        resolved = f'{subject}的比赛：{resolved}'
+                    return (selected_date + ' ' if selected_date else '') + resolved
         if not session_id or not re.search(r"他(?!们)|这名球员|该球员|他们|该队|这支球队|这队", question):
             return question
 
@@ -403,51 +272,15 @@ class RAGEngine:
             resolved = re.sub(r"他(?!们)|这名球员|该球员", previous_player, resolved)
         return resolved
 
-    @staticmethod
-    def _select_search_query(question: str, candidates: list[str]) -> str:
-        if not candidates:
-            return question
-        q = question.lower()
-        intent_terms: list[str] = []
-        if re.search(r"伤病|受伤|伤情|injury", q):
-            intent_terms = ["injury report", "injury"]
-        elif re.search(r"交易|trade", q):
-            intent_terms = ["trade"]
-        elif re.search(r"新闻|资讯|报道|news", q):
-            intent_terms = ["news"]
-        elif re.search(r"选秀|draft", q):
-            intent_terms = ["draft"]
-        for term in intent_terms:
-            for candidate in candidates:
-                if term in candidate.lower():
-                    return candidate
-        return candidates[0]
-
-    def _can_answer_direct(self, classification, question: str, structured_text: str,
-                           force_web_search: bool) -> bool:
-        if not structured_text or force_web_search or self.settings.force_web_search:
-            return False
-        if re.search(
-            r"分析|为什么|原因|影响|展望|预测|如何评价|评价|解读|"
-            r"优势|劣势|谁更好|谁更强|建议|详细|全面|对比|比较",
-            question,
-        ):
-            return False
-        if classification.query_type in {QueryType.TEAM, QueryType.PLAYER, QueryType.RANKING}:
-            return True
-        if classification.query_type == QueryType.MATCH and classification.teams:
-            return not re.search(r"今天|今日|明天|实时|正在|未开始", question)
-        if re.search(r"20\d{2}年.*(?:选秀|draft)|(?:选秀|draft).*20\d{2}年", question, re.IGNORECASE):
-            return True
-        return not classification.needs_web_search and classification.query_type != QueryType.NEWS
-
-    @staticmethod
-    def _is_valid_question(question: str) -> bool:
+    def _is_valid_question(self, question: str) -> bool:
         stripped = question.strip()
         if len(stripped) < 2 or not re.search(r"[A-Za-z0-9\u4e00-\u9fff]", stripped):
             return False
         # 纯英文/数字输入必须包含 NBA 领域词，避免向量库对随机字符串硬召回。
         if not re.search(r"[\u4e00-\u9fff]", stripped):
+            classification = self.classifier.classify(stripped)
+            if classification.teams or classification.players:
+                return True
             return bool(re.search(
                 r"\bnba\b|basketball|player|team|game|score|stats?|"
                 r"ranking|trade|injury|draft|season|curry|lakers|warriors",
@@ -457,11 +290,11 @@ class RAGEngine:
         return True
 
     def _response_token_budget(self, classification, question: str) -> int:
-        hard_cap = min(max(1, int(self.settings.llm_max_tokens)), 1024)
-        analysis_question = classification.query_type == QueryType.NEWS or re.search(
-            r"分析|为什么|原因|影响|展望|预测|如何评价|详细|全面", question
-        )
+        hard_cap = min(max(1, int(self.settings.llm_max_tokens)), 4096)
+        analysis_question = classification.query_type == QueryType.NEWS or QueryPlanner.classify_intent(question) in {'analysis', 'explanation', 'comparison'}
         if analysis_question:
+            if classification.query_type == QueryType.MATCH and len(classification.teams) >= 2:
+                return min(2048 if re.search(r'深入|深度|详细|全面|复盘', question) else 1536, hard_cap)
             extra = 128 if (
                 len(re.findall(r"[?？；;]", question)) >= 2
                 or re.search(r"分别|同时回答|还要", question)
@@ -501,26 +334,28 @@ class RAGEngine:
         return 3
 
     def _build_prompt(self, prepared: dict, session_id: str | None, budget: int) -> str:
-        documents = [str(item)[:700] for item in prepared["documents"][:3]]
+        documents = []
+        for index, item in enumerate(prepared['documents'][:3]):
+            metadata = prepared['metadatas'][index] if index < len(prepared['metadatas']) else {}
+            attribution = {key: str(metadata.get(key) or 'UNKNOWN')[:300]
+                           for key in ('type', 'source', 'quality', 'season', 'source_url')}
+            documents.append(f'[Source metadata: {attribution}]\n{str(item)[:700]}')
         is_bounded_list = (
             prepared["classification"].query_type == QueryType.MATCH
             or bool(re.search(r"哪些|所有|全部|几场|列表|列出", prepared["resolved_question"]))
         )
         search_limit = 5 if is_bounded_list else 3
         search_results = prepared["search_results"][:search_limit]
-        char_limit = max(220, min(900, round(budget * 0.9)))
+        char_limit = max(220, min(1600, round(budget * 0.9)))
         return build_user_prompt(
             prepared["resolved_question"],
             prepared["structured_text"][:3000],
             format_documents(documents),
-            format_search_results(search_results),
+            format_search_results(search_results, max_total_chars=3000, max_snippet_chars=2400) if any(item.provider == 'espn_archive' for item in search_results) else format_search_results(search_results),
             conversation_context=self.memory.recent_context(session_id),
             response_budget_hint=f"请在 {char_limit} 个中文字符内完整回答。",
+            analysis_questions=tuple(prepared.get('query_plan', {}).get('sub_questions', [])),
         )
-
-    _ANALYSIS_INTENT = re.compile(
-        r"分析|看点|关键|因素|评价|展望|预测|解读|解析|复盘|为什么|为何|怎么看待|怎么评价|胜负走向"
-    )
 
     @staticmethod
     def _scoreboard_answer(classification, search_results: list, question: str = "") -> str:
@@ -535,7 +370,7 @@ class RAGEngine:
         schedule_note = next(
             (item for item in search_results if item.title == "NBA 近期赛程说明"), None
         )
-        if schedule_note is None and RAGEngine._ANALYSIS_INTENT.search(question or ""):
+        if schedule_note is None and ANALYSIS_INTENT.search(question or ""):
             return ""
 
         # 日期明确但无比赛：诚实回答"没有比赛"，附带近期赛程预告
@@ -610,6 +445,7 @@ class RAGEngine:
             answer=answer,
             sources=prepared["documents"],
             metadatas=prepared["metadatas"],
+            sourceDetails=self._source_details(prepared),
             distances=prepared["distances"],
             response_time=round((time.time() - start) * 1000),
             model=self.model_name,
@@ -620,13 +456,23 @@ class RAGEngine:
             search_execution=prepared.get("search_execution"),
             retrieval_quality=prepared.get("retrieval_quality"),
             success=success,
+            follow_ups=build_follow_ups(prepared, answer),
         )
+
+    @staticmethod
+    def _source_details(prepared: dict) -> list[dict]:
+        metadata = list(prepared['metadatas'])
+        metadata.extend({'title': item.title, 'source_url': item.url, 'source': item.provider,
+                         'synced_at': item.fetched_at, 'quality': 'OBSERVED' if item.provider in ('espn_archive', 'espn_scoreboard') else 'UNVERIFIED'}
+                        for item in prepared['search_results'])
+        return source_details(metadata)
 
     def _fallback_answer(self, structured_text: str, documents: list[str],
                          search_results: list | None = None) -> str:
         search_results = search_results or []
         if search_results:
-            return "根据最新搜索结果：\n" + "\n".join(
+            heading = "根据已核实的比赛数据：" if all(item.provider == "espn_archive" for item in search_results) else "根据搜索结果："
+            return heading + "\n" + "\n".join(
                 f"- {item.title}：{item.snippet or item.url}" for item in search_results[:3]
             )
         if structured_text:

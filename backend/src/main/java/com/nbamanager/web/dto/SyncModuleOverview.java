@@ -8,5 +8,6 @@ public record SyncModuleOverview(
         LocalDateTime lastSuccessfulAt,
         SyncJobResponse latestJob,
         SyncJobResponse activeJob,
-        SyncJobStepResponse activeFullStep
+        SyncJobStepResponse activeFullStep,
+        SyncJobStepResponse latestFullStep
 ) {}

@@ -35,6 +35,59 @@ class RAGControllerTest {
     private RAGConversationService conversationService;
 
     @Test
+    void forwardsFirstUpstreamChunkBeforeTheAnswerFinishes() throws Exception {
+        var server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        var firstChunk = new java.util.concurrent.CountDownLatch(1);
+        var upstreamDone = new java.util.concurrent.CountDownLatch(1);
+        var requestedPaths = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        server.createContext("/", exchange -> {
+            requestedPaths.add(exchange.getRequestURI().getPath());
+            exchange.getRequestBody().readAllBytes();
+            exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+            exchange.sendResponseHeaders(200, 0);
+            try (var output = exchange.getResponseBody()) {
+                if (exchange.getRequestURI().getPath().equals("/stream")) {
+                    output.write("data: {\"type\":\"chunk\",\"content\":\"首段分析\"}\n\n".getBytes(StandardCharsets.UTF_8));
+                    output.flush();
+                }
+                firstChunk.await(2, java.util.concurrent.TimeUnit.SECONDS);
+                upstreamDone.countDown();
+                output.write("data: {\"type\":\"done\",\"follow_ups\":[\"具体追问\"]}\n\n".getBytes(StandardCharsets.UTF_8));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        server.start();
+        var worker = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            var controller = new RAGController(ragService, conversationService, new RagTimeoutProperties());
+            org.springframework.test.util.ReflectionTestUtils.setField(controller, "ragServerUrl", "http://127.0.0.1:" + server.getAddress().getPort());
+            var response = new MockHttpServletResponse();
+            var output = new ByteArrayOutputStream() {
+                @Override
+                public synchronized void flush() {
+                    if (toString(StandardCharsets.UTF_8).contains("首段分析") && upstreamDone.getCount() == 1) {
+                        firstChunk.countDown();
+                    }
+                }
+            };
+            var task = worker.submit(() -> {
+                try { controller.streamQuery("分析马刺和尼克斯的比赛", 5, "s1", response).writeTo(output); }
+                catch (Exception e) { throw new RuntimeException(e); }
+            });
+            assertThat(firstChunk.await(1500, java.util.concurrent.TimeUnit.MILLISECONDS)).isTrue();
+            task.get(3, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(requestedPaths).containsExactly("/stream");
+            assertThat(output.toString(StandardCharsets.UTF_8)).contains("具体追问");
+            assertThat(response.getHeader("Content-Length")).isNull();
+        } finally {
+            firstChunk.countDown();
+            worker.shutdownNow();
+            server.stop(0);
+        }
+    }
+
+    @Test
     void streamQueryReturnsValidJsonErrorEventWhenStartupFails() throws Exception {
         doThrow(new RuntimeException("service \"boom\"\nretry later"))
                 .when(ragService)
@@ -46,7 +99,8 @@ class RAGControllerTest {
 
         String sse = body.toString(StandardCharsets.UTF_8);
         assertThat(sse).startsWith("data: ");
-        JSONObject event = new JSONObject(sse.substring("data: ".length()).trim());
+        String last = sse.trim().substring(sse.trim().lastIndexOf("data: ") + "data: ".length());
+        JSONObject event = new JSONObject(last);
         assertThat(event.getString("type")).isEqualTo("error");
         assertThat(event.getString("error")).isEqualTo("service \"boom\"\nretry later");
     }

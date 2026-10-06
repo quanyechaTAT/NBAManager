@@ -1,5 +1,5 @@
 <template>
-  <div class="page-wrapper animated-bg">
+  <div class="page-wrapper page animated-bg">
     <div class="bg-particles">
       <div class="particle"></div>
       <div class="particle"></div>
@@ -27,7 +27,7 @@
               </el-tag>
             </el-option>
           </el-select>
-          <span class="toolbar-label" style="margin-left: 12px;">球队</span>
+          <span class="toolbar-label">球队</span>
           <el-select v-model="selectedTeam" clearable filterable placeholder="全部球队" style="width: 200px" @change="onTeamChange" :loading="teamsLoading">
             <el-option v-for="t in teamOptions" :key="t.id" :label="t.name" :value="t.name" />
           </el-select>
@@ -63,13 +63,21 @@
               <div v-for="(p, i) in cat.players" :key="p.id" class="leader-row">
                 <span
                   class="leader-row-bar"
+                  :class="`leader-bar--rank-${i + 1}`"
                   :style="{ width: leaderBarWidth(cat, p) + '%' }"
                   aria-hidden="true"
                 />
-                <span class="leader-rank" :class="{ 'rank-top3': i < 3 }">{{ i + 1 }}</span>
+                <span class="leader-rank" :class="{ 'rank-1': i === 0, 'rank-2': i === 1, 'rank-3': i === 2 }">{{ i + 1 }}</span>
+                <span class="leader-avatar">
+                  <img v-if="p.nbaPlayerId" :src="getHeadshotUrl(p.nbaPlayerId)" :alt="p.playerName || p.name" class="leader-headshot" @error="onHeadshotError" loading="lazy" />
+                  <span class="leader-avatar-fallback" :style="p.nbaPlayerId ? { display: 'none' } : undefined">{{ (p.playerName || p.name)?.charAt(0) }}</span>
+                </span>
                 <router-link :to="{ path: '/players/detail', query: { id: p.nbaPlayerId || p.id, returnTo: '/history' } }" class="leader-name leader-link">{{ p.playerName || p.name }}</router-link>
-                <router-link :to="{ path: '/teams/detail', query: { name: p.teamName } }" class="leader-team leader-link">{{ p.teamName }}</router-link>
-                <span class="leader-value">{{ cat.getValue(p) }}</span>
+                <router-link v-if="p.teamName" :to="{ path: '/teams/detail', query: { name: p.teamName } }" class="leader-team leader-link">
+                  <img v-if="getTeamLogo(p.teamName)" :src="getTeamLogo(p.teamName)" class="leader-team-logo" alt="" />
+                  <span>{{ p.teamName }}</span>
+                </router-link>
+                <span class="leader-value font-tabular">{{ cat.getValue(p) }}</span>
               </div>
               <div v-if="cat.players.length === 0" class="leader-empty">暂无数据</div>
             </div>
@@ -234,6 +242,18 @@ function leaderBarWidth(cat: { players: any[]; getRaw: (p: any) => number }, p: 
   return Math.min((cat.getRaw(p) / max) * 100, 100)
 }
 
+function getHeadshotUrl(nbaPlayerId: number | null): string {
+  if (!nbaPlayerId) return ''
+  return `https://cdn.nba.com/headshots/nba/latest/260x190/${nbaPlayerId}.png`
+}
+
+function onHeadshotError(e: Event) {
+  const img = e.target as HTMLImageElement
+  img.style.display = 'none'
+  const fallback = img.nextElementSibling as HTMLElement
+  if (fallback) fallback.style.display = 'flex'
+}
+
 const standingsData = computed(() => {
   return [...teams.value].sort((a: any, b: any) => b.wins - a.wins || a.losses - b.losses)
 })
@@ -305,26 +325,33 @@ const winsChartOption = computed(() => {
   }
 })
 
-function winPct(w: number, l: number) {
+function winPct(w: number | null | undefined, l: number | null | undefined) {
+  if (w == null || l == null) return '—'
   const t = w + l
   if (t === 0) return '0.0%'
   return ((w / t) * 100).toFixed(1) + '%'
 }
 
-function winPctNum(w: number, l: number) {
+function winPctNum(w: number | null | undefined, l: number | null | undefined) {
+  if (w == null || l == null) return 0
   const t = w + l
   return t === 0 ? 0 : w / t
 }
 
-function gamesBehind(w: number, l: number) {
-  if (teams.value.length === 0) return '—'
-  const best = Math.max(...teams.value.map(t => t.wins - t.losses))
+function gamesBehind(w: number | null | undefined, l: number | null | undefined) {
+  if (w == null || l == null || teams.value.length === 0) return '—'
+  const validDiffs = teams.value
+    .filter(t => t.wins != null && t.losses != null)
+    .map(t => t.wins - t.losses)
+  if (validDiffs.length === 0) return '—'
+  const best = Math.max(...validDiffs)
   const diff = best - (w - l)
   return diff === 0 ? '—' : (diff / 2).toFixed(1)
 }
 
-function winBarWidth(w: number, _l: number) {
-  const maxWins = Math.max(...teams.value.map(t => t.wins), 1)
+function winBarWidth(w: number | null | undefined, _l: number | null | undefined) {
+  if (w == null) return '0%'
+  const maxWins = Math.max(...teams.value.map(t => t.wins || 0), 1)
   return ((w / maxWins) * 100) + '%'
 }
 
@@ -475,16 +502,30 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page-wrapper {
+/* ===== 页面基础与居中布局 ===== */
+.page-wrapper,
+.page {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 20px 24px 32px;
   min-height: calc(100vh - 108px);
   position: relative;
   border-radius: var(--radius-lg);
-  padding: 0;
+  box-sizing: border-box;
   animation: pageFadeIn 0.4s var(--ease-smooth) forwards;
   opacity: 0;
   transform: translateY(12px);
 }
 @keyframes pageFadeIn { to { opacity: 1; transform: translateY(0); } }
+
+.page-inner {
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+}
 .toolbar {
   display: flex;
   gap: 12px;
@@ -532,7 +573,10 @@ onMounted(async () => {
   font-size: 13px;
 }
 .card {
-  max-width: 1300px;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
   background: var(--bg-card) !important;
   border: 1px solid var(--border-light) !important;
   border-radius: var(--radius-xl) !important;
@@ -637,9 +681,16 @@ onMounted(async () => {
   border-radius: 4px;
   background: color-mix(in srgb, var(--accent) 9%, transparent);
   pointer-events: none;
+  transition: width 0.35s ease;
 }
-.leader-row:nth-child(1) .leader-row-bar {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+.leader-row-bar.leader-bar--rank-1 {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.24), rgba(245, 158, 11, 0.04));
+}
+.leader-row-bar.leader-bar--rank-2 {
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.2), rgba(148, 163, 184, 0.04));
+}
+.leader-row-bar.leader-bar--rank-3 {
+  background: linear-gradient(90deg, rgba(217, 119, 6, 0.2), rgba(217, 119, 6, 0.04));
 }
 .leader-row:hover {
   background: var(--bg-hover);
@@ -652,17 +703,52 @@ onMounted(async () => {
   justify-content: center;
   font-family: var(--font-heading);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--text-muted);
   background: var(--bg-card);
   border: 1px solid var(--border-light);
   border-radius: 50%;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
-.rank-top3 {
-  background: linear-gradient(135deg, var(--accent-light), var(--accent));
-  color: var(--accent-contrast, #04202A);
-  border-color: var(--accent);
+.leader-rank.rank-1 {
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  color: #FFFFFF;
+  border-color: #F59E0B;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+}
+.leader-rank.rank-2 {
+  background: linear-gradient(135deg, #94A3B8, #64748B);
+  color: #FFFFFF;
+  border-color: #94A3B8;
+}
+.leader-rank.rank-3 {
+  background: linear-gradient(135deg, #D97706, #B45309);
+  color: #FFFFFF;
+  border-color: #D97706;
+}
+.leader-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--bg-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--border-light);
+}
+.leader-headshot {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.leader-avatar-fallback {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-family: var(--font-heading);
 }
 .leader-name {
   flex: 1;
@@ -676,6 +762,15 @@ onMounted(async () => {
   font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.leader-team-logo {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 .leader-link {
   text-decoration: none;
@@ -736,6 +831,13 @@ onMounted(async () => {
 }
 
 @media (max-width: 768px) {
+  .page-wrapper,
+  .page {
+    padding: 16px 16px 28px;
+  }
+  :deep(.el-card__body) {
+    padding: 16px 14px;
+  }
   .mobile-scroll-hint {
     display: block;
     margin: 0 0 10px;
@@ -744,6 +846,16 @@ onMounted(async () => {
   }
   .chart-container { overflow-x: auto; }
   .chart { min-width: 640px; }
+}
+
+@media (max-width: 480px) {
+  .page-wrapper,
+  .page {
+    padding: 12px 12px 20px;
+  }
+  :deep(.el-card__body) {
+    padding: 14px 10px;
+  }
 }
 
 /* Chart */

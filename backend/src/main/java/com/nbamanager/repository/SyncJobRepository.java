@@ -23,6 +23,17 @@ public interface SyncJobRepository extends JpaRepository<SyncJob, Long> {
 
     List<SyncJob> findByStatusIn(List<String> statuses);
 
+    @Query(value = "SELECT j.* FROM sync_jobs j JOIN (SELECT id, ROW_NUMBER() OVER "
+            + "(PARTITION BY module ORDER BY created_at DESC, id DESC) AS row_rank FROM sync_jobs) ranked "
+            + "ON ranked.id = j.id AND ranked.row_rank = 1", nativeQuery = true)
+    List<SyncJob> findLatestPerModule();
+
+    @Query(value = "SELECT j.* FROM sync_jobs j JOIN (SELECT id, ROW_NUMBER() OVER "
+            + "(PARTITION BY module ORDER BY finished_at DESC, id DESC) AS row_rank FROM sync_jobs "
+            + "WHERE status = 'SUCCESS' AND finished_at IS NOT NULL) ranked "
+            + "ON ranked.id = j.id AND ranked.row_rank = 1", nativeQuery = true)
+    List<SyncJob> findLatestSuccessfulPerModule();
+
     @Modifying
     @Transactional
     @Query("UPDATE SyncJob j SET j.status = 'INTERRUPTED', j.finishedAt = CURRENT_TIMESTAMP, "

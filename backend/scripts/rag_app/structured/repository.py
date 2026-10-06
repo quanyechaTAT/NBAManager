@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import re
-import sys
+from data_integrity import display_metric
+from rag_app.structured.provenance import published_row
 
 from rag_app.pipeline.query_classifier import QueryClassification, QueryType
+from rag_app.pipeline.game_scope import game_context
 from rag_app.structured.db import Database
+
+
+def published_sql(alias: str, field: str) -> str:
+    """Only module-owned column names enter this SQL; unknown field states never publish."""
+    camel = ''.join(word if i == 0 else word.capitalize() for i, word in enumerate(field.split('_')))
+    return (f"{alias}.{field} IS NOT NULL AND JSON_UNQUOTE(JSON_EXTRACT("
+            f"CASE WHEN JSON_VALID({alias}.data_field_states) THEN {alias}.data_field_states ELSE '{{}}' END, "
+            f"'$.{camel}')) IN ('OBSERVED','DERIVED')")
 
 
 class StructuredRepository:
@@ -12,40 +22,37 @@ class StructuredRepository:
         self.database = database
 
     def search(self, classification: QueryClassification, top_k: int, question: str = "") -> str:
-        try:
-            if classification.query_type == QueryType.TEAM and classification.teams:
-                team_text = self.team_summary(classification.teams)
-                if self._needs_recent_matches(question):
-                    match_text = self.match_summary(classification.teams, top_k, question)
-                    return "\n\n".join(part for part in (team_text, match_text) if part)
-                return team_text
-            if classification.query_type == QueryType.PLAYER and classification.players:
-                return self.player_summary(classification.players, question)
-            if classification.query_type == QueryType.MATCH and classification.teams:
-                return self.match_summary(classification.teams, top_k, question)
-            if classification.query_type == QueryType.RANKING:
-                requested_limit = self._requested_limit(question, top_k)
-                if any(keyword in question.lower() for keyword in ["选秀", "draft", "顺位", "新秀"]):
-                    year_match = re.search(r"(20\d{2})年", question)
-                    year = int(year_match.group(1)) if year_match else None
-                    return self.draft_summary(requested_limit, year=year)
-                return self.ranking_summary(requested_limit, question)
-        except Exception as exc:
-            print(f"Structured query failed: {exc}", file=sys.stderr)
+        if classification.query_type == QueryType.TEAM and classification.teams:
+            team_text = self.team_summary(classification.teams)
+            if self._needs_recent_matches(question):
+                match_text = self.match_summary(classification.teams, top_k, question)
+                return "\n\n".join(part for part in (team_text, match_text) if part)
+            return team_text
+        if classification.query_type == QueryType.PLAYER and classification.players:
+            return self.player_summary(classification.players, question)
+        if classification.query_type == QueryType.MATCH and classification.teams:
+            return self.match_summary(classification.teams, top_k, question)
+        if classification.query_type == QueryType.RANKING:
+            requested_limit = self._requested_limit(question, top_k)
+            if any(keyword in question.lower() for keyword in ["选秀", "draft", "顺位", "新秀"]):
+                year_match = re.search(r"(20\d{2})年", question)
+                year = int(year_match.group(1)) if year_match else None
+                return self.draft_summary(requested_limit, year=year)
+            return self.ranking_summary(requested_limit, question)
         # Keyword-based fallback for common queries
         return ""
 
     def team_ranking(self, conference: str | None = None, top_k: int = 15) -> str:
         """查询球队排名（按胜率排序）"""
-        where_clause = "WHERE t.conference = %s" if conference else ""
+        where_clause = "WHERE t.data_quality IN ('COMPLETE','PARTIAL') AND " + published_sql('t', 'wins') + " AND " + published_sql('t', 'losses') + (" AND t.conference = %s" if conference else "")
         params = [conference] if conference else []
         params.append(top_k)
         sql = f"""
-            SELECT t.name, t.city, t.conference, t.wins, t.losses,
+            SELECT t.name, t.city, t.conference, t.wins, t.losses, t.data_quality, t.data_field_states,
                    (t.wins + t.losses) as total,
                    CASE WHEN (t.wins + t.losses) > 0
                         THEN t.wins / (t.wins + t.losses)
-                        ELSE 0 END as pct
+                        ELSE NULL END as pct
             FROM teams t
             {where_clause}
             ORDER BY pct DESC, t.wins DESC
@@ -53,17 +60,17 @@ class StructuredRepository:
         """
         with self.database.cursor() as cursor:
             cursor.execute(sql, params)
-            rows = cursor.fetchall()
+            rows = [published_row(row) for row in cursor.fetchall()]
         if not rows:
             return ""
         conf_label = conference if conference else "联盟"
         parts = [f"{conf_label}排名（按胜率）："]
         for idx, row in enumerate(rows):
             total = (row.get("wins") or 0) + (row.get("losses") or 0)
-            pct = (row.get("wins") or 0) / total if total else 0
+            pct = (row.get("wins") or 0) / total if total else None
             parts.append(
                 f"  {idx + 1}. {row.get('city')}{row.get('name')}："
-                f"{row.get('wins')}胜{row.get('losses')}负，胜率{pct:.1%}"
+                f"{display_metric(row.get('wins'))}胜{display_metric(row.get('losses'))}负，胜率{display_metric(pct, percentage=True)}"
             )
         return "\n".join(parts)
 
@@ -95,20 +102,21 @@ class StructuredRepository:
     def team_summary(self, teams: list[str]) -> str:
         placeholders = ",".join(["%s"] * len(teams))
         sql = f"""
-            SELECT id, name, city, conference, wins, losses
-            FROM teams
-            WHERE name IN ({placeholders})
+            SELECT id, name, city, conference, wins, losses, data_quality, data_field_states
+            FROM teams t
+            WHERE name IN ({placeholders}) AND data_quality IN ('COMPLETE','PARTIAL')
+              AND {published_sql('t', 'wins')} AND {published_sql('t', 'losses')}
         """
         with self.database.cursor() as cursor:
             cursor.execute(sql, teams)
-            rows = cursor.fetchall()
+            rows = [published_row(row) for row in cursor.fetchall()]
         parts = []
         for row in rows:
             total = (row.get("wins") or 0) + (row.get("losses") or 0)
-            pct = (row.get("wins") or 0) / total if total else 0
+            pct = (row.get("wins") or 0) / total if total else None
             parts.append(
                 f"{row.get('city') or ''}{row.get('name')}：{row.get('conference')}，"
-                f"战绩{row.get('wins')}胜{row.get('losses')}负，胜率{pct:.1%}"
+                f"战绩{display_metric(row.get('wins'))}胜{display_metric(row.get('losses'))}负，胜率{display_metric(pct, percentage=True)}"
             )
         return "\n".join(parts)
 
@@ -117,7 +125,7 @@ class StructuredRepository:
         "p.points_per_game, p.rebounds_per_game, p.assists_per_game, "
         "p.steals_per_game, p.blocks_per_game, p.turnovers_per_game, "
         "p.field_goal_pct, p.three_point_pct, p.true_shooting_pct, "
-        "p.games_played"
+        "p.games_played, p.efficiency, p.per, p.usage_pct, p.data_season, p.data_source, p.data_synced_at, p.data_quality, p.data_field_states"
     )
 
     def player_summary(self, players: list[str], question: str = "") -> str:
@@ -131,13 +139,13 @@ class StructuredRepository:
                     SELECT {cols}
                     FROM players p
                     LEFT JOIN teams t ON p.team_id = t.id
-                    WHERE p.name = %s
+                    WHERE p.name = %s AND p.data_quality IN ('COMPLETE','PARTIAL')
                     ORDER BY p.points_per_game DESC
                     LIMIT 1
                     """,
                     (player,),
                 )
-                row = cursor.fetchone()
+                row = published_row(cursor.fetchone())
                 # 精确匹配失败时才用模糊匹配
                 if not row:
                     cursor.execute(
@@ -145,13 +153,13 @@ class StructuredRepository:
                         SELECT {cols}
                         FROM players p
                         LEFT JOIN teams t ON p.team_id = t.id
-                        WHERE p.name LIKE %s
+                        WHERE p.name LIKE %s AND p.data_quality IN ('COMPLETE','PARTIAL')
                         ORDER BY p.points_per_game DESC
                         LIMIT 1
                         """,
                         (f"%{player}%",),
                     )
-                    row = cursor.fetchone()
+                    row = published_row(cursor.fetchone())
                 if row:
                     rows.append(row)
         if len(rows) > 1 and re.search(r"对比|比较|谁更|哪个更", question):
@@ -159,29 +167,56 @@ class StructuredRepository:
         return "\n".join(self._format_player_row(row, question) for row in rows)
 
     def match_summary(self, teams: list[str], top_k: int, question: str = "") -> str:
+        scope = game_context(question, teams)
         requested_limit = self._requested_limit(question, top_k)
+        if len(teams) == 2 and not scope['multiple']:
+            requested_limit = 1
         placeholders = ",".join(["%s"] * len(teams))
+        # With two teams this is a head-to-head query, not the union of their schedules.
+        conjunction = 'AND' if len(teams) == 2 else 'OR'
+        constraints = []
+        params = teams + teams
+        if scope['date']:
+            constraints.append('match_date = %s')
+            params.append(scope['date'])
+        if scope['season']:
+            constraints.append('season = %s')
+            params.append(scope['season'])
+        if scope['year']:
+            constraints.append('match_date >= %s AND match_date < %s')
+            params.extend([f"{scope['year']}-01-01", f"{scope['year'] + 1}-01-01"])
+        constraints.append("game_type = 'SUMMER_LEAGUE'" if scope['league'] == 'nba-summer' else "(game_type IS NULL OR game_type <> 'SUMMER_LEAGUE')")
+        if scope['playoffs_only']:
+            constraints.append("game_type = 'PLAYOFFS'")
+        extra_where = ' AND '.join(constraints)
         sql = f"""
-            SELECT home_team, away_team, home_score, away_score, match_date, status
-            FROM match_records
-            WHERE (home_team IN ({placeholders}) OR away_team IN ({placeholders}))
-              AND status = 'FINISHED'
+            SELECT home_team, away_team, home_score, away_score, match_date, status, data_quality, data_field_states
+            FROM match_records m
+            WHERE (home_team IN ({placeholders}) {conjunction} away_team IN ({placeholders}))
+              AND {extra_where}
+              AND status = 'FINISHED' AND data_quality IN ('COMPLETE','PARTIAL') AND home_score IS NOT NULL AND away_score IS NOT NULL
+              AND {published_sql('m', 'home_score')} AND {published_sql('m', 'away_score')}
             ORDER BY match_date DESC
             LIMIT %s
         """
         with self.database.cursor() as cursor:
-            cursor.execute(sql, teams + teams + [requested_limit])
-            rows = cursor.fetchall()
+            cursor.execute(sql, params + [requested_limit])
+            rows = [published_row(row) for row in cursor.fetchall()]
         if not rows:
             return ""
         label = "、".join(teams)
-        parts = [f"{label}最近{len(rows)}场已结束比赛："]
+        parts = [f"{label}直接交锋（已核实，{len(rows)}场）：" if len(teams) == 2 else f"{label}最近{len(rows)}场已结束比赛："]
+        if len(teams) == 2 and not any(scope[key] for key in ('date', 'season', 'year', 'multiple')):
+            parts.append('未指定日期，以下按数据库最近一次已核实的直接交锋分析；其他场次请指定日期。')
         for index, row in enumerate(rows, start=1):
+            if row.get('home_score') is None or row.get('away_score') is None:
+                continue
             winner = row["home_team"] if row["home_score"] > row["away_score"] else row["away_team"]
+            result = f"{winner}获胜" if row["home_score"] != row["away_score"] else "比分相同，结果未确认"
             parts.append(
                 f"{index}. {row.get('match_date')} {row.get('home_team')}（主）"
                 f"{row.get('home_score')}:{row.get('away_score')} {row.get('away_team')}（客），"
-                f"{winner}获胜"
+                f"{result}"
             )
         return "\n".join(parts)
 
@@ -191,7 +226,7 @@ class StructuredRepository:
         metric_specs = [
             (r"三分", "three_point_pct", "三分命中率", True, "%"),
             (r"投篮命中率|投篮", "field_goal_pct", "投篮命中率", True, "%"),
-            (r"真实命中率|效率", "true_shooting_pct", "真实命中率", True, "%"),
+            (r"真实命中率|真实投篮命中率|TS%", "true_shooting_pct", "真实命中率", True, "%"),
             (r"场均得分|得分", "points_per_game", "场均得分", False, "分"),
             (r"篮板", "rebounds_per_game", "场均篮板", False, "个"),
             (r"助攻", "assists_per_game", "场均助攻", False, "次"),
@@ -208,23 +243,16 @@ class StructuredRepository:
                     requested.append(f"{label}为 {formatted}{unit}")
 
         if requested:
-            return f"{name}本赛季" + "，".join(requested) + "。"
+            return f"{name}（{row.get('data_season') or '赛季未知'}）" + "，".join(requested) + "。"
 
-        # 默认摘要：包含全部核心数据
-        pts = self._format_number(row.get("points_per_game") or 0)
-        reb = self._format_number(row.get("rebounds_per_game") or 0)
-        ast = self._format_number(row.get("assists_per_game") or 0)
-        stl = self._format_number(row.get("steals_per_game") or 0)
-        blk = self._format_number(row.get("blocks_per_game") or 0)
-        fg = float(row.get("field_goal_pct") or 0)
-        three = float(row.get("three_point_pct") or 0)
-        ts = row.get("true_shooting_pct")
-        ts_str = f"，真实命中率{float(ts) * 100:.1f}%" if ts else ""
-        return (
-            f"{name}（{row.get('team_name')}，{row.get('position')}）："
-            f"场均{pts}分{reb}篮板{ast}助攻{stl}抢断{blk}盖帽，"
-            f"投篮命中率{fg * 100:.1f}%，三分命中率{three * 100:.1f}%{ts_str}"
-        )
+        metrics = [("points_per_game", "场均得分", False), ("rebounds_per_game", "场均篮板", False),
+                   ("assists_per_game", "场均助攻", False), ("steals_per_game", "场均抢断", False),
+                   ("blocks_per_game", "场均盖帽", False), ("field_goal_pct", "投篮命中率", True),
+                   ("three_point_pct", "三分命中率", True), ("true_shooting_pct", "TS%", True),
+                   ("usage_pct", "USG%（0–100）", False)]
+        values = "，".join(label + display_metric(row.get(field), percentage) for field, label, percentage in metrics)
+        season = row.get("data_season") or "未知赛季"
+        return f"{name}（{row.get('team_name')}）：{season}，{values}。缺失指标不参与计算。"
 
     def _format_player_comparison(self, rows: list[dict], question: str) -> str:
         # 对比时始终展示全部核心数据，不限于问题中提到的关键词
@@ -237,7 +265,7 @@ class StructuredRepository:
             (r"失误", "turnovers_per_game", "场均失误", False, "次"),
             (r"命中率|投篮", "field_goal_pct", "投篮命中率", True, "%"),
             (r"三分", "three_point_pct", "三分命中率", True, "%"),
-            (r"真实命中率|效率", "true_shooting_pct", "真实命中率", True, "%"),
+            (r"真实命中率|真实投篮命中率|TS%", "true_shooting_pct", "真实命中率", True, "%"),
         ]
         parts = ["对比数据："]
         parts.extend(self._format_player_row(row, question) for row in rows)
@@ -251,7 +279,7 @@ class StructuredRepository:
             if len(values) < 2:
                 continue
             numeric_values = [float(value) for _row, value in values]
-            best = max(numeric_values)
+            best = min(numeric_values) if field == "turnovers_per_game" else max(numeric_values)
             leaders = [row.get("name") for row, value in values if float(value) == best]
             rendered = "，".join(
                 f"{row.get('name')} {float(value) * 100:.1f}{unit}"
@@ -316,7 +344,8 @@ class StructuredRepository:
             (["助攻", "assists"], "assists_per_game", "助攻", False),
             (["抢断", "steals"], "steals_per_game", "抢断", False),
             (["盖帽", "blocks"], "blocks_per_game", "盖帽", False),
-            (["效率", "efficiency", "per"], "efficiency", "效率值", False),
+            (["per"], "per", "PER", False),
+            (["效率值", "efficiency"], "efficiency", "效率值", False),
             (["失误", "turnovers"], "turnovers_per_game", "失误", False),
             (["上场时间", "分钟", "minutes"], "minutes_per_game", "上场时间", False),
             (["使用率", "usage"], "usage_pct", "使用率", False),
@@ -337,18 +366,20 @@ class StructuredRepository:
                 SELECT p.name, t.name AS team_name, p.{metric_col} AS metric_val
                 FROM players p
                 LEFT JOIN teams t ON p.team_id = t.id
-                WHERE p.{metric_col} > 0 AND p.games_played >= 10
-                ORDER BY p.{metric_col} DESC
+                WHERE p.data_quality IN ('COMPLETE','PARTIAL') AND p.{metric_col} IS NOT NULL AND p.games_played >= 10
+                  AND {published_sql('p', metric_col)} AND {published_sql('p', 'games_played')}
+                ORDER BY p.{metric_col} {'ASC' if metric_col == 'turnovers_per_game' else 'DESC'}
                 LIMIT %s
                 """,
                 (top_k,),
             )
-            rows = cursor.fetchall()
+            rows = [published_row(row) for row in cursor.fetchall()]
         if not rows:
             return ""
         parts = [f"{metric_label}排名："]
         for idx, row in enumerate(rows):
-            val = row.get("metric_val") or 0
+            val = row.get("metric_val")
+            if val is None: continue
             if is_pct:
                 parts.append(f"  {idx + 1}. {row.get('name')}（{row.get('team_name')}）：{val * 100:.1f}%")
             else:
@@ -389,7 +420,7 @@ class StructuredRepository:
                     """,
                     (top_k,),
                 )
-            rows = cursor.fetchall()
+            rows = [published_row(row) for row in cursor.fetchall()]
         if not rows:
             return ""
         if player_name:
@@ -417,7 +448,7 @@ class StructuredRepository:
                 """,
                 (top_k,),
             )
-            rows = cursor.fetchall()
+            rows = [published_row(row) for row in cursor.fetchall()]
         if not rows:
             return "伤病报告：暂无伤病数据。"
         parts = [f"最近伤病报告（{len(rows)}条）："]
@@ -431,17 +462,18 @@ class StructuredRepository:
     def three_point_leaders(self, top_k: int = 10) -> str:
         with self.database.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 SELECT p.name, t.name AS team_name, p.three_point_pct, p.games_played
                 FROM players p
                 LEFT JOIN teams t ON p.team_id = t.id
-                WHERE p.three_point_pct > 0 AND p.games_played >= 10
+                WHERE p.data_quality IN ('COMPLETE','PARTIAL') AND p.three_point_pct IS NOT NULL AND p.games_played >= 10
+                  AND {published_sql('p', 'three_point_pct')} AND {published_sql('p', 'games_played')}
                 ORDER BY p.three_point_pct DESC
                 LIMIT %s
                 """,
                 (top_k,),
             )
-            rows = cursor.fetchall()
+            rows = [published_row(row) for row in cursor.fetchall()]
         if not rows:
             return ""
         parts = ["三分命中率排名："]

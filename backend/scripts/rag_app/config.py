@@ -62,11 +62,16 @@ class RAGSettings:
     llm_base_url: str = "https://api.deepseek.com"
     llm_api_key: str = ""
     llm_model: str = "deepseek-v4-flash"
-    llm_temperature: float = 0.9
+    llm_temperature: float = 0.3
     llm_max_tokens: int = 10240
     llm_timeout_seconds: int = 90
+    llm_thinking: bool = False
+    llm_reasoning_effort: str = "low"
 
     memory_window: int = 5
+    memory_max_sessions: int = 256
+    memory_ttl_seconds: int = 3600
+    db_connect_timeout_seconds: int = 3
 
     db_host: str = "localhost"
     db_port: int = 3306
@@ -82,6 +87,7 @@ class RAGSettings:
     search_timeout_seconds: int = 3
     search_top_k: int = 5
     search_cache_ttl_seconds: int = 600
+    search_cache_max_entries: int = 256
     search_providers: str = "espn_scoreboard,espn_news"
     baidu_min_interval_seconds: int = 15
     baidu_circuit_breaker_seconds: int = 600
@@ -90,6 +96,12 @@ class RAGSettings:
     max_vector_distance: float = 0.68
     min_rerank_score: float = 0.0
     force_web_search: bool = False
+    query_planner_mode: str = 'auto'
+    query_planner_timeout_seconds: int = 5
+    multi_query_limit: int = 3
+    hyde_enabled: bool = True
+    hyde_timeout_seconds: int = 5
+    auto_build_index: bool = True
 
     # 向后兼容
     web_search_enabled: bool = True
@@ -117,7 +129,12 @@ class RAGSettings:
             llm_temperature=float(os.environ.get("RAG_LLM_TEMPERATURE", cls.llm_temperature)),
             llm_max_tokens=int(os.environ.get("RAG_LLM_MAX_TOKENS", cls.llm_max_tokens)),
             llm_timeout_seconds=int(os.environ.get("RAG_LLM_TIMEOUT_SECONDS", cls.llm_timeout_seconds)),
+            llm_thinking=_bool_env("RAG_LLM_THINKING", False),
+            llm_reasoning_effort=os.environ.get("RAG_LLM_REASONING_EFFORT", "low"),
             memory_window=int(os.environ.get("RAG_MEMORY_WINDOW", cls.memory_window)),
+            memory_max_sessions=int(os.environ.get('RAG_MEMORY_MAX_SESSIONS', cls.memory_max_sessions)),
+            memory_ttl_seconds=int(os.environ.get('RAG_MEMORY_TTL_SECONDS', cls.memory_ttl_seconds)),
+            db_connect_timeout_seconds=int(os.environ.get('RAG_DB_CONNECT_TIMEOUT_SECONDS', cls.db_connect_timeout_seconds)),
             db_host=os.environ.get("DB_HOST", "localhost"),
             db_port=int(os.environ.get("DB_PORT", "3306")),
             db_user=os.environ.get("DB_USERNAME", "root"),
@@ -132,6 +149,7 @@ class RAGSettings:
             search_timeout_seconds=int(os.environ.get("RAG_SEARCH_TIMEOUT_SECONDS", "3")),
             search_top_k=int(os.environ.get("RAG_SEARCH_TOP_K", "5")),
             search_cache_ttl_seconds=int(os.environ.get("RAG_SEARCH_CACHE_TTL_SECONDS", "600")),
+            search_cache_max_entries=int(os.environ.get('RAG_SEARCH_CACHE_MAX_ENTRIES', cls.search_cache_max_entries)),
             search_providers=os.environ.get("RAG_SEARCH_PROVIDERS", "espn_scoreboard,espn_news,google_news_rss,baidusearch"),
             baidu_min_interval_seconds=int(os.environ.get("RAG_BAIDU_MIN_INTERVAL_SECONDS", "15")),
             baidu_circuit_breaker_seconds=int(os.environ.get("RAG_BAIDU_CIRCUIT_BREAKER_SECONDS", "600")),
@@ -140,6 +158,12 @@ class RAGSettings:
             max_vector_distance=float(os.environ.get("RAG_MAX_VECTOR_DISTANCE", "0.68")),
             min_rerank_score=float(os.environ.get("RAG_MIN_RERANK_SCORE", "0")),
             force_web_search=_bool_env("RAG_FORCE_WEB_SEARCH", False),
+            query_planner_mode=os.environ.get('RAG_QUERY_PLANNER_MODE', cls.query_planner_mode),
+            query_planner_timeout_seconds=int(os.environ.get('RAG_QUERY_PLANNER_TIMEOUT_SECONDS', cls.query_planner_timeout_seconds)),
+            multi_query_limit=int(os.environ.get('RAG_MULTI_QUERY_LIMIT', cls.multi_query_limit)),
+            hyde_enabled=_bool_env('RAG_HYDE_ENABLED', cls.hyde_enabled),
+            hyde_timeout_seconds=int(os.environ.get('RAG_HYDE_TIMEOUT_SECONDS', cls.hyde_timeout_seconds)),
+            auto_build_index=_bool_env('RAG_AUTO_BUILD_INDEX', cls.auto_build_index),
         )
         settings.resolve_devices()
         return settings

@@ -29,8 +29,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -47,7 +45,6 @@ public class RAGController {
     private final RAGService ragService;
     private final RAGConversationService conversationService;
     private final RagTimeoutProperties timeoutProperties;
-    private final ExecutorService executor = Executors.newCachedThreadPool();
 
     /** RAG 服务地址，可用环境变量 RAG_SERVER_URL 或配置项 app.rag.server-url 覆盖 */
     @org.springframework.beans.factory.annotation.Value("${app.rag.server-url:${RAG_SERVER_URL:http://127.0.0.1:8899}}")
@@ -62,9 +59,9 @@ public class RAGController {
             @RequestParam(defaultValue = "5") int topK,
             @RequestParam(name = "session_id", required = false) String sessionId) {
         validateQuestion(question);
-        RAGResult result = ragService.query(question, topK, sessionId);
+        RAGResult result = ragService.query(question, topK, scopedSession(sessionId));
         if (result.success()) {
-            return ResponseEntity.ok(RAGResponse.success(result.answer(), result.sources(), result.responseTime(), result.model()));
+            return ResponseEntity.ok(RAGResponse.success(result.answer(), result.sources(), result.responseTime(), result.model(), result.sourceDetails(), result.followUps()));
         } else {
             return ResponseEntity.ok(RAGResponse.error(result.error()));
         }
@@ -80,25 +77,17 @@ public class RAGController {
         RAGResult result = ragService.query(
                 request.question(),
                 request.effectiveTopK(),
-                request.sessionId(),
+                scopedSession(request.sessionId()),
                 request.conversationHistory()
         );
         if (result.success()) {
-            return ResponseEntity.ok(RAGResponse.success(result.answer(), result.sources(), result.responseTime(), result.model()));
+            return ResponseEntity.ok(RAGResponse.success(result.answer(), result.sources(), result.responseTime(), result.model(), result.sourceDetails(), result.followUps()));
         } else {
             return ResponseEntity.ok(RAGResponse.error(result.error()));
         }
     }
 
-    /**
-     * 智能问答（SSE）。
-     *
-     * 实现说明：曾经逐行代理 python 的 /stream SSE，但该链路长期受两类问题困扰——
-     * JDK KeepAliveCache 复用 uvicorn 已关闭的死连接（随机 Premature EOF）、
-     * Tomcat 对 POST+StreamingResponseBody 不写 chunked 终止块（浏览器判为网络错误）。
-     * 现改为内部调用被验证稳定的非流式 /query，由本端合成 SSE 事件序列；
-     * chunk 按 60 字符分片以保留打字机式渐进渲染。
-     */
+    /** Forward Python SSE frames as they arrive; never buffer a complete answer. */
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public StreamingResponseBody streamQuery(
             @RequestParam String question,
@@ -106,33 +95,26 @@ public class RAGController {
             @RequestParam(name = "session_id", required = false) String sessionId,
             HttpServletResponse response) {
         validateQuestion(question);
-        response.setHeader("Cache-Control", "no-cache");
-        response.setHeader("Access-Control-Allow-Origin", "*");
+        response.setHeader("Cache-Control", "no-cache, no-transform");
+        response.setHeader("X-Accel-Buffering", "no");
         response.setContentType("text/event-stream;charset=utf-8");
+        // Capture the authenticated context before entering the async response thread.
+        UserPrincipal user = currentUser();
+        List<Map<String, String>> history = user == null ? List.of() : conversationService.recentHistory(sessionId, user.getId());
+        String pythonSession = scopedSession(sessionId);
+        JSONObject body = buildPythonRequestBody(question, topK, pythonSession, history);
 
         return outputStream -> {
+            HttpURLConnection conn = null;
+            boolean terminalEvent = false;
             try {
+                writeEvent(outputStream, new JSONObject().put("type", "status").put("message", "正在检索比赛和数据来源..."));
                 ragService.ensureServerStarted();
-
-                JSONObject body = new JSONObject()
-                        .put("question", question == null ? "" : question)
-                        .put("top_k", topK);
-                if (sessionId != null && !sessionId.isBlank()) {
-                    body.put("session_id", sessionId);
-                }
-                JSONArray history = new JSONArray();
-                for (Map<String, String> turn : conversationService.recentHistory(sessionId)) {
-                    history.put(new JSONObject()
-                            .put("role", turn.getOrDefault("role", "user"))
-                            .put("content", turn.getOrDefault("content", "")));
-                }
-                body.put("conversation_history", history);
-
                 byte[] requestBody = body.toString().getBytes(StandardCharsets.UTF_8);
-                URL url = new URL(ragServerUrl + "/query");
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn = (HttpURLConnection) new URL(ragServerUrl + "/stream").openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                conn.setRequestProperty("Accept", "text/event-stream");
                 conn.setRequestProperty("Connection", "close");
                 conn.setDoOutput(true);
                 conn.setConnectTimeout(timeoutProperties.getConnectMillis());
@@ -141,65 +123,39 @@ public class RAGController {
                 try (OutputStream requestStream = conn.getOutputStream()) {
                     requestStream.write(requestBody);
                 }
-
-                String payload;
-                try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
-                    StringBuilder sb = new StringBuilder();
+                if (conn.getResponseCode() != 200) {
+                    throw new IllegalStateException("RAG 服务返回 HTTP " + conn.getResponseCode());
+                }
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                    StringBuilder frame = new StringBuilder();
                     String line;
                     while ((line = reader.readLine()) != null) {
-                        sb.append(line);
+                        frame.append(line).append('\n');
+                        if (frame.length() > 1_000_000) throw new IllegalStateException("RAG SSE 事件过大");
+                        if (!line.isEmpty()) continue;
+                        String event = frame.toString();
+                        outputStream.write(event.getBytes(StandardCharsets.UTF_8));
+                        outputStream.flush();
+                        for (String eventLine : event.split("\n")) {
+                            if (eventLine.startsWith("data:")) {
+                                JSONObject data = new JSONObject(eventLine.substring(5).trim());
+                                terminalEvent = data.optString("type").equals("done") || data.optString("type").equals("error");
+                            }
+                        }
+                        frame.setLength(0);
+                        if (terminalEvent) break;
                     }
-                    payload = sb.toString();
                 }
-
-                JSONObject resp = new JSONObject(payload);
-                if (!resp.optBoolean("success", true)) {
-                    throw new IllegalStateException(resp.optString("error", "RAG 服务返回失败"));
-                }
-
-                // 合成完整 SSE 文本后按 Content-Length 一次性写出：
-                // chunked 传输在 StreamingResponseBody 完成路径上存在终止块缺失问题
-                //（Tomcat 直接关闭连接，严格客户端报 TransferEncodingError），identity 传输彻底规避
-                StringBuilder sse = new StringBuilder();
-                JSONObject sourcesEvt = new JSONObject()
-                        .put("type", "sources")
-                        .put("sources", resp.optJSONArray("sources") == null ? new JSONArray() : resp.optJSONArray("sources"))
-                        .put("metadatas", resp.optJSONArray("metadatas") == null ? new JSONArray() : resp.optJSONArray("metadatas"))
-                        .put("search_results", resp.optJSONArray("search_results") == null ? new JSONArray() : resp.optJSONArray("search_results"))
-                        .put("used_tools", resp.optJSONArray("used_tools") == null ? new JSONArray() : resp.optJSONArray("used_tools"))
-                        .put("tool_trace", resp.optJSONArray("tool_trace") == null ? new JSONArray() : resp.optJSONArray("tool_trace"))
-                        .put("search_execution", resp.optJSONObject("search_execution") == null ? new JSONObject() : resp.optJSONObject("search_execution"))
-                        .put("retrieval_quality", resp.optJSONObject("retrieval_quality") == null ? new JSONObject() : resp.optJSONObject("retrieval_quality"))
-                        .put("structured_data", resp.optBoolean("structured_data", false));
-                sse.append("data: ").append(sourcesEvt).append("\n\n");
-
-                String answer = resp.optString("answer", "");
-                for (int i = 0; i < answer.length(); i += 60) {
-                    sse.append("data: ").append(new JSONObject()
-                            .put("type", "chunk")
-                            .put("content", answer.substring(i, Math.min(answer.length(), i + 60)))).append("\n\n");
-                }
-
-                sse.append("data: ").append(new JSONObject()
-                        .put("type", "done")
-                        .put("response_time", resp.optInt("response_time", 0))).append("\n\n");
-
-                byte[] payload_bytes = sse.toString().getBytes(StandardCharsets.UTF_8);
-                response.setContentLengthLong(payload_bytes.length);
-                outputStream.write(payload_bytes);
-                outputStream.flush();
+                if (!terminalEvent) throw new IllegalStateException("回答完成前上游连接中断，请重试");
             } catch (Exception e) {
-                // 响应未提交时以错误事件收尾；若已提交则只能中断（客户端按连接关闭处理）
                 try {
-                    byte[] err = ("data: " + new JSONObject()
-                            .put("type", "error")
-                            .put("error", e.getMessage() == null ? "服务暂时不可用" : e.getMessage()) + "\n\n")
-                            .getBytes(StandardCharsets.UTF_8);
-                    response.setContentLengthLong(err.length);
-                    outputStream.write(err);
-                    outputStream.flush();
-                } catch (Exception ignored) {}
+                    writeEvent(outputStream, new JSONObject().put("type", "error")
+                            .put("error", e.getMessage() == null ? "服务暂时不可用" : e.getMessage()));
+                } catch (java.io.IOException disconnected) {
+                    log.debug("RAG stream client disconnected");
+                }
+            } finally {
+                if (conn != null) conn.disconnect();
             }
         };
     }
@@ -243,6 +199,16 @@ public class RAGController {
         outputStream.flush();
     }
 
+    private static UserPrincipal currentUser() {
+        var authentication = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getPrincipal() instanceof UserPrincipal principal ? principal : null;
+    }
+
+    private static String scopedSession(String sessionId) {
+        UserPrincipal user = currentUser();
+        return user == null || sessionId == null || sessionId.isBlank() ? sessionId : "user:" + user.getId() + ":" + sessionId;
+    }
+
     static JSONObject buildPythonRequestBody(RAGStreamRequest request) {
         JSONObject body = new JSONObject()
                 .put("question", request.question() == null ? "" : request.question())
@@ -258,6 +224,7 @@ public class RAGController {
             int start = Math.max(0, turns.size() - 8);
             for (int index = start; index < turns.size(); index++) {
                 Map<String, String> turn = turns.get(index);
+                if (turn == null) continue;
                 String role = turn.getOrDefault("role", "").trim().toLowerCase();
                 String content = turn.getOrDefault("content", "").trim();
                 if (!(role.equals("user") || role.equals("assistant")) || content.isEmpty()) {
@@ -420,10 +387,14 @@ public class RAGController {
         }
     }
 
-    public record RAGResponse(boolean success, String answer, List<String> sources, int responseTime, String model, String error) {
+    public record RAGResponse(boolean success, String answer, List<String> sources, int responseTime, String model, String error, List<Object> sourceDetails, @JsonProperty("follow_ups") List<String> followUps) {
+        public RAGResponse(boolean success, String answer, List<String> sources, int responseTime, String model, String error, List<Object> sourceDetails) { this(success, answer, sources, responseTime, model, error, sourceDetails, List.of()); }
+        public RAGResponse(boolean success, String answer, List<String> sources, int responseTime, String model, String error) { this(success, answer, sources, responseTime, model, error, List.of()); }
         public static RAGResponse success(String answer, List<String> sources, int responseTime, String model) {
             return new RAGResponse(true, answer, sources, responseTime, model, null);
         }
+        public static RAGResponse success(String answer, List<String> sources, int responseTime, String model, List<Object> details) { return new RAGResponse(true, answer, sources, responseTime, model, null, details); }
+        public static RAGResponse success(String answer, List<String> sources, int responseTime, String model, List<Object> details, List<String> followUps) { return new RAGResponse(true, answer, sources, responseTime, model, null, details, followUps); }
         public static RAGResponse error(String error) {
             return new RAGResponse(false, null, List.of(), 0, null, error);
         }

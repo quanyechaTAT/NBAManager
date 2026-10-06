@@ -78,18 +78,10 @@ def _settings(**overrides):
     return SimpleNamespace(**values)
 
 
-def _engine(structured, *, retriever=None, search_service=None, llm=None):
-    engine = object.__new__(RAGEngine)
-    engine.settings = _settings()
-    engine.classifier = QueryClassifier()
-    engine.evidence_gate = EvidenceGate()
-    engine.retriever = retriever or _EmptyRetriever()
-    engine.structured = structured
-    engine.search_service = search_service or _FailIfCalled("search_service")
-    engine.query_rewriter = SimpleNamespace(rewrite=lambda question: [question])
-    engine.llm = llm or _FailIfCalled("llm")
-    engine.memory = ConversationMemory(window=3)
-    return engine
+def _engine(structured, *, retriever=None, search_service=None, llm=None, query_rewriter=None, settings=None):
+    return RAGEngine(settings or _settings(), structured=structured, retriever=retriever or _EmptyRetriever(),
+        search_service=search_service or _FailIfCalled('search_service'), llm=llm or _FailIfCalled('llm'),
+        query_rewriter=query_rewriter or SimpleNamespace(rewrite=lambda question: [question]), memory=ConversationMemory(window=3))
 
 
 def test_structured_fact_returns_directly_without_rag_search_or_llm():
@@ -250,10 +242,7 @@ def test_system_prompt_forbids_causal_claims_from_descriptive_stats():
 
 def test_health_reports_actual_model_readiness():
     fake_engine = SimpleNamespace(
-        retriever=SimpleNamespace(
-            embeddings=SimpleNamespace(_model=object()),
-            reranker=SimpleNamespace(_model=object(), _available=True),
-        ),
+        retriever=SimpleNamespace(ready=True),
         settings=SimpleNamespace(reranker_enabled=True),
     )
     app = FastAPI()
@@ -447,7 +436,7 @@ def test_freshness_search_failure_returns_structured_data_with_staleness_warning
     assert answer.used_tools == ["sql", "web_search"]
 
 
-def test_freshness_query_executes_only_best_rewritten_search_once():
+def test_freshness_query_rejects_rewrite_with_unrequested_old_date():
     calls = []
 
     class _EmptySearch:
@@ -461,14 +450,14 @@ def test_freshness_query_executes_only_best_rewritten_search_once():
         search_service=_EmptySearch(),
         llm=_FailIfCalled("llm"),
     )
-    engine.query_rewriter = SimpleNamespace(
+    engine.query_planner.rewriter = SimpleNamespace(
         rewrite=lambda _question: ["最近有哪些伤病信息？", "NBA injury report 2026-07-21"]
     )
 
     answer = engine.ask("最近有哪些伤病信息？")
 
     assert answer.success
-    assert calls == ["NBA injury report 2026-07-21"]
+    assert calls == ["最近有哪些伤病信息？"]
 
 
 def test_default_search_timeout_remains_short(monkeypatch):
@@ -654,7 +643,7 @@ def test_player_summary_only_returns_the_requested_metric():
 
     answer = repository.player_summary(["斯蒂芬·库里"], "他的三分命中率是多少？")
 
-    assert answer == "斯蒂芬·库里本赛季三分命中率为 39.3%。"
+    assert answer == "斯蒂芬·库里（赛季未知）三分命中率为 39.3%。"
     assert "篮板" not in answer
     assert "助攻" not in answer
 

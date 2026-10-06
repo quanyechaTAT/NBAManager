@@ -18,4 +18,5 @@ public record PlayerGameLogDto(
         Integer plusMinus,
         String result,
         Integer teamScore,
-        Integer opponentScore) {}
+        Integer opponentScore,
+        DataMeta dataMeta) {}

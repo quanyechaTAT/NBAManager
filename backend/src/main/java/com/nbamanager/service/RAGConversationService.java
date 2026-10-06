@@ -38,11 +38,11 @@ public class RAGConversationService {
      * GET 流式问答的多轮上下文注入：取会话最近 8 轮（16 条），单条截 1000 字。
      * 历史由服务端持久化，前端无需再回传 conversation_history。
      */
-    public List<Map<String, String>> recentHistory(String sessionId) {
-        if (sessionId == null || sessionId.isBlank()) {
+    public List<Map<String, String>> recentHistory(String sessionId, Long userId) {
+        if (sessionId == null || sessionId.isBlank() || userId == null) {
             return List.of();
         }
-        return repository.findBySessionId(sessionId)
+        return repository.findBySessionIdAndUserId(sessionId, userId)
                 .map(conv -> {
                     try {
                         org.json.JSONArray arr = new org.json.JSONArray(conv.getMessagesJson());

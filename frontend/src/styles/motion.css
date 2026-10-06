@@ -15,6 +15,9 @@
   --surface-glass-border: rgba(255, 255, 255, 0.08);
   --surface-shine: linear-gradient(135deg, rgba(255, 255, 255, 0.06), transparent 40%);
   --accent-edge: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.85), transparent);
+  --spring-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --spring-press: cubic-bezier(0.4, 0, 0.2, 1);
+  --spring-settle: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 [data-theme="light"] {
@@ -58,6 +61,32 @@
     transform: translateY(18px);
   }
   to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes courtside-spring-up {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.985);
+  }
+  70% {
+    opacity: 0.95;
+    transform: translateY(-1.5px) scale(1.002);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes courtside-tab-settle {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0);
   }
@@ -107,20 +136,35 @@
   animation: courtside-scale-in var(--duration-reveal) var(--ease-out-expo) both;
 }
 
+/* Staggered card entrances with spring-settle physics */
+.stagger-in > *,
 .stagger-children > * {
-  animation: courtside-rise var(--duration-reveal) var(--ease-out-expo) both;
+  animation: courtside-spring-up var(--duration-reveal) var(--spring-settle) both;
+  will-change: transform, opacity;
 }
 
+.stagger-in > *:nth-child(1),
 .stagger-children > *:nth-child(1) { animation-delay: 0.02s; }
+.stagger-in > *:nth-child(2),
 .stagger-children > *:nth-child(2) { animation-delay: 0.07s; }
+.stagger-in > *:nth-child(3),
 .stagger-children > *:nth-child(3) { animation-delay: 0.12s; }
+.stagger-in > *:nth-child(4),
 .stagger-children > *:nth-child(4) { animation-delay: 0.17s; }
+.stagger-in > *:nth-child(5),
 .stagger-children > *:nth-child(5) { animation-delay: 0.22s; }
+.stagger-in > *:nth-child(6),
 .stagger-children > *:nth-child(6) { animation-delay: 0.27s; }
+.stagger-in > *:nth-child(7),
 .stagger-children > *:nth-child(7) { animation-delay: 0.32s; }
+.stagger-in > *:nth-child(8),
 .stagger-children > *:nth-child(8) { animation-delay: 0.37s; }
+.stagger-in > *:nth-child(9),
 .stagger-children > *:nth-child(9) { animation-delay: 0.42s; }
+.stagger-in > *:nth-child(10),
 .stagger-children > *:nth-child(10) { animation-delay: 0.47s; }
+.stagger-in > *:nth-child(n+11),
+.stagger-children > *:nth-child(n+11) { animation-delay: 0.52s; }
 
 /* ===== Premium surface helpers ===== */
 .surface-premium {
@@ -163,7 +207,7 @@
 
 .interactive-lift {
   transition:
-    transform var(--duration-lift) var(--ease-out-quart),
+    transform 0.22s var(--spring-bounce),
     box-shadow var(--duration-lift) var(--ease-out-quart),
     border-color var(--duration-nav) var(--ease-smooth),
     background-color var(--duration-nav) var(--ease-smooth),
@@ -171,33 +215,51 @@
 }
 
 .interactive-lift:hover {
-  transform: translateY(-2px);
+  transform: translateY(-2px) scale(1.01);
 }
 
 .interactive-lift:active {
-  transform: translateY(0) scale(0.985);
+  transform: translateY(1px) scale(0.975);
+  transition: transform 0.07s var(--spring-press);
 }
 
-/* ===== Skeleton shimmer ===== */
-.skeleton-shimmer {
+/* ===== Silky Skeleton Wave Shimmer ===== */
+@keyframes skeleton-silky-wave {
+  0% {
+    background-position: 150% 0;
+  }
+  100% {
+    background-position: -150% 0;
+  }
+}
+
+.skeleton-shimmer,
+.skeleton-silky-wave,
+.el-skeleton__item {
   background: linear-gradient(
     90deg,
     var(--bg-hover) 0%,
-    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.08) 25%,
+    rgba(34, 211, 238, 0.12) 50%,
+    rgba(255, 255, 255, 0.08) 75%,
     var(--bg-hover) 100%
-  );
-  background-size: 200% 100%;
-  animation: courtside-shimmer 1.4s linear infinite;
+  ) !important;
+  background-size: 250% 100% !important;
+  animation: skeleton-silky-wave 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite !important;
 }
 
-[data-theme="light"] .skeleton-shimmer {
+[data-theme="light"] .skeleton-shimmer,
+[data-theme="light"] .skeleton-silky-wave,
+[data-theme="light"] .el-skeleton__item {
   background: linear-gradient(
     90deg,
     #F1EFEA 0%,
-    #FAF9F7 50%,
+    rgba(15, 23, 42, 0.05) 25%,
+    rgba(14, 165, 233, 0.12) 50%,
+    rgba(15, 23, 42, 0.05) 75%,
     #F1EFEA 100%
-  );
-  background-size: 200% 100%;
+  ) !important;
+  background-size: 250% 100% !important;
 }
 
 /* ===== Focus ring ===== */
@@ -221,8 +283,16 @@
   .page-fade-slide-leave-to,
   .reveal-rise,
   .reveal-scale,
-  .stagger-children > * {
+  .reveal-fade,
+  .stagger-in > *,
+  .stagger-children > *,
+  .el-tab-pane,
+  .skeleton-shimmer,
+  .skeleton-silky-wave,
+  .el-skeleton__item,
+  .live-indicator-dot {
     opacity: 1 !important;
     transform: none !important;
+    animation: none !important;
   }
 }

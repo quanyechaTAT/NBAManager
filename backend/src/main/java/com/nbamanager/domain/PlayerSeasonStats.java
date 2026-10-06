@@ -19,7 +19,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-public class PlayerSeasonStats {
+public class PlayerSeasonStats extends DataTracked {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -50,60 +50,60 @@ public class PlayerSeasonStats {
     private String jerseyNumber;
 
     /** 出场次数 */
-    @Column(nullable = false)
-    private Integer gamesPlayed = 0;
+    @Column(nullable = true)
+    private Integer gamesPlayed;
 
     /** 首发次数 */
-    @Column(nullable = false)
-    private Integer gamesStarted = 0;
+    @Column(nullable = true)
+    private Integer gamesStarted;
 
     /** 场均上场时间 */
     @Column(precision = 4, scale = 1)
-    private BigDecimal minutesPerGame = BigDecimal.ZERO;
+    private BigDecimal minutesPerGame;
 
     /** 场均得分 */
     @Column(precision = 4, scale = 1)
-    private BigDecimal pointsPerGame = BigDecimal.ZERO;
+    private BigDecimal pointsPerGame;
 
     /** 投篮命中率 */
     @Column(precision = 4, scale = 3)
-    private BigDecimal fieldGoalPct = BigDecimal.ZERO;
+    private BigDecimal fieldGoalPct;
 
     /** 三分命中率 */
     @Column(precision = 4, scale = 3)
-    private BigDecimal threePointPct = BigDecimal.ZERO;
+    private BigDecimal threePointPct;
 
     /** 罚球命中率 */
     @Column(precision = 4, scale = 3)
-    private BigDecimal freeThrowPct = BigDecimal.ZERO;
+    private BigDecimal freeThrowPct;
 
     /** 场均篮板 */
     @Column(precision = 4, scale = 1)
-    private BigDecimal reboundsPerGame = BigDecimal.ZERO;
+    private BigDecimal reboundsPerGame;
 
     /** 场均进攻篮板 */
     @Column(precision = 4, scale = 1)
-    private BigDecimal offensiveRebounds = BigDecimal.ZERO;
+    private BigDecimal offensiveRebounds;
 
     /** 场均防守篮板 */
     @Column(precision = 4, scale = 1)
-    private BigDecimal defensiveRebounds = BigDecimal.ZERO;
+    private BigDecimal defensiveRebounds;
 
     /** 场均助攻 */
     @Column(precision = 4, scale = 1)
-    private BigDecimal assistsPerGame = BigDecimal.ZERO;
+    private BigDecimal assistsPerGame;
 
     /** 场均抢断 */
     @Column(precision = 4, scale = 1)
-    private BigDecimal stealsPerGame = BigDecimal.ZERO;
+    private BigDecimal stealsPerGame;
 
     /** 场均盖帽 */
     @Column(precision = 4, scale = 1)
-    private BigDecimal blocksPerGame = BigDecimal.ZERO;
+    private BigDecimal blocksPerGame;
 
     /** 场均失误 */
     @Column(precision = 4, scale = 1)
-    private BigDecimal turnoversPerGame = BigDecimal.ZERO;
+    private BigDecimal turnoversPerGame;
 
     /** 翻译状态 */
     @Column(length = 20)
@@ -126,4 +126,18 @@ public class PlayerSeasonStats {
     }
 
 
+    public Integer getGamesPlayed() { return publishedValue("gamesPlayed", gamesPlayed); }
+    public Integer getGamesStarted() { return publishedValue("gamesStarted", gamesStarted); }
+    public BigDecimal getMinutesPerGame() { return publishedValue("minutesPerGame", minutesPerGame); }
+    public BigDecimal getPointsPerGame() { return publishedValue("pointsPerGame", pointsPerGame); }
+    public BigDecimal getFieldGoalPct() { return publishedValue("fieldGoalPct", fieldGoalPct); }
+    public BigDecimal getThreePointPct() { return publishedValue("threePointPct", threePointPct); }
+    public BigDecimal getFreeThrowPct() { return publishedValue("freeThrowPct", freeThrowPct); }
+    public BigDecimal getReboundsPerGame() { return publishedValue("reboundsPerGame", reboundsPerGame); }
+    public BigDecimal getOffensiveRebounds() { return publishedValue("offensiveRebounds", offensiveRebounds); }
+    public BigDecimal getDefensiveRebounds() { return publishedValue("defensiveRebounds", defensiveRebounds); }
+    public BigDecimal getAssistsPerGame() { return publishedValue("assistsPerGame", assistsPerGame); }
+    public BigDecimal getStealsPerGame() { return publishedValue("stealsPerGame", stealsPerGame); }
+    public BigDecimal getBlocksPerGame() { return publishedValue("blocksPerGame", blocksPerGame); }
+    public BigDecimal getTurnoversPerGame() { return publishedValue("turnoversPerGame", turnoversPerGame); }
 }

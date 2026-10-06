@@ -52,6 +52,7 @@ public class ReplayReadService {
     private final AiGameSummaryRepository summaryRepository;
     private final ReplaySyncStateRepository syncStateRepository;
     private final ReplayQualityService qualityService;
+    private final PlayByPlayTranslationService translationService;
 
     @Transactional(readOnly = true)
     public ReplayBootstrapDto bootstrap(String gameId) {
@@ -269,7 +270,8 @@ public class ReplayReadService {
     }
 
     private TimelineEventDto toTimelineDto(PlayByPlay event) {
-        String description = event.getDescription();
+        String original = event.getDescription();
+        String description = translationService.translateText(original);
         return new TimelineEventDto(
                 event.getId(),
                 event.getPeriod(),
@@ -277,11 +279,11 @@ public class ReplayReadService {
                 event.getEventType(),
                 event.getActionType(),
                 description,
+                original,
                 description,
-                description,
-                event.getPlayerName(),
+                translationService.translatePlayerName(event.getPlayerName(), event.getPlayerId()),
                 event.getPlayerId(),
-                event.getTeamName(),
+                translationService.translateText(event.getTeamName()),
                 event.getTeamId(),
                 event.getHomeScore(),
                 event.getAwayScore(),
@@ -309,8 +311,8 @@ public class ReplayReadService {
                 highlight.getPeriod(),
                 highlight.getGameClock(),
                 highlight.getHighlightType(),
-                highlight.getTitle(),
-                highlight.getDescription(),
+                translationService.translateText(highlight.getTitle()),
+                translationService.translateText(highlight.getDescription()),
                 highlight.getPlayerId(),
                 highlight.getTeamId(),
                 highlight.getScoreAfter(),
@@ -324,8 +326,8 @@ public class ReplayReadService {
                 point.getGameClock(),
                 point.getType(),
                 point.getConfidence(),
-                point.getFactualReason(),
-                point.getAiExplanation(),
+                translationService.translateText(point.getFactualReason()),
+                translationService.translateText(point.getAiExplanation()),
                 point.getCitedEventIdsJson(),
                 point.getStartEventOrder(),
                 point.getEndEventOrder(),

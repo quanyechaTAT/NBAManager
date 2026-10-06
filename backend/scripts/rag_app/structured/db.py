@@ -27,6 +27,7 @@ class Database:
             with self._pool_lock:
                 if self._pool is None:
                     import mysql.connector
+                    import mysql.connector.pooling
 
                     try:
                         self._pool = mysql.connector.pooling.MySQLConnectionPool(
@@ -39,8 +40,12 @@ class Database:
                             password=self.settings.db_password,
                             database=self.settings.db_name,
                             charset="utf8mb4",
+                            connection_timeout=max(1, self.settings.db_connect_timeout_seconds),
                         )
-                    except Exception:
+                    except mysql.connector.Error:
+                        self._pool = False
+                        raise
+                    except (AttributeError, ImportError):
                         # 池创建失败（如驱动版本不支持）：退回直连模式
                         self._pool = False
         return self._pool
@@ -60,6 +65,7 @@ class Database:
                 password=self.settings.db_password,
                 database=self.settings.db_name,
                 charset="utf8mb4",
+                connection_timeout=max(1, self.settings.db_connect_timeout_seconds),
             )
         cur = conn.cursor(dictionary=True)
         try:

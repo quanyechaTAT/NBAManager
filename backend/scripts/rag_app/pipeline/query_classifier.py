@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 import re
+from rag_app.domain.teams import TEAM_EN
+from rag_app.domain.players import PLAYER_EN
+from rag_app.pipeline.game_scope import needs_fresh_evidence
 
 
 class QueryType(str, Enum):
@@ -102,7 +105,7 @@ PLAYER_KEYWORDS = re.compile(
     r"场均|球员|数据|表现|得分|篮板|助攻|抢断|盖帽|失误|"
     r"命中率|投篮|三分|罚球|出场|上场时间|效率|使用率"
 )
-MATCH_KEYWORDS = re.compile(r"比赛|比分|赛程|总决赛|季后赛|对阵|主场|客场")
+MATCH_KEYWORDS = re.compile(r"比赛|比分|赛程|总决赛|季后赛|对阵|主场|客场|交锋|交手|谁赢|谁获胜|几比几|(?<!比)对(?!比)|\bgames?\b|\bscores?\b|\bvs\b", re.I)
 NEWS_KEYWORDS = re.compile(r"新闻|资讯|交易|伤病|报道")
 RANKING_KEYWORDS = re.compile(
     r"最高|排行|排名|榜|前[一二两三四五六七八九十\d]+|top|Top|TOP|第一|最多|"
@@ -127,7 +130,9 @@ class QueryClassifier:
         out_of_scope_players = [p for p in players if p == "__OUT_OF_SCOPE__"]
         valid_players = [p for p in players if p != "__OUT_OF_SCOPE__"]
 
-        if RANKING_KEYWORDS.search(query):
+        if MATCH_KEYWORDS.search(query) and (len(teams) >= 2 or re.search(r'(?:19|20)\d{2}[年/-]', query)):
+            query_type = QueryType.MATCH
+        elif RANKING_KEYWORDS.search(query):
             query_type = QueryType.RANKING
         elif TEAM_KEYWORDS.search(query) and teams:
             query_type = QueryType.TEAM
@@ -155,17 +160,25 @@ class QueryClassifier:
         for alias, team in TEAM_ALIASES.items():
             if alias in query and team not in found:
                 found.append(team)
+        for team, english in TEAM_EN.items():
+            if team not in found and re.search(r'(?<![a-z0-9])' + re.escape(english.split()[-1]) + r'(?![a-z0-9])', query, re.I):
+                found.append(team)
         return found
 
     def _find_players(self, query: str) -> list[str]:
         matches: list[tuple[int, str]] = []
         occupied: list[tuple[int, int]] = []
-        for alias, player in sorted(PLAYER_ALIASES.items(), key=lambda item: len(item[0]), reverse=True):
+        aliases = {**PLAYER_ALIASES, **{name: name for name in PLAYER_ALIASES.values() if name != '__OUT_OF_SCOPE__'}}
+        for alias, player in sorted(aliases.items(), key=lambda item: len(item[0]), reverse=True):
             start = query.find(alias)
             while start >= 0:
                 end = start + len(alias)
                 overlaps = any(start < used_end and end > used_start for used_start, used_end in occupied)
-                if not overlaps:
+                # A surname inside an unrecognized full name is not the famous player's alias.
+                different_full_name = ('·' not in alias and (
+                    bool(re.search(r'[a-z\u4e00-\u9fff]+[·•]$', query[:start], re.I))
+                    or query[end:end + 1] in {'·', '•'}))
+                if not overlaps and not different_full_name:
                     occupied.append((start, end))
                     matches.append((start, player))
                     break
@@ -174,21 +187,17 @@ class QueryClassifier:
         for _start, player in sorted(matches, key=lambda item: item[0]):
             if player not in found:
                 found.append(player)
+        for alias, english in PLAYER_EN.items():
+            canonical = PLAYER_ALIASES[alias]
+            if canonical not in found and re.search(r'(?<![a-z0-9])' + re.escape(english) + r'(?![a-z0-9])', query, re.I):
+                found.append(canonical)
         return found
 
     def _needs_web_search(self, query: str) -> bool:
         # 明确要求联网
         if re.search(r"联网|搜索一下|查一下|网上|帮我查|搜一下", query):
             return True
-        # 时效性关键词
-        return bool(
-            re.search(
-                r"最新|今天|今日|昨天|明天|实时|目前|现在|刚刚|近期|最近|"
-                r"新闻|资讯|交易|伤病|复出|签约|裁掉|官宣|报道称|报道|"
-                r"夏季联赛|自由市场|自由球员|选秀结果",
-                query,
-            )
-        )
+        return needs_fresh_evidence(query)
 
     def is_out_of_scope(self, query: str) -> bool:
         """检测问题是否超出 NBA 数据库范围"""

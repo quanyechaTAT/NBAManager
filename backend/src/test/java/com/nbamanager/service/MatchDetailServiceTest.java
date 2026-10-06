@@ -8,8 +8,11 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.nbamanager.domain.GameBoxScore;
+import com.nbamanager.domain.GameNews;
 import com.nbamanager.domain.MatchRecord;
 import com.nbamanager.domain.PlayByPlay;
 import com.nbamanager.repository.GameBoxScoreRepository;
@@ -32,6 +35,68 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class MatchDetailServiceTest {
+
+    @Test
+    void scheduledBoxScoreCannotExposeStaleStatsOrScores() {
+        String gameId = "0042500226";
+        MatchRecord match = new MatchRecord();
+        match.setStatus("SCHEDULED");
+        match.setHomeTeam("76人");
+        match.setAwayTeam("尼克斯");
+        match.setHomeScore(114);
+        match.setAwayScore(144);
+        when(gameIdMappingService.getNbaGameId(gameId)).thenReturn(gameId);
+        when(matchRecordRepository.findByNbaGameId(gameId)).thenReturn(Optional.of(match));
+
+        BoxScoreDto result = service().getBoxScore(gameId);
+
+        assertThat(result.homeScore()).isNull();
+        assertThat(result.awayScore()).isNull();
+        assertThat(result.homePlayers()).isEmpty();
+        assertThat(result.quarterScores()).isEmpty();
+        verifyNoInteractions(gameBoxScoreRepository, playByPlayRepository, pythonScriptRunner);
+    }
+
+    @Test
+    void missingGameScoreCannotBeBorrowedFromAnotherHeadToHeadGame() {
+        String gameId = "0042500210";
+        GameNews news = new GameNews();
+        news.setHomeTeam("76人");
+        news.setAwayTeam("尼克斯");
+        when(gameIdMappingService.getNbaGameId(gameId)).thenReturn(gameId);
+        when(gameNewsRepository.findByNbaGameId(gameId)).thenReturn(List.of(news));
+        MatchRecord previous = new MatchRecord();
+        previous.setNbaGameId("0042500214");
+        previous.setHomeTeam("76人");
+        previous.setAwayTeam("尼克斯");
+        previous.setHomeScore(114);
+        previous.setAwayScore(144);
+        lenient().when(matchRecordRepository.findHeadToHead("76人", "尼克斯")).thenReturn(List.of(previous));
+
+        BoxScoreDto result = service().getBoxScore(gameId);
+
+        assertThat(result.homeScore()).isNull();
+        assertThat(result.awayScore()).isNull();
+        verify(matchRecordRepository, never()).findHeadToHead(anyString(), anyString());
+    }
+
+    private MatchDetailService service() {
+        return new MatchDetailService(gameBoxScoreRepository, playByPlayRepository, gameIdMappingService,
+                matchRecordRepository, gameNewsRepository, pythonScriptRunner, playerRepository,
+                new PythonTimeoutProperties());
+    }
+
+    @Test
+    void scheduledQuarterScoresDoNotReadOldEvents() {
+        String gameId = "0042500226";
+        MatchRecord match = new MatchRecord();
+        match.setStatus("SCHEDULED");
+        when(gameIdMappingService.getNbaGameId(gameId)).thenReturn(gameId);
+        when(matchRecordRepository.findByNbaGameId(gameId)).thenReturn(Optional.of(match));
+
+        assertThat(service().getQuarterScores(gameId)).isEmpty();
+        verifyNoInteractions(playByPlayRepository, pythonScriptRunner);
+    }
 
     @Mock
     private GameBoxScoreRepository gameBoxScoreRepository;
@@ -91,6 +156,8 @@ class MatchDetailServiceTest {
 
         assertThat(result.homeScore()).isEqualTo(112);
         assertThat(result.awayScore()).isEqualTo(105);
+        assertThat(result.homeTeam()).isEqualTo("Lakers");
+        assertThat(result.awayTeam()).isEqualTo("Celtics");
         verifyNoInteractions(pythonScriptRunner);
     }
 

@@ -11,6 +11,10 @@ RAG 联网搜索模块 — 多 Provider 架构
 所有 Provider 实现统一 SearchProvider 接口。
 """
 from __future__ import annotations
+from rag_app.domain.teams import TEAM_EN
+from rag_app.domain.teams import TEAM_IDS
+from rag_app.domain.players import PLAYER_EN
+from rag_app.tools.cache import TTLCache
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -42,6 +46,7 @@ class SearchResult:
     fetched_at: str = ""
     relevance_score: float = 0.0
     query: str = ""
+    facts: dict = field(default_factory=dict, compare=False)
 
     def to_dict(self) -> dict:
         return {
@@ -53,6 +58,7 @@ class SearchResult:
             "published_at": self.published_at,
             "fetched_at": self.fetched_at,
             "relevance_score": self.relevance_score,
+            "facts": self.facts,
         }
 
 
@@ -160,6 +166,14 @@ class EspnScoreboardProvider(SearchProvider):
         fetched_at = datetime.now(timezone.utc).isoformat()
         results = []
         events = data.get("events", [])
+        if context and context.get('teams'):
+            requested = {TEAM_IDS[team] for team in context['teams'] if team in TEAM_IDS}
+            events = [event for event in events if requested.issubset({str(competitor.get('team', {}).get('id'))
+                for competitor in (event.get('competitions') or [{}])[0].get('competitors', [])})]
+            if not events:
+                return [SearchResult('NBA 对阵查询说明', 'https://www.espn.com/nba/schedule',
+                    '当前赛事列表未查到' + '对'.join(context['teams']) + '的对应比赛；不能提供该场比分或技术统计。请明确比赛日期。',
+                    self.name, source_domain='espn.com', fetched_at=fetched_at)]
         target_date = self._query_date(query)
         if target_date is not None:
             filtered = [event for event in events if self._event_local_date(event) == target_date]
@@ -555,11 +569,13 @@ class SearchService:
     def __init__(self, settings):
         self.settings = settings
         self.providers: list[SearchProvider] = []
-        self._cache: dict[str, tuple[float, list[SearchResult]]] = {}
         self._cache_ttl = settings.search_cache_ttl_seconds
+        self._cache = TTLCache(getattr(settings, 'search_cache_max_entries', 256), self._cache_ttl)
         self._init_providers()
 
     def _init_providers(self):
+        from rag_app.tools.game_archive import EspnArchiveProvider
+        self.archive_provider = EspnArchiveProvider(self.settings.search_timeout_seconds)
         provider_map = {
             "espn_scoreboard": lambda: EspnScoreboardProvider(self.settings.search_timeout_seconds),
             "espn_news": lambda: EspnNewsProvider(self.settings.search_timeout_seconds),
@@ -595,21 +611,24 @@ class SearchService:
         start_ms = int(_time.time() * 1000)
 
         # 缓存检查
-        cache_key = f"{query}:{limit}"
+        cache_key = json.dumps([query, limit, context or {}, provider_filter], sort_keys=True, ensure_ascii=False)
         cached = self._cache.get(cache_key)
         if cached:
-            cached_time, cached_results = cached
-            if _time.time() - cached_time < self._cache_ttl:
-                execution.status = "success"
-                execution.results = cached_results
-                execution.successful_provider = cached_results[0].provider if cached_results else ""
-                execution.elapsed_ms = int(_time.time() * 1000) - start_ms
-                return cached_results, execution
+            execution.status = 'success'
+            execution.results = cached
+            execution.successful_provider = cached[0].provider
+            execution.elapsed_ms = int(_time.time() * 1000) - start_ms
+            return cached, execution
 
         # 按查询意图选择 Provider
         is_game = self._is_game_query(query)
+        historical = bool(context and context.get('historical'))
         providers_to_try = []
+        if historical and (not provider_filter or 'espn_archive' in provider_filter):
+            providers_to_try.append(self.archive_provider)
         for p in self.providers:
+            if historical:
+                continue
             if provider_filter and p.name not in provider_filter:
                 continue
             if is_game and p.name != "espn_scoreboard":
@@ -658,7 +677,7 @@ class SearchService:
         if final:
             execution.status = "success"
             execution.results = final
-            self._cache[cache_key] = (_time.time(), final)
+            self._cache.put(cache_key, final)
         elif has_failure:
             execution.status = "failed"
         else:
@@ -711,7 +730,7 @@ class SearchService:
                 continue
 
             # 记分牌是结构化 NBA 比赛源；新闻源仍需检查查询相关性。
-            trusted_providers = {"espn_scoreboard"}
+            trusted_providers = {"espn_scoreboard", "espn_archive"}
             if r.provider not in trusted_providers:
                 # 第三方 Provider：检查关键词相关性
                 if specific_keywords:
@@ -742,32 +761,9 @@ class SearchService:
 class SearchQueryRewriter:
     """将中文 NBA 查询改写为英文搜索词"""
 
-    TEAM_EN = {
-        "雷霆": "Oklahoma City Thunder", "马刺": "San Antonio Spurs",
-        "湖人": "Los Angeles Lakers", "勇士": "Golden State Warriors",
-        "凯尔特人": "Boston Celtics", "掘金": "Denver Nuggets",
-        "尼克斯": "New York Knicks", "骑士": "Cleveland Cavaliers",
-        "火箭": "Houston Rockets", "森林狼": "Minnesota Timberwolves",
-        "活塞": "Detroit Pistons", "独行侠": "Dallas Mavericks",
-        "76人": "Philadelphia 76ers", "热火": "Miami Heat",
-        "太阳": "Phoenix Suns", "快船": "LA Clippers",
-        "老鹰": "Atlanta Hawks", "公牛": "Chicago Bulls",
-        "雄鹿": "Milwaukee Bucks", "鹈鹕": "New Orleans Pelicans",
-        "灰熊": "Memphis Grizzlies", "国王": "Sacramento Kings",
-        "开拓者": "Portland Trail Blazers", "猛龙": "Toronto Raptors",
-        "篮网": "Brooklyn Nets", "黄蜂": "Charlotte Hornets",
-        "步行者": "Indiana Pacers", "魔术": "Orlando Magic",
-        "奇才": "Washington Wizards", "爵士": "Utah Jazz",
-    }
+    TEAM_EN = TEAM_EN
 
-    PLAYER_EN = {
-        "文班亚马": "Victor Wembanyama", "东契奇": "Luka Doncic",
-        "詹姆斯": "LeBron James", "库里": "Stephen Curry",
-        "杜兰特": "Kevin Durant", "约基奇": "Nikola Jokic",
-        "字母哥": "Giannis Antetokounmpo", "恩比德": "Joel Embiid",
-        "伦纳德": "Kawhi Leonard", "SGA": "Shai Gilgeous-Alexander",
-        "爱德华兹": "Anthony Edwards", "塔图姆": "Jayson Tatum",
-    }
+    PLAYER_EN = PLAYER_EN
 
     def rewrite(self, query: str, entities: dict | None = None) -> list[str]:
         """返回中英文候选搜索词"""

@@ -47,7 +47,7 @@
       </div>
 
       <footer class="broadcast__foot">
-        <button v-if="headlineMatch.nbaGameId" type="button" class="broadcast__btn" @click="goDetail">战报与情报复盘</button>
+        <button v-if="headlineMatch.nbaGameId" type="button" class="broadcast__btn" @click="goDetail">技术统计与战术复盘</button>
         <button type="button" class="broadcast__btn is-ghost" @click="$emit('open-feed')">完整赛程中心</button>
       </footer>
     </template>
@@ -55,8 +55,8 @@
     <!-- 无比赛：明确说明而不是留空 -->
     <template v-else>
       <p class="broadcast__eyebrow">COURTSIDE · ARENA CENTRAL</p>
-      <h1 class="broadcast__empty-title">今日赛事静候鸣哨</h1>
-      <p class="broadcast__empty-desc">实时赛况、关键回合与赛后复盘将在开赛后动态呈现在此。</p>
+      <h1 class="broadcast__empty-title">今日暂无进行中的赛事</h1>
+      <p class="broadcast__empty-desc">实时比分、四节技术统计与战术复盘将在开赛后在此呈现。</p>
       <footer class="broadcast__foot">
         <button type="button" class="broadcast__btn" @click="$emit('open-feed')">浏览赛季赛程</button>
         <button type="button" class="broadcast__btn is-ghost" @click="$router.push('/teams')">球队战绩榜</button>

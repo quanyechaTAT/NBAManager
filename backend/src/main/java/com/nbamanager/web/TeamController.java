@@ -43,7 +43,7 @@ public class TeamController {
     }
 
     /** 赛区排名 */
-    @GetMapping("/divisions")
+    @GetMapping({"/divisions", "/division-rankings"})
     public Map<String, List<TeamRankDto>> divisionRankings() {
         return teamService.getDivisionRankings();
     }

@@ -6,7 +6,11 @@
         <router-link to="/dashboard" class="brand-link">
           <img src="/images/nba-logo.png" alt="NBA" class="brand-logo" />
           <span class="brand-text">Courtside</span>
-          <span class="brand-badge">HUB</span>
+          <span class="brand-badge">{{ currentSeason }}</span>
+          <span v-if="hasLiveGame" class="brand-live-tag" title="当前有比赛正在进行">
+            <span class="live-indicator-dot"></span>
+            <span>LIVE</span>
+          </span>
         </router-link>
         <nav class="nav-links">
           <router-link v-for="item in visibleNavItems" :key="item.path" :to="item.path" class="nav-link" :class="{ active: isActive(item.path) }">
@@ -52,7 +56,7 @@
           </div>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item @click="router.push('/profile')">我的主场</el-dropdown-item>
+              <el-dropdown-item @click="router.push('/profile')">个人中心</el-dropdown-item>
               <el-dropdown-item @click="showUsernameDialog = true">修改用户名</el-dropdown-item>
               <el-dropdown-item @click="showPwdDialog = true">修改密码</el-dropdown-item>
               <el-dropdown-item v-if="auth.isAdmin" @click="router.push('/admin/sync')">数据调度中心</el-dropdown-item>
@@ -139,6 +143,7 @@ import ThemeToggle from '@/components/ThemeToggle.vue'
 import GlobalSearch from '@/components/GlobalSearch.vue'
 import LiveScoreTicker from '@/components/domain/LiveScoreTicker.vue'
 import { useMatchFeed } from '@/composables/useMatchFeed'
+import { useCurrentSeason } from '@/composables/useCurrentSeason'
 
 const route = useRoute()
 const router = useRouter()
@@ -148,11 +153,15 @@ const identityStore = useIdentityStore()
 const notificationStore = useNotificationStore()
 const mainRef = ref<HTMLElement | null>(null)
 
+const { currentSeason, loadSeason } = useCurrentSeason()
+
 let identityClient: Client | null = null
 
 /* -------- 全站赛况条 -------- */
-const { tickerMatches, refresh: refreshMatchFeed } = useMatchFeed()
+const { tickerMatches, live, refresh: refreshMatchFeed } = useMatchFeed()
 let tickerTimer: number | undefined
+const hasLiveGame = computed(() => live.value.length > 0)
+
 
 watch(() => route.path, () => {
   if (mainRef.value) mainRef.value.scrollTop = 0
@@ -201,6 +210,7 @@ watch(() => auth.token, (newToken, oldToken) => {
 })
 
 onMounted(() => {
+  void loadSeason()
   compactNavQuery?.addEventListener('change', onCompactNavChange)
   if (auth.token) {
     notificationStore.startPolling()
@@ -222,11 +232,11 @@ const navItems = [
   { path: '/dashboard', label: '总览', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>' },
   { path: '/news', label: '赛事中心', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/></svg>' },
   { path: '/teams', label: '球队榜', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>' },
-  { path: '/players', label: '球星库', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>' },
-  { path: '/community', label: '球迷看台', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
+  { path: '/players', label: '球员', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>' },
+  { path: '/community', label: '球迷社区', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
   { path: '/playoff', label: '季后赛', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>' },
-  { path: '/drafts', label: '选秀殿堂', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>' },
-  { path: '/smart-search', label: 'AI 智囊', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><path d="M8.5 8.5v.01"/><path d="M16 15.5v.01"/><path d="M12 12v.01"/><path d="M11 17v.01"/><path d="M7 14v.01"/></svg>' },
+  { path: '/drafts', label: '选秀', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>' },
+  { path: '/smart-search', label: 'AI 助手', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><path d="M8.5 8.5v.01"/><path d="M16 15.5v.01"/><path d="M12 12v.01"/><path d="M11 17v.01"/><path d="M7 14v.01"/></svg>' },
 ]
 
 /* 中等宽度（769–1199px）：栏内只留高频入口，其余收进"更多" */
@@ -256,9 +266,9 @@ const moreIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const mobileNavItems = [
   { path: '/dashboard', label: '总览', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>' },
   { path: '/news', label: '赛事', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>' },
-  { path: '/players', label: '球星', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>' },
-  { path: '/community', label: '看台', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
-  { path: '/profile', label: '主场', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' },
+  { path: '/players', label: '球员', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>' },
+  { path: '/community', label: '社区', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
+  { path: '/profile', label: '我的', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' },
 ]
 
 function isActive(path: string) {
@@ -435,6 +445,22 @@ async function submitUsername() {
   border: 1px solid rgba(var(--accent-rgb), 0.32);
   box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.18);
   line-height: 1;
+}
+
+.brand-live-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.14);
+  border: 1px solid rgba(249, 115, 22, 0.4);
+  color: #FB923C;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  margin-left: 2px;
+  animation: fadeIn 0.3s ease;
 }
 
 .nav-links {

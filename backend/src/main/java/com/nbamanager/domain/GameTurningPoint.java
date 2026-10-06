@@ -39,7 +39,7 @@ public class GameTurningPoint {
     @Column(columnDefinition = "TEXT")
     private String aiExplanation;
 
-    @Column(length = 500)
+    @Column(columnDefinition = "TEXT")
     private String citedEventIdsJson;
 
     private Integer startEventOrder;

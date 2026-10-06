@@ -28,6 +28,21 @@ class RAGConversationServiceTest {
     private RAGConversationService service;
 
     @Test
+    void restoredStreamHistoryIsBoundToTheCurrentUser() {
+        when(repository.findBySessionIdAndUserId("foreign-session", 7L)).thenReturn(Optional.empty());
+        assertThat(service.recentHistory("foreign-session", 7L)).isEmpty();
+        verify(repository, never()).findBySessionId("foreign-session");
+    }
+
+    @Test
+    void restoredStreamHistoryKeepsOnlyRecentNonEmptyTurns() {
+        RAGConversation conversation = new RAGConversation();
+        conversation.setMessagesJson("[{\"role\":\"user\",\"content\":\"分析马刺和尼克斯的比赛\"},{\"role\":\"assistant\",\"content\":\"2024-12-25比分117:114\"},{\"role\":\"assistant\",\"content\":\"\"}]");
+        when(repository.findBySessionIdAndUserId("owned-session", 7L)).thenReturn(Optional.of(conversation));
+        assertThat(service.recentHistory("owned-session", 7L)).hasSize(2);
+    }
+
+    @Test
     void saveOrUpdateCreatesConversationForCurrentUser() {
         when(repository.findBySessionId("session-1")).thenReturn(Optional.empty());
         when(repository.save(any(RAGConversation.class))).thenAnswer(invocation -> invocation.getArgument(0));

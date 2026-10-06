@@ -19,7 +19,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-public class PlayerGameLog {
+public class PlayerGameLog extends DataTracked {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -43,22 +43,22 @@ public class PlayerGameLog {
     @Column(length = 10)
     private String minutes;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Integer points;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Integer rebounds;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Integer assists;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Integer steals;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Integer blocks;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Integer turnovers;
 
     private Double fgPct;
@@ -76,4 +76,14 @@ public class PlayerGameLog {
     private String season;
 
 
+    public Integer getPoints() { return publishedValue("points", points); }
+    public Integer getRebounds() { return publishedValue("rebounds", rebounds); }
+    public Integer getAssists() { return publishedValue("assists", assists); }
+    public Integer getSteals() { return publishedValue("steals", steals); }
+    public Integer getBlocks() { return publishedValue("blocks", blocks); }
+    public Integer getTurnovers() { return publishedValue("turnovers", turnovers); }
+    public Double getFgPct() { return publishedValue("fgPct", fgPct); }
+    public Double getThreePct() { return publishedValue("threePct", threePct); }
+    public Double getFtPct() { return publishedValue("ftPct", ftPct); }
+    public Integer getPlusMinus() { return publishedValue("plusMinus", plusMinus); }
 }

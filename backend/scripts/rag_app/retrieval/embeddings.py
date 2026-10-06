@@ -1,31 +1,26 @@
 from __future__ import annotations
 
-from pathlib import Path
-import glob
 import sys
+import threading
 
 from rag_app.config import RAGSettings
+from rag_app.retrieval.model_paths import resolve_model_path
 
 
 class SentenceTransformerEmbeddings:
     def __init__(self, settings: RAGSettings):
         self.settings = settings
         self._model = None
+        self._load_lock = threading.Lock()
 
     def _resolve_model_path(self) -> str:
-        cache_dir = Path(self.settings.model_cache_dir)
-        # 优先查找 HuggingFace 缓存结构
-        pattern = cache_dir / "models--richinfoai--ritrieve_zh_v1" / "snapshots" / "*" / ""
-        snapshots = glob.glob(str(pattern))
-        if snapshots:
-            return snapshots[0]
-        # 其次查找直接下载的目录
-        direct_path = cache_dir / "richinfoai--ritrieve_zh_v1"
-        if direct_path.exists() and (direct_path / "config.json").exists():
-            return str(direct_path)
-        return self.settings.embedding_model
+        return resolve_model_path(self.settings.embedding_model, self.settings.model_cache_dir)
 
     def load(self):
+        with self._load_lock:
+            return self._load_once()
+
+    def _load_once(self):
         if self._model is not None:
             return self._model
 
@@ -33,9 +28,10 @@ class SentenceTransformerEmbeddings:
 
         model_path = self._resolve_model_path()
         print(f"Loading embedding model: {model_path}", file=sys.stderr)
-        self._model = SentenceTransformer(model_path, device=self.settings.embedding_device)
+        model = SentenceTransformer(model_path, device=self.settings.embedding_device)
         if self.settings.embedding_device == "cuda" and self.settings.embedding_fp16:
-            self._model.half()
+            model.half()
+        self._model = model
         return self._model
 
     def embed_query(self, text: str) -> list[float]:

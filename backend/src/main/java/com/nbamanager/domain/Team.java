@@ -19,7 +19,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-public class Team {
+public class Team extends DataTracked {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -47,10 +47,10 @@ public class Team {
     @Column(length = 32)
     private String division;
 
-    @Column(nullable = false)
+    @Column
     private Integer wins;
 
-    @Column(nullable = false)
+    @Column
     private Integer losses;
 
     @Column(length = 500)

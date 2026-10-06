@@ -482,35 +482,49 @@ public class NbaLiveSyncService {
     private void saveMatchRecord(JSONObject game, String homeTeam, String awayTeam, LocalDate matchDate) {
         try {
             String nbaGameId = game.optString("gameId", "");
-            int homeScore = game.optInt("homeScore", 0);
-            int awayScore = game.optInt("awayScore", 0);
-            String status = game.optString("status", "FINISHED");
+            Double homeValue = PlayerSnapshotMapper.number(game, "homeScore");
+            Double awayValue = PlayerSnapshotMapper.number(game, "awayScore");
+            String status = game.optString("status", "");
+            boolean observedScores = homeValue != null && awayValue != null && homeValue >= 0 && awayValue >= 0
+                    && homeValue <= Integer.MAX_VALUE && awayValue <= Integer.MAX_VALUE
+                    && homeValue % 1 == 0 && awayValue % 1 == 0
+                    && java.util.Set.of("SCHEDULED", "LIVE", "FINISHED").contains(status);
+            Integer homeScore = homeValue == null ? null : homeValue.intValue();
+            Integer awayScore = awayValue == null ? null : awayValue.intValue();
 
             // 检查是否已存在；历史记录缺少比赛类型时顺便补齐
             if (matchRecordRepository.existsByHomeTeamAndAwayTeamAndMatchDate(homeTeam, awayTeam, matchDate)) {
                 MatchRecord existing = matchRecordRepository
                         .findByHomeTeamAndAwayTeamAndMatchDate(homeTeam, awayTeam, matchDate)
                         .orElse(null);
-                if (existing != null
-                        && (existing.getGameType() == null || existing.getGameType().isBlank())) {
+                if (existing != null) {
                     existing.setGameType(MatchGameTypeResolver.resolve(
                             game.optString("gameType", null), nbaGameId, matchDate));
+                    if (observedScores) {
+                        existing.setHomeScore(homeScore); existing.setAwayScore(awayScore); existing.setStatus(status);
+                        if (!nbaGameId.isBlank()) existing.setNbaGameId(nbaGameId);
+                        existing.setSeason(MatchSeasonResolver.resolve(game.optString("season", null), nbaGameId, matchDate));
+                        existing.markData("NBA_API", existing.getSeason(), existing.getGameType(), "homeScore", "awayScore", "status");
+                    }
                     matchRecordRepository.save(existing);
                 }
                 return;
             }
 
+            if (!observedScores) return;
             MatchRecord record = new MatchRecord();
             record.setHomeTeam(homeTeam);
             record.setAwayTeam(awayTeam);
             record.setHomeScore(homeScore);
             record.setAwayScore(awayScore);
             record.setMatchDate(matchDate);
-            record.setSeason(getCurrentSeason());
+            record.setSeason(MatchSeasonResolver.resolve(game.optString("season", null), nbaGameId, matchDate));
             record.setStatus(status);
             record.setNbaGameId(nbaGameId);
             record.setGameType(MatchGameTypeResolver.resolve(
                     game.optString("gameType", null), nbaGameId, matchDate));
+
+            record.markData("NBA_API", record.getSeason(), record.getGameType(), "homeScore", "awayScore", "status");
 
             matchRecordRepository.save(record);
             log.info("保存比赛记录: {} vs {}, {}-{}, {}", homeTeam, awayTeam, homeScore, awayScore, matchDate);
@@ -936,6 +950,7 @@ public class NbaLiveSyncService {
                 LocalDate matchDate = record.getMatchDate() == null ? today : record.getMatchDate();
                 record.setGameType(MatchGameTypeResolver.resolve(null, gameId, matchDate));
             }
+            record.markData("MULTI_PROVIDER", record.getSeason(), record.getGameType(), "homeScore", "awayScore", "status");
             matchRecordRepository.save(record);
 
             // 比赛刚结束时通知（避免重复通知）
@@ -955,6 +970,7 @@ public class NbaLiveSyncService {
                         LocalDate matchDate = byGameId.getMatchDate() == null ? today : byGameId.getMatchDate();
                         byGameId.setGameType(MatchGameTypeResolver.resolve(null, gameId, matchDate));
                     }
+                    byGameId.markData("MULTI_PROVIDER", byGameId.getSeason(), byGameId.getGameType(), "homeScore", "awayScore", "status");
                     matchRecordRepository.save(byGameId);
                     return;
                 }
@@ -969,6 +985,7 @@ public class NbaLiveSyncService {
             newRecord.setStatus(status);
             newRecord.setNbaGameId(gameId);
             newRecord.setGameType(MatchGameTypeResolver.resolve(null, gameId, today));
+            newRecord.markData("MULTI_PROVIDER", newRecord.getSeason(), newRecord.getGameType(), "homeScore", "awayScore", "status");
             matchRecordRepository.save(newRecord);
         }
     }

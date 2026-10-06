@@ -78,53 +78,55 @@ export function smoothPath(points: TrendGeometryPoint[]): string {
   if (deduped.length === 2) return `M ${deduped[0].x} ${deduped[0].y} L ${deduped[1].x} ${deduped[1].y}`
 
   const n = deduped.length
-  const dxs: number[] = []
-  const dys: number[] = []
-  const slopes: number[] = []
 
-  for (let i = 0; i < n - 1; i += 1) {
-    const dx = deduped[i + 1].x - deduped[i].x
-    const dy = deduped[i + 1].y - deduped[i].y
-    dxs.push(dx)
-    dys.push(dy)
-    slopes.push(dx === 0 ? 0 : dy / dx)
+  // Gentle moving window smoothing for dense event series (n > 4) to eliminate staircase plateaus
+  // while strictly preserving endpoints and actual momentum hills and valleys
+  let smoothedY: number[]
+  if (n > 4) {
+    smoothedY = new Array(n)
+    smoothedY[0] = deduped[0].y
+    smoothedY[n - 1] = deduped[n - 1].y
+
+    for (let i = 1; i < n - 1; i += 1) {
+      const prev2 = i > 1 ? deduped[i - 2].y : deduped[0].y
+      const prev1 = deduped[i - 1].y
+      const curr = deduped[i].y
+      const next1 = deduped[i + 1].y
+      const next2 = i < n - 2 ? deduped[i + 2].y : deduped[n - 1].y
+      // 5-point Gaussian-style kernel: [0.08, 0.22, 0.40, 0.22, 0.08]
+      smoothedY[i] = prev2 * 0.08 + prev1 * 0.22 + curr * 0.4 + next1 * 0.22 + next2 * 0.08
+    }
+  } else {
+    smoothedY = deduped.map((p) => p.y)
   }
 
-  // Fritsch-Carlson monotone tangents
-  const tangents: number[] = [slopes[0]]
-  for (let i = 1; i < n - 1; i += 1) {
-    if (slopes[i - 1] * slopes[i] <= 0) {
-      tangents.push(0)
-    } else {
-      tangents.push((slopes[i - 1] + slopes[i]) / 2)
-    }
-  }
-  tangents.push(slopes[n - 2])
+  const pts = deduped.map((p, i) => ({ x: p.x, y: smoothedY[i] }))
 
-  // Enforce monotonicity constraint (Fritsch-Carlson)
-  for (let i = 0; i < n - 1; i += 1) {
-    if (Math.abs(slopes[i]) < 1e-10) {
-      tangents[i] = 0
-      tangents[i + 1] = 0
-      continue
-    }
-
-    const a = tangents[i] / slopes[i]
-    const b = tangents[i + 1] / slopes[i]
-    const magnitude = a * a + b * b
-    if (magnitude > 9) {
-      const tau = 3 / Math.sqrt(magnitude)
-      tangents[i] = tau * a * slopes[i]
-      tangents[i + 1] = tau * b * slopes[i]
-    }
-  }
-
-  // Build cubic bezier path
+  // Natural Catmull-Rom / Cardinal spline with controlled tension
+  const tension = 0.55 // Soft natural curvature without extreme overshooting
   const commands = [`M ${deduped[0].x} ${deduped[0].y}`]
+
   for (let i = 0; i < n - 1; i += 1) {
-    const dx = dxs[i] / 3
+    const p0 = i > 0 ? pts[i - 1] : pts[0]
+    const p1 = pts[i]
+    const p2 = pts[i + 1]
+    const p3 = i < n - 2 ? pts[i + 2] : pts[n - 1]
+
+    const cp1x = p1.x + ((p2.x - p0.x) * tension) / 6
+    const cp1y = p1.y + ((p2.y - p0.y) * tension) / 6
+    const cp2x = p2.x - ((p3.x - p1.x) * tension) / 6
+    const cp2y = p2.y - ((p3.y - p1.y) * tension) / 6
+
+    const localMinY = Math.min(p0.y, p1.y, p2.y, p3.y) - 12
+    const localMaxY = Math.max(p0.y, p1.y, p2.y, p3.y) + 12
+    const safeCp1y = Math.max(localMinY, Math.min(localMaxY, cp1y))
+    const safeCp2y = Math.max(localMinY, Math.min(localMaxY, cp2y))
+
+    const targetX = i === n - 2 ? deduped[n - 1].x : Number(p2.x.toFixed(2))
+    const targetY = i === n - 2 ? deduped[n - 1].y : Number(p2.y.toFixed(2))
+
     commands.push(
-      `C ${deduped[i].x + dx} ${deduped[i].y + tangents[i] * dx}, ${deduped[i + 1].x - dx} ${deduped[i + 1].y - tangents[i + 1] * dx}, ${deduped[i + 1].x} ${deduped[i + 1].y}`,
+      `C ${Number(cp1x.toFixed(2))} ${Number(safeCp1y.toFixed(2))}, ${Number(cp2x.toFixed(2))} ${Number(safeCp2y.toFixed(2))}, ${targetX} ${targetY}`,
     )
   }
 

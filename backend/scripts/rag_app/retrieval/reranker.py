@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import glob
-from pathlib import Path
 import sys
+import threading
 
 from rag_app.config import RAGSettings
+from rag_app.retrieval.model_paths import resolve_model_path
 
 
 class CrossEncoderReranker:
@@ -12,19 +12,16 @@ class CrossEncoderReranker:
         self.settings = settings
         self._model = None
         self._available = settings.reranker_enabled
+        self._load_lock = threading.Lock()
 
     def _resolve_model_path(self) -> str:
-        cache_dir = Path(self.settings.model_cache_dir)
-        pattern = cache_dir / "models--BAAI--bge-reranker-v2-m3" / "snapshots" / "*" / ""
-        snapshots = glob.glob(str(pattern))
-        if snapshots:
-            return snapshots[0]
-        direct_path = cache_dir / "BAAI--bge-reranker-v2-m3"
-        if direct_path.exists() and (direct_path / "config.json").exists():
-            return str(direct_path)
-        return self.settings.reranker_model
+        return resolve_model_path(self.settings.reranker_model, self.settings.model_cache_dir)
 
     def _load(self):
+        with self._load_lock:
+            return self._load_once()
+
+    def _load_once(self):
         if not self._available:
             return None
         if self._model is not None:
