@@ -16,10 +16,12 @@ import org.springframework.web.client.RestClientResponseException;
 @Component
 public class DiscoveryGateway {
     private final RestClient client;
+    private final RestClient recommendationClient;
     private final String token;
     private final int timeout;
     private final DiscoverySuggestionCache suggestions=new DiscoverySuggestionCache();
     public DiscoveryGateway(@Value("${app.discovery.server-url}") String url,
+                            @Value("${app.discovery.recommendation-server-url:}") String recommendationUrl,
                             @Value("${app.discovery.internal-token:}") String token,
                             @Value("${app.discovery.timeout-millis:800}") int timeout) {
         this.token=token;
@@ -28,6 +30,8 @@ public class DiscoveryGateway {
                 .connectTimeout(Duration.ofMillis(150)).build());
         factory.setReadTimeout(Duration.ofMillis(timeout));
         client=RestClient.builder().baseUrl(url).requestFactory(factory).build();
+        recommendationClient=recommendationUrl.isBlank()?client:
+                RestClient.builder().baseUrl(recommendationUrl).requestFactory(factory).build();
     }
     public Map<String,Object> fetch(String operation, Map<String,Object> request) {
         if(token.isBlank()) return null;
@@ -37,7 +41,8 @@ public class DiscoveryGateway {
     }
     private Map<String,Object> call(String operation, Map<String,Object> request) {
         try {
-            return client.post().uri("/internal/"+operation).header("X-Discovery-Token",token)
+            RestClient target=operation.equals("recommendations")?recommendationClient:client;
+            return target.post().uri("/internal/"+operation).header("X-Discovery-Token",token)
                     .body(request).retrieve().body(new ParameterizedTypeReference<>() {});
         } catch(RestClientResponseException error) {
             if(error.getStatusCode().value()==410) throw new ApiException(HttpStatus.GONE,"列表已过期，请刷新后重试");

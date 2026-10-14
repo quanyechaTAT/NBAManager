@@ -116,6 +116,7 @@ app:
     retention-max-count: ${NEWS_RETENTION_MAX_COUNT:10000}
   discovery:
     server-url: ${DISCOVERY_SERVER_URL:http://127.0.0.1:19001}
+    recommendation-server-url: ${DISCOVERY_RECOMMENDATION_SERVER_URL:}
     internal-token: ${DISCOVERY_INTERNAL_TOKEN:}
     timeout-millis: ${DISCOVERY_TIMEOUT_MS:800}
   # 入口并发隔离（压测报告 §十 10.3：>1000 RPS 后无界排队、仍返回 200）

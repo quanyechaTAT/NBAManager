@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('bootstrap','java','api','cdc','jobs','embeddings','frontend')][string]$Role,
+    [ValidateSet('bootstrap','java','api','recommendations','cdc','jobs','embeddings','frontend')][string]$Role,
     [string]$EnvironmentFile = "$PSScriptRoot/.env.local",
     [ValidateRange(1,4)][int]$ApiWorkers = 1
 )
@@ -52,7 +52,11 @@ if($Role -in @('bootstrap','java')) {
 } else {
     $python=Join-Path $scriptRoot 'venv312/Scripts/python.exe'
     if(!(Test-Path -LiteralPath $python)) { throw 'Create the Python venv312 environment and install requirements-discovery.txt first.' }
-    $pythonArgs=if($Role -eq 'api') { "-m uvicorn discovery_app.api:app --host 127.0.0.1 --port 19001 --workers $ApiWorkers" } else { '-m discovery_app.worker '+$Role }
+    if($Role -eq 'recommendations') { $env:DISCOVERY_EMBEDDING_ENABLED='false' }
+    $pythonArgs=if($Role -in @('api','recommendations')) {
+        $apiPort=if($Role -eq 'api'){19001}else{19002}
+        "-m uvicorn discovery_app.api:app --host 127.0.0.1 --port $apiPort --workers $ApiWorkers"
+    } else { '-m discovery_app.worker '+$Role }
     $process=Start-Process $python -ArgumentList $pythonArgs -WorkingDirectory $scriptRoot -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
 }
 $process.Id | Set-Content -LiteralPath (Join-Path $runtimeRoot "$Role.pid")

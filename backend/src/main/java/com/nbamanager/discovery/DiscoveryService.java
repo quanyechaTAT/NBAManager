@@ -26,8 +26,11 @@ public class DiscoveryService {
         Preferences preferences=store.preferences(user);
         request.put("personalized",preferences.personalized()); request.put("preferenceRevision",preferences.revision());
         if(preferences.clearedAt()!=null) request.put("clearedAt",preferences.clearedAt());
-        request.put("followed",preferences.personalized()?store.followed(user):List.of());
-        request.put("blocked",store.blocked(user));
+        // Search does not rank by user interests; authoritative exclusions still run after hydration.
+        if(operation.equals("recommendations")) {
+            request.put("followed",preferences.personalized()?store.followed(user):List.of());
+            request.put("blocked",store.blocked(user));
+        }
         String cursor=(String)request.get("cursor");
         Map<String,Object> response=cursor!=null&&cursor.startsWith("db:")?fallback(request):gateway.fetch(operation,request);
         if(response==null || !(response.get("items") instanceof List<?>)) {

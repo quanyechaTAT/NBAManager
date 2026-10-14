@@ -29,7 +29,7 @@ class DiscoveryGatewayTest {
             try(var output=exchange.getResponseBody()) { output.write(body); }
         });
         server.start();
-        gateway=new DiscoveryGateway("http://127.0.0.1:"+server.getAddress().getPort(),"test-only",800);
+        gateway=new DiscoveryGateway("http://127.0.0.1:"+server.getAddress().getPort(),"","test-only",800);
     }
     @AfterEach void stop() { server.stop(0); serverThreads.shutdownNow(); }
     Map<String,Object> request(long user,String q) {
@@ -60,5 +60,32 @@ class DiscoveryGatewayTest {
         gateway.fetch("suggest",request(1,"库里"));
         gateway.fetch("suggest",request(2,"库里"));
         assertThat(calls.get()).isEqualTo(4);
+    }
+
+    @Test void optionalRecommendationEndpointReceivesOnlyRecommendationCallsWithInternalAuthentication() throws Exception {
+        var recommendations=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
+        var recommendationCalls=new AtomicInteger();
+        var authenticatedCalls=new AtomicInteger();
+        recommendations.setExecutor(serverThreads);
+        recommendations.createContext("/internal/recommendations",exchange->{
+            recommendationCalls.incrementAndGet();
+            if("test-only".equals(exchange.getRequestHeaders().getFirst("X-Discovery-Token"))) authenticatedCalls.incrementAndGet();
+            exchange.getRequestBody().readAllBytes();
+            byte[] body="{\"items\":[],\"strategyVersion\":\"baseline-v1\",\"degraded\":false}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type","application/json");
+            exchange.sendResponseHeaders(200,body.length);
+            try(var output=exchange.getResponseBody()) { output.write(body); }
+        });
+        recommendations.start();
+        try {
+            var routed=new DiscoveryGateway("http://127.0.0.1:"+server.getAddress().getPort(),
+                    "http://127.0.0.1:"+recommendations.getAddress().getPort(),"test-only",800);
+            assertThat(routed.fetch("recommendations",request(1,""))).containsEntry("strategyVersion","baseline-v1");
+            routed.fetch("search",request(1,"库里"));
+            routed.fetch("suggest",request(1,"库里"));
+            assertThat(recommendationCalls.get()).isEqualTo(1);
+            assertThat(authenticatedCalls.get()).isEqualTo(1);
+            assertThat(calls.get()).isEqualTo(2);
+        } finally { recommendations.stop(0); }
     }
 }

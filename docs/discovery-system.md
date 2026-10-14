@@ -19,7 +19,8 @@
 ```mermaid
 flowchart LR
     UI[Vue 搜索与推荐入口] --> Java[Spring Boot 鉴权和内容校验]
-    Java --> API[Python Discovery API]
+    Java --> API[Python 检索 API]
+    Java --> Rec[Python 推荐 API / 3 进程]
     Java --> DB[(MySQL 业务数据与行为)]
     DB --> CDC[Debezium / Kafka]
     CDC --> Worker[CDC 消费者]
@@ -27,9 +28,11 @@ flowchart LR
     Worker --> Profile[(MySQL 画像 / Redis 缓存)]
     API --> Search
     API --> Profile
+    Rec --> Search
+    Rec --> Profile
     DB --> Jobs[任务和训练进程]
     Jobs --> Model[Parquet / LambdaRank 版本]
-    Model --> API
+    Model --> Rec
     Worker --> Encode[持久化向量任务]
     Encode --> Search
 ```
@@ -38,11 +41,14 @@ flowchart LR
 
 RAG 原有入口、检索库、重排器和问答逻辑保持独立。Discovery 与 RAG 只可共用只读模型权重目录。`richinfoai/ritrieve_zh_v1` 实际输出 **1792 维**，不能按其 BERT 隐藏层的 1024 维创建索引。
 
+当前本机将搜索与推荐分配到独立 API 进程：搜索保留一个文本编码器，推荐使用三个不加载文本编码器的轻量进程。两者复用相同的服务实现、令牌规则、索引和模型注册表；推荐的内容相似度直接使用索引中的向量。`DISCOVERY_RECOMMENDATION_SERVER_URL` 未设置时仍使用原统一 API 地址。搜索入口省去不会参与检索的关注和完整屏蔽列表读取，返回前仍逐请求校验屏蔽内容和偏好版本。
+
 ## 数据与检索
 
 - `TYPE:业务主键` 是统一标识；比赛的 `MATCH:id` 与外部 `nbaGameId` 分离。详情路由保留 `recordId`，没有官方比赛 ID 时使用 `/api/match-records/id/{id}`。
 - 别名来自实体中英文名、球队缩写、常见球员昵称和 `discovery_entity_aliases`。中文采用 CJK 分析，英文支持前缀联想。正文中的实体用于球队筛选和内容召回；别名更新会重投影新闻、帖子和比赛。
 - 全文检索 BM25 与语义检索通过 RRF 融合；向量未就绪、编码器忙碌或单路超时可降为全文检索，并返回 `degraded`。所有检索都先应用类型、球队、赛季和日期过滤。日期以北京时间解释，结束日期包含当天；赛季目前主要用于比赛记录。
+- 在线编码最多等待编码锁 100 ms，拿到锁后再次检查查询缓存，避免同时到达的相同新查询重复编码。超过等待上限仍可降级。内容向量最多合并三个有效种子，使用标准库完成求均值和单位化，校验维度与有限数值；规则推荐不会因此首次加载 NumPy。
 - 需要翻页的首次请求冻结排序结果，Redis 保存 10 分钟。游标绑定用户、偏好版本、场景、筛选、查询和页大小；跨账号、过期或修改筛选后返回 410，刷新后重新检索。单个搜索快照最多 250 个融合结果；推荐信息流最多保存 5 页。联想下拉框和首页只返回一页，不创建用不到的 Redis 游标；Java 仍保存每次实际返回内容的独立归因记录。
 - 候选排序只读取 OpenSearch 的 ID 和 doc values，避免每次解码包含 1792 维向量的完整 `_source`。最终显示仍由 Java 查询业务库。
 - 相同的索引查询、公开文档片段和内容向量平均值使用最多 256 条、默认 5 秒 TTL 的进程缓存，并合并并发未命中请求。候选文档只在装入缓存时解析；每个请求单独生成候选状态和特征。向量缓存键直接按数值匹配，命中时无需再次把 1792 维向量编码为 JSON。`DISCOVERY_QUERY_CACHE_SECONDS` 支持大于 0、最多 10 秒的窗口。
@@ -65,6 +71,8 @@ RAG 原有入口、检索库、重排器和问答逻辑保持独立。Discovery 
 训练仅使用真实曝光，窗口完成后按 24 小时内最大反馈构造 0/1/2/3 标签。特征取服务时刻快照，按请求和时间划分训练、验证、测试集，保留 Parquet 和模型校验和。门槛为跨度 14 天、10,000 次曝光、500 次正反馈、100 名用户；不足时记录 `INSUFFICIENT_DATA` 并保持基线。验证集和测试集均优于基线才能成为候选。管理员先开启影子运行，成功后依次 5%、20%、50% 固定用户分桶，支持回滚；不会因为定时训练而自动切换流量。
 
 验收中的合成训练数据只验证实际 LightGBM 训练、Parquet、加载、影子运行和回滚。测试模型在完成后标为 `TEST_ONLY`，恢复原策略，不能据此宣称真实用户收益。
+
+API 在启动阶段初始化模型注册表及数据库连接，再接受请求，避免将首次连接和注册表读取留给首批请求。注册表暂不可用时记录诊断，保留请求阶段的重试和既有回退路径。
 
 ## 同步与恢复
 
@@ -104,7 +112,8 @@ OpenSearch/Python 不可用时，Java 每类型最多读取最近 500 条业务�
 | OpenSearch | 19200 | 单节点 2.19.2，1792 维 Lucene HNSW |
 | Kafka | 19092 | 3.9.1 KRaft |
 | Debezium Connect | 18083 | 3.1.2.Final |
-| Java / Python API | 18080 / 19001 | Java 为公共鉴权入口 |
+| Java / 检索 API | 18080 / 19001 | Java 为公共鉴权入口，检索单进程 |
+| 推荐 API | 19002 | 三个轻量进程，不加载文本编码器 |
 | Vite | 15173 | 代理到隔离 Java 服务 |
 
 从仓库根目录执行（PowerShell）：
@@ -125,6 +134,7 @@ Python 需要 `backend/scripts/venv312`，安装 `requirements-discovery.txt`，
 
 ```powershell
 .\deploy\discovery\start-local.ps1 -Role api
+.\deploy\discovery\start-local.ps1 -Role recommendations -ApiWorkers 3
 .\deploy\discovery\start-local.ps1 -Role cdc
 .\deploy\discovery\start-local.ps1 -Role jobs
 .\deploy\discovery\start-local.ps1 -Role embeddings
@@ -133,11 +143,11 @@ Python 需要 `backend/scripts/venv312`，安装 `requirements-discovery.txt`，
 
 日志与 PID 在 `backend/scripts/runtime/discovery/`。注册连接器前把 `.env.local` 变量加载到进程环境，执行 `python -m discovery_app.register_connector`；主机默认访问 Connect 18083，连接器在容器内访问 `mysql:3306`。只注册已建好表的库。通过 `/connectors/nba-discovery/status` 检查 RUNNING 和任务状态。
 
-主机 API 默认单进程；`-Role api -ApiWorkers 2` 可用于资源充足环境的对比测试，允许 1–4 个进程。每个进程分别加载编码器和维护查询缓存，增加进程数时必须同时验证内存、模型预热和混合检索降级比例，不能只看推荐吞吐。当前已恢复默认单进程。
+主机检索 API 默认单进程。推荐角色使用同一个 API 模块，但启动脚本设置 `DISCOVERY_EMBEDDING_ENABLED=false`，端口为 19002，使用 `-ApiWorkers 3`。每个进程有自己的查询缓存；修改并发配置后需同时验证内存、首批请求、混合检索策略和降级比例。`.env.example` 已将 Java 的推荐地址指向 19002；已有 `.env.local` 需补充同一非敏感配置。
 
 当前本机的 `.env.example` 配置为 `DISCOVERY_API_THREADS=4`、`DISCOVERY_QUERY_CACHE_SECONDS=5`、`HIKARI_MAX_POOL=50`、`HIKARI_MIN_IDLE=50`。已有 `.env.local` 需同步这四个非敏感参数后重启隔离 Java/API。Java 运行剖析显示提交事务期间的连接占用会放大连接池等待；此配置与候选缓存配合使用。数据库仍保留 `sync_binlog=1`、`innodb_flush_log_at_trx_commit=1`，没有放松提交持久性。API 同步线程可通过环境变量调整为 1–64，未指定时为 8。
 
-容器模式使用 `docker compose ... --profile app up -d --build api cdc-worker jobs-worker embedding-worker`，与主机 Python 模式二选一。模型和训练产物各有持久卷；首次启动需要模型下载或挂载已有只读权重。容器内部注册连接器需设置 `DISCOVERY_CONNECT_URL=http://connect:8083`。Compose 暴露的端口均绑定 127.0.0.1；它是开发验收配置，接入现有部署时需要将数据库、内部网络和模型路径改为实际环境配置。
+容器模式使用 `docker compose ... --profile app up -d --build api recommendations cdc-worker jobs-worker embedding-worker`，与主机 Python 模式二选一。模型和训练产物各有持久卷；首次启动需要模型下载或挂载已有只读权重。容器内部注册连接器需设置 `DISCOVERY_CONNECT_URL=http://connect:8083`。主机 Java 的推荐地址仍为 19002；Java 在相同 Compose 网络时使用 `http://recommendations:19001`。Kafka 的开发堆为 256–512 MB。Compose 暴露的端口均绑定 127.0.0.1；接入现有部署时需要将数据库、内部网络和模型路径改为实际环境配置。
 
 Java 配置 `DISCOVERY_SERVER_URL`（主机模式也可用 `--app.discovery.server-url=...`）和与 Python 相同的 `DISCOVERY_INTERNAL_TOKEN`。不能把内部令牌放到 Vite 环境变量或浏览器代码。当前 `.env.local`、JWT、模型、日志、数据库和测试运行文件均被 Git 忽略。
 
@@ -145,52 +155,54 @@ Java 配置 `DISCOVERY_SERVER_URL`（主机模式也可用 `--app.discovery.serv
 
 ## 验收记录
 
-- [x] Java 全量回归：126 个测试类、664 项报告，661 项通过、3 项因未配置原有迁移集成测试环境而跳过，零失败；覆盖鉴权、事件归因、时序、偏好清除、比赛数据可见性，以及联想缓存的并发、过期、容量和用户游标隔离。
+- [x] Java 全量回归：126 个测试类、666 项报告，663 项通过、3 项因未配置原有迁移集成测试环境而跳过，零失败；新增搜索减少查询后仍校验屏蔽/偏好，以及独立推荐端点路由与内部令牌测试。
 - [x] 新闻保留策略：H2 和独立 MySQL 8.0 测试库均通过，覆盖时间边界、收藏、赛事保护与数量限制。
 - [x] 前端原全量 41 文件/206 项通过；类型检查和生产构建通过。新增 1 项账号切换竞态测试，连同 4 项行为统计回归均通过。
-- [x] Python 28 项检索/特征/训练/缓存测试通过，包含 LightGBM 原生推理异常时保留规则基线、候选状态隔离、单页请求和向量缓存键；真实组件栈 11 项通过，包括 ItemCF 原子读取、真实合成模型训练和完整灰度回滚。
-- [x] 原有数据同步脚本 10 项离线回归通过；最新 Linux 容器内的 28 项检索/训练/缓存测试也通过。
+- [x] Python 34 项检索/特征/训练/缓存测试通过，新增冷查询并发合并、有界等待、内容向量计算、冷进程依赖和启动初始化测试；真实组件栈 11 项通过，包括 ItemCF 原子读取、真实合成模型训练和完整灰度回滚。
+- [x] 原有数据同步脚本 10 项离线回归通过；最新 Linux 容器内的 34 项检索/训练/缓存测试也通过。
 - [x] 真实 CDC 首次导入、直接翻译更新、删除、重复/旧消息、向量 hash 校验、重建双写和回滚；暂停 Connect 和重启消费者后提交的数据已成功追赶。
 - [x] Redis 中断仍返回内容，推荐标记降级；OpenSearch 中断时两类接口使用数据库降级，恢复后服务正常。
 - [x] Docker 镜像成功构建，容器内依赖、MySQL、Redis 与 OpenSearch 连通性通过；挂载只读权重后的真实 1792 维编码及业务投影通过。
 - [x] 模型就绪后的固定 19 组中英文名和别名查询：BM25 与混合检索 MRR@10/Recall@10 均为 1.0，均无降级；混合模式逐条核对实际策略为 `hybrid-rrf-v1`。该小样本只作为实体检索回归，不能代表真实语料总体质量。
-- [x] 五秒缓存配置下，20 次源表修改可搜索延迟 P95 为 5,137.3 ms；10 次业务收藏切换的特征消费延迟 P95 为 647.7 ms。这是独立链路探测，没有与 50 并发查询混合施压。
+- [x] 五秒缓存配置下，20 次源表修改可搜索延迟 P95 为 5,139.1 ms；10 次业务收藏切换的特征消费延迟 P95 为 645.7 ms。这是独立链路探测，没有与 50 并发查询混合施压。
 - [ ] 浏览器视觉与交互验收：用户已授权并表示修改保存设置，但工具再次返回“保存的权限或管理策略拒绝访问 127.0.0.1:15173”。没有以其他浏览器或自动化方式绕过该限制。
-- [x] 新一轮 10 万内容/50 并发双客户端压测已执行，合计 4,000 次请求均为 HTTP 200、无空结果。Node 关键词请求有 49 次数据库降级，其他组无降级；测试行和临时索引已清理，别名恢复 `nba-discovery-initial`，在线策略为规则基线。
-- [ ] 全部性能目标达标：本轮 Node 主结果中混合检索和首页推荐达到目标，联想与关键词仍未达到，见下表。关键词的 49 次降级也不符合验收条件。
+- [x] 新一轮 10 万内容/50 并发双客户端压测完成，共 4,000 次 HTTP 200、无空结果。Node 推荐有 12 次数据库降级，其余组无降级；临时测试行与索引已清理，别名恢复 `nba-discovery-initial`，模型控制回到规则基线。
+- [ ] 全部性能目标达标：主结果只有混合检索达到目标；联想、关键词和推荐仍未通过，不能宣称完整验收完成。
 - [ ] 更大规模真实语料的人工相关性标注及线上收益验证；合成样本不替代这部分。
 
 性能目标为联想 P95 ≤150 ms、关键词 ≤300 ms、混合检索/推荐 ≤500 ms、文本与特征延迟 P95 ≤30 秒。用户已确认继续在当前本机优化和验收：Ryzen 5 5600H（6 核/12 线程）、约 16 GB 内存，Docker 配额为 12 个逻辑 CPU、8,248,766,464 字节内存，OpenSearch 堆 1 GB。原计划的 8 核 32 GB 仅作为历史参考，当前验收保留上述延迟目标。单次故障探测中 Redis 关闭时搜索 98 ms、推荐 625 ms；OpenSearch 关闭时搜索 735 ms、推荐 584 ms。这些是单次故障响应时间，不是 P95。
 
-以下主结果固定使用 Node v24.15.0 内置 HTTP 客户端，每类 500 请求；本轮没有根据接口挑选更快的客户端结果。
+以下主结果固定使用 Node v24.15.0 内置 HTTP 客户端，每类 500 请求、50 并发；未按接口挑选较快的客户端结果。语料包含 118 条原始内容和 99,882 条新闻/帖子副本，总量为 100,000。
 
 | 端到端接口 | 实测 P50 / P95 / P99（ms） | P95 目标（ms） | 错误 / 降级 | 结果 |
-| --- | --- | --- | --- | --- |
-| 联想 | 121.2 / 232.5 / 247.7 | 150 | 0 / 0 | 未达标 |
-| 关键词 | 173.5 / 1190.3 / 1223.4 | 300 | 0 / 49 | 未达标 |
-| 混合检索 | 198.1 / 280.1 / 361.7 | 500 | 0 / 0 | 达标 |
-| 首页推荐 | 313.0 / 482.7 / 508.4 | 500 | 0 / 0 | 达标 |
+| --- | --- | --- | --- | --- | --- |
+| 联想 | 160.0 / 248.5 / 264.4 | 150 | 0 / 0 | 未达标 |
+| 关键词 | 222.1 / 714.6 / 896.5 | 300 | 0 / 0 | 未达标 |
+| 混合检索 | 285.0 / 396.8 / 586.8 | 500 | 0 / 0 | 达标 |
+| 首页推荐 | 297.2 / 766.1 / 1037.9 | 500 | 0 / 12 | 未达标 |
 
-同一份十万条数据上的 Python httpx 同步线程对照如下，另计 2,000 请求。两组混合检索均逐请求确认使用 `hybrid-rrf-v1`。
+同一份十万条语料上的 httpx 对照另计 2,000 请求。两组混合检索均逐请求核对为 `hybrid-rrf-v1`。
 
 | 接口 | httpx P95（ms） | Node / httpx 客户端 CPU（ms） | httpx 错误 / 降级 |
 | --- | --- | --- | --- |
-| 联想 | 233.5 | 360 / 1609.4 | 0 / 0 |
-| 关键词 | 267.6 | 532 / 1093.8 | 0 / 0 |
-| 混合检索 | 227.6 | 438 / 1343.8 | 0 / 0 |
-| 首页推荐 | 664.7 | 515 / 953.1 | 0 / 0 |
+| 联想 | 303.3 | 344 / 1609.4 | 0 / 0 |
+| 关键词 | 398.5 | 469 / 1281.2 | 0 / 0 |
+| 混合检索 | 427.1 | 532 / 1468.8 | 0 / 0 |
+| 首页推荐 | 443.3 | 438 / 1000.0 | 0 / 0 |
 
 原始数值、测试覆盖、版本与限制保存在 [discovery-acceptance.json](discovery-acceptance.json)。这些结果证明当前隔离环境中的功能与可用性，不能宣称全部验收完成或生产性能已达标。
 
-小语料诊断曾测得联想 P95 104.2 ms、推荐 P95 445.3 ms，但完整规模的结果说明仍有延迟波动。本轮每个接口均先测 Node、后测 httpx；客户端 CPU、执行顺序和缓存状态都可能影响结果，不能仅凭对照把差异全部归因于客户端。Java 运行剖析定位到了事务提交期间的连接池等待；推荐中重复解析、向量序列化及无用分页已优化。当前仍需定位完整规模下的联想延迟和关键词降级，并在本机继续做持续负载、多账号与冷查询验证。
+本轮 1,000 条语料的诊断定位到首次数据库连接/模型注册读取约 420 ms，以及推荐首次加载数值库的额外成本。分离推荐进程、避免首次 NumPy 加载并把注册表初始化移至启动后，新进程的 1,000 次推荐请求 P95 为 333.4 ms、零降级；十万条结果仍未通过。测试期间观察到内存压力，后续需保留同一份完整语料区分索引构建尾部负载、缓存未命中和数据库等待。每个接口先测 Node、后测 httpx，客户端 CPU、执行顺序和缓存状态都可能影响结果，不能把差异全部归因于客户端。
 
-双进程对比使用 1,000 条合成内容、50 并发、每类 500 请求：推荐 P95 为 465.3 ms，但混合检索有 152/500 次降级，未接受为默认方案。此结果与上表的 10 万条测试规模不同，不能用它替代完整规模的性能验收。
+曾将包含编码器的整个 API 扩成双进程：本轮 1,000 条对照中推荐 P95 为 404.3 ms，但混合检索有 47/500 次降级，未接受为默认配置。当前部署保留单进程检索，推荐单独运行三个轻量进程；这项资源配置与性能是否全部达标分别记录。
 
-复现测试：在 `backend/scripts` 下激活 `venv312` 后，设置 `$env:PYTHONPATH=(Get-Location).Path`，运行 `python -m pytest tests/test_discovery_learning.py tests/test_discovery_serving.py tests/test_discovery_query_cache.py`；真实栈测试另设 `$env:DISCOVERY_STACK_TEST='1'`，运行 `test_discovery_stack.py` 和 `test_discovery_operations.py`。先用 `tests/discovery_stack.py` 创建隔离样本，所有脚本要求 `nba_discovery_test:13306`。模型操作测试只运行于该独立库。
+复现测试：在 `backend/scripts` 下激活 `venv312` 后，设置 `$env:PYTHONPATH=(Get-Location).Path`，运行 `python -m pytest tests/test_discovery_learning.py tests/test_discovery_serving.py tests/test_discovery_query_cache.py tests/test_discovery_embedding.py`；真实栈测试另设 `$env:DISCOVERY_STACK_TEST='1'`，运行 `test_discovery_stack.py` 和 `test_discovery_operations.py`。先用 `tests/discovery_stack.py` 创建隔离样本，所有脚本要求 `nba_discovery_test:13306`。模型操作测试只运行于该独立库。
 
 性能脚本 `tests/discovery_benchmark.py --count 100000 --concurrency 50 --requests 500 --client both` 经过公共 Java API；临时插入合成 SQL 行与包含实际 1792 维样本向量副本的独立索引，记录错误、空结果、降级比例、客户端 CPU 和延迟分位数。`both` 在同一份数据上依次执行 Node 内置 HTTP 客户端与原 Python httpx 同步线程客户端，分别保存结果；主结果固定为 Node，对照保存在 `comparison`，不会逐接口挑选较快的一组。省略 `--client` 仍使用原 httpx 客户端。
 
 两种客户端均使用 1 个验收账号、8 个固定查询、50 个并发请求，每类预热 16 次后测量 500 次；不能等同于 50 个不同画像用户和任意冷查询的混合负载。测试期间不生成曝光。脚本在 `finally` 中恢复别名并清理自己创建的行与索引。测试语料、客户端与重复向量的负载性质必须与性能结果一起说明。小语料快速回归使用 `tests/discovery_latency_probe.py --operation suggest --target-ms 150 --client node` 或 `--operation recommendations --target-ms 500`；它会对目标超时、错误、空结果和降级直接报错，不能替代十万条验收。
+
+压测索引保留原始五类内容及其业务 ID，再复制新闻/帖子补足指定总量，确保画像种子和 ItemCF 关联仍可解析。切换索引别名后等待候选缓存过期。诊断时可重复使用 `--case` 选择接口，或用 `--report-name smoke.json` 单独保存小语料结果，避免覆盖正式十万条报告。
 
 ## 版本与恢复
 

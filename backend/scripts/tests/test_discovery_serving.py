@@ -64,6 +64,26 @@ def test_private_api_requires_token_and_validates_identity_types_and_detail_cont
         '/internal/search', json={'userId': 1}).status_code == 503
 
 
+def test_model_registry_initialization_finishes_before_accepting_requests():
+    ready=[]; service=Mock()
+    service.models.current.side_effect=lambda:ready.append(True)
+    service.recommendations.side_effect=lambda request: {'items':[],'degraded':not bool(ready)}
+    with TestClient(create_app(replace(Settings(),internal_token='test-only'),service)) as client:
+        assert ready==[True]
+        response=client.post('/internal/recommendations',headers={'X-Discovery-Token':'test-only'},
+                             json={'userId':1,'scene':'HOME'})
+        assert response.status_code==200 and response.json()['degraded'] is False
+
+
+def test_unavailable_model_registry_during_startup_does_not_disable_lexical_search():
+    service=Mock(); service.models.current.side_effect=RuntimeError('Unavailable model registry')
+    service.search.return_value={'items':[],'strategyVersion':'bm25-v1','degraded':False}
+    with TestClient(create_app(replace(Settings(),internal_token='test-only'),service)) as client:
+        response=client.post('/internal/search',headers={'X-Discovery-Token':'test-only'},
+                             json={'userId':1,'q':'test','mode':'lexical'})
+        assert response.status_code==200 and response.json()['strategyVersion']=='bm25-v1'
+
+
 def test_reading_interest_decay_and_exposure_windows_are_bounded():
     profile = {}
     event = {'received_at': 1000000., 'event_type': 'IMPRESSION', 'item_key': 'NEWS:1'}

@@ -5,6 +5,7 @@ from concurrent.futures import Future
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 from pathlib import Path
 import threading
 import time
@@ -85,9 +86,15 @@ class Embedder:
             if text in self.cache:
                 self.cache.move_to_end(text)
                 return self.cache[text]
-        # Online overload falls back to BM25 instead of queueing behind a large document encoding.
-        if not self.lock.acquire(blocking=wait): return None
+        # Allow a short query burst to share completed encodings, but bound online queueing.
+        acquired=self.lock.acquire() if wait else self.lock.acquire(timeout=.1)
+        if not acquired: return None
         try:
+            # Another caller may have encoded this query while we waited for the model.
+            with self.cache_lock:
+                if text in self.cache:
+                    self.cache.move_to_end(text)
+                    return self.cache[text]
             vector = self.model.encode(text[:6000], normalize_embeddings=True).tolist()
             with self.cache_lock:
                 self.cache[text] = vector
@@ -145,15 +152,17 @@ class Index:
         return self.queries.get(('content-vector',tuple(keys[:3])),lambda:self._content_vector(keys[:3]))
 
     def _content_vector(self, keys: list[str]):
-        import numpy as np
         result=self.client.mget(index=self.alias,body={'ids': keys[:3]}, _source_includes=['embedding','embedding_hash','content_hash','deleted'])
         vectors=[row['_source']['embedding'] for row in result['docs'] if row.get('found')
                  and not row['_source'].get('deleted') and row['_source'].get('embedding')
                  and row['_source'].get('embedding_hash')==row['_source'].get('content_hash')]
         if not vectors: return None
-        vector=np.mean(np.asarray(vectors),axis=0)
-        norm=np.linalg.norm(vector)
-        return (vector/norm).tolist() if norm else None
+        if any(len(vector)!=self.settings.embedding_dim or not all(math.isfinite(value) for value in vector) for vector in vectors):
+            raise ValueError('Invalid content embedding')
+        # At most three vectors: keep baseline recommendation workers free of numerical-library startup.
+        vector=[math.fsum(values)/len(vectors) for values in zip(*vectors)]
+        norm=math.hypot(*vector)
+        return [value/norm for value in vector] if norm else None
 
     def write(self, doc: Document, index=None, embedding=None):
         target = index or self.alias

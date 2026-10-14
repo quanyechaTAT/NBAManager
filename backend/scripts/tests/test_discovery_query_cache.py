@@ -8,6 +8,42 @@ from discovery_app.index import Index, QueryCache
 from discovery_app.serving import Serving
 
 
+def test_content_vector_is_normalized_and_avoids_loading_offline_numeric_dependencies():
+    import subprocess
+    import sys
+    # A fresh worker is the relevant boundary: a previously imported NumPy hides the first-request cost.
+    script='''
+from dataclasses import replace
+import math,sys
+from unittest.mock import Mock
+from discovery_app.config import Settings
+from discovery_app.index import Index
+index=Index(replace(Settings(),embedding_dim=2)); index.client=Mock()
+index.client.mget.return_value={'docs':[
+    {'found':True,'_source':{'embedding':[1.,0.],'content_hash':'a','embedding_hash':'a'}},
+    {'found':True,'_source':{'embedding':[0.,1.],'content_hash':'b','embedding_hash':'b'}},
+    {'found':True,'_source':{'embedding':[100.,0.],'content_hash':'new','embedding_hash':'old'}}]}
+vector=index.content_vector(['NEWS:1','NEWS:2','NEWS:3'])
+assert all(math.isclose(value,1/math.sqrt(2),rel_tol=1e-12) for value in vector)
+assert 'numpy' not in sys.modules
+'''
+    subprocess.run([sys.executable,'-c',script],check=True,capture_output=True,text=True)
+
+
+def test_content_vector_handles_empty_cancelled_and_malformed_embeddings():
+    from dataclasses import replace
+    index=Index(replace(Settings(),embedding_dim=2)); index.client=Mock()
+    def result(vectors):
+        return {'docs':[{'found':True,'_source':{'embedding':vector,'content_hash':'h','embedding_hash':'h'}} for vector in vectors]}
+    index.client.mget.return_value={'docs':[{'found':False}]}
+    assert index._content_vector(['NEWS:1']) is None
+    index.client.mget.return_value=result([[1.,0.],[-1.,0.]])
+    assert index._content_vector(['NEWS:1','NEWS:2']) is None
+    for vectors in ([[1.,0.],[0.,1.,0.]],[[float('nan'),1.]]):
+        index.client.mget.return_value=result(vectors)
+        with pytest.raises(ValueError,match='Invalid content embedding'): index._content_vector(['NEWS:1','NEWS:2'])
+
+
 def test_concurrent_identical_queries_share_a_single_lookup():
     cache=QueryCache(); entered=threading.Event(); release=threading.Event(); calls=[]
     def loader():

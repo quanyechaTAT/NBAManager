@@ -34,6 +34,20 @@ class DiscoveryServiceTest {
         assertThat(response.items()).containsExactly(item(1));
         verify(store).served(eq(1L),eq("NEWS_FEED"),eq("test"),isNull(),anyMap(),argThat(rows->rows.size()==1));
     }
+    @Test void searchSkipsUnusedRecommendationContextButRechecksBlockedItemsAndPreferences() {
+        when(gateway.fetch(anyString(),anyMap())).thenReturn(Map.of("items",List.of(
+                Map.of("itemKey","NEWS:1"),Map.of("itemKey","NEWS:2")),"strategyVersion","bm25-v1"));
+        when(catalog.hydrate(any())).thenReturn(Map.of("NEWS:1",item(1),"NEWS:2",item(2)));
+        when(store.blockedAmong(eq(1L),any())).thenReturn(Set.of("NEWS:2"));
+        for(String operation:List.of("search","suggest")) {
+            assertThat(service.fetch(1,operation,Map.of("q","test")).items()).containsExactly(item(1));
+        }
+        verify(store,never()).followed(anyLong());
+        verify(store,never()).blocked(anyLong());
+        verify(store,times(2)).blockedAmong(eq(1L),eq(List.of("NEWS:1","NEWS:2")));
+        verify(store,times(4)).preferences(1L);
+        verify(store,times(2)).served(eq(1L),eq("SEARCH"),eq("bm25-v1"),isNull(),anyMap(),argThat(rows->rows.size()==1));
+    }
     @Test void fallbackCursorIsBoundToUserQueryAndPreferences() {
         when(catalog.fallback(anyMap())).thenReturn(List.of(Map.of("itemKey","NEWS:1"),Map.of("itemKey","NEWS:2")));
         when(catalog.hydrate(any())).thenReturn(Map.of("NEWS:1",item(1),"NEWS:2",item(2)));

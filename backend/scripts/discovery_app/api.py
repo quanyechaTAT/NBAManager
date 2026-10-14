@@ -67,6 +67,11 @@ def create_app(settings: Settings | None = None, service=None):
     async def lifespan(app):
         # Bound synchronous requests independently from the parallel recall executor.
         anyio.to_thread.current_default_thread_limiter().total_tokens = settings.api_threads
+        try:
+            # Initialize registry access and its database connection before accepting a request burst.
+            service.models.current()
+        except Exception:
+            log.warning('Model registry unavailable during startup; request-time retry remains active',exc_info=True)
         def warm():
             try: service.embedder.warm()
             except Exception: log.exception('Embedding model unavailable; lexical retrieval remains available')

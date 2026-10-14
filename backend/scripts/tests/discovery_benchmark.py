@@ -27,10 +27,18 @@ START=10_000_000
 def percentile(values, fraction): return sorted(values)[max(0,math.ceil(len(values)*fraction)-1)]
 
 
-def run(count, concurrency, requests, load_client='httpx'):
+def run(count, concurrency, requests, load_client='httpx', cases=None, report_name='benchmark.json'):
+    assert report_name.endswith('.json') and '/' not in report_name and '\\' not in report_name
+    cases=cases or ('suggest','lexical','hybrid','recommendations')
     s=settings(); db=Database(s); index=Index(s)
     original=list(index.admin.indices.get_alias(name=index.alias))
     name='nba-discovery-benchmark-'+str(time.time_ns())
+    original_query={'term':{'deleted':False}}
+    original_count=index.admin.count(index=index.alias,body={'query':original_query})['count']
+    assert 0 < original_count < min(count,1000),'Requested corpus must fit the original isolated fixtures'
+    original_docs=index.admin.search(index=index.alias,body={'size':1000,'query':original_query})['hits']['hits']
+    assert len(original_docs)==original_count
+    replica_count=count-original_count
     templates=index.admin.search(index=index.alias,body={'size':150,'query':{'bool':{'filter':[
         {'terms':{'kind':['NEWS','POST']}},{'exists':{'field':'embedding'}},{'term':{'deleted':False}}]}}})['hits']['hits']
     assert len(templates)>10,'Wait for real fixture embeddings before measuring hybrid retrieval'
@@ -40,6 +48,8 @@ def run(count, concurrency, requests, load_client='httpx'):
             'boundary':'Public Java API including authentication, hydration, request persistence, Python and OpenSearch',
             'data':'Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance',
             'python':platform.python_version(),'vectorDimensions':s.embedding_dim,'vectorTemplates':len(templates), 'cases':{}}
+    report.update(originalDocumentsRetained=original_count,syntheticCopies=replica_count,
+                  corpusNote='Original fixture IDs remain searchable so profile seeds and ItemCF references still resolve.')
     report['loadGenerator']='Node native HTTP' if load_client in ('node','both') else 'Python httpx sync threads'
     if load_client=='both': report['comparison']={'loadGenerator':'Python httpx sync threads','cases':{}}
     alias_changed=False
@@ -48,12 +58,14 @@ def run(count, concurrency, requests, load_client='httpx'):
     index.create(name)
     index.admin.indices.put_settings(index=name,body={'index':{'refresh_interval':'-1'}})
     try:
+        bulk(index.admin,[{'_index':name,'_id':hit['_id'],'_source':hit['_source']} for hit in original_docs],
+             chunk_size=200,request_timeout=120)
         # Dedicated connection: this flag never escapes to the application's pooled connections.
         with db.connection() as connection,connection.cursor() as cursor:
             cursor.execute('SET SESSION sql_log_bin=0')
             try:
                 now=datetime.now(); prepared=[]; news=[]; posts=[]
-                for number in range(count):
+                for number in range(replica_count):
                     kind='NEWS' if number%2==0 else 'POST'; identifier=START+number
                     source=dict(templates[number%len(templates)]['_source'])
                     source['item_key']=f'{kind}:{identifier}'; source['kind']=kind; source['revision']=1
@@ -66,7 +78,7 @@ def run(count, concurrency, requests, load_client='httpx'):
                         news.append((identifier,source['title'],source['title_en'],'独立压测合成数据',source['text'],now,published,now,now))
                     else:
                         posts.append((identifier,people[number%len(people)]['id'],source['title'],source['text'],published,now))
-                    if len(prepared)>=200 or number==count-1:
+                    if len(prepared)>=200 or number==replica_count-1:
                         if news:
                             cursor.executemany("INSERT INTO game_news(id,title,title_en,summary,content,home_team,away_team,create_time,published_at,published_at_source,game_start_time,game_end_time,status,category,view_count,favorite_count) "
                                                "VALUES(%s,%s,%s,%s,%s,'','',%s,%s,'INGESTED',%s,%s,'FINISHED','general',0,0)",news)
@@ -75,7 +87,8 @@ def run(count, concurrency, requests, load_client='httpx'):
                                                "VALUES(%s,%s,%s,%s,'DISCUSSION','压测',0,0,0,0,FALSE,FALSE,FALSE,%s,%s)",posts)
                         connection.commit(); bulk(index.admin,prepared,chunk_size=200,request_timeout=120)
                         prepared=[]; news=[]; posts=[]
-                    if (number+1)%5000==0: print(f'Prepared {number+1}/{count} documents',flush=True)
+                    if (number+1)%5000==0 or number==replica_count-1:
+                        print(f'Prepared {number+1+original_count}/{count} documents',flush=True)
             finally: cursor.execute('SET SESSION sql_log_bin=1')
         index.admin.indices.put_settings(index=name,body={'index':{'refresh_interval':'1s'}})
         index.admin.indices.refresh(index=name)
@@ -83,6 +96,8 @@ def run(count, concurrency, requests, load_client='httpx'):
         index.admin.indices.update_aliases(body={'actions':[{'remove':{'index':old,'alias':index.alias}} for old in original]+
                                                 [{'add':{'index':name,'alias':index.alias}}]})
         alias_changed=True
+        # Allow both candidate caches to expire after changing the corpus behind the alias.
+        time.sleep(s.query_cache_seconds+1.1)
         queries=['库里','勇士','湖人','詹姆斯','凯尔特人','防守','进攻','三分']
         report['querySet']=queries
         with httpx.Client(base_url=JAVA,headers={'Authorization':'Bearer '+people[1]['token']},
@@ -97,7 +112,7 @@ def run(count, concurrency, requests, load_client='httpx'):
                             'degraded':data.get('degraded',True),'strategy':data.get('strategyVersion','error'),'count':len(data.get('items',[]))}
                 except Exception as error:
                     return {'ms':(time.perf_counter()-start)*1000,'status':0,'degraded':True,'strategy':type(error).__name__,'count':0}
-            for case in ('suggest','lexical','hybrid','recommendations'):
+            for case in cases:
                 for generator in (('node','httpx') if load_client=='both' else (load_client,)):
                     if generator=='node':
                         result=subprocess.run(['node','tests/discovery_load.cjs','--runtime',str(RUNTIME),'--case',case,
@@ -117,7 +132,7 @@ def run(count, concurrency, requests, load_client='httpx'):
                                  'strategies':{value:sum(row['strategy']==value for row in rows) for value in {row['strategy'] for row in rows}}}
                     target=report['comparison']['cases'] if load_client=='both' and generator=='httpx' else report['cases']
                     target[case]=metrics; print(json.dumps({'client':generator,case:metrics}),flush=True)
-                    (RUNTIME/'benchmark.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+                    (RUNTIME/report_name).write_text(json.dumps(report,indent=2),encoding='utf-8')
     finally:
         if alias_changed:
             index.admin.indices.update_aliases(body={'actions':[{'remove':{'index':name,'alias':index.alias}}]+
@@ -137,6 +152,8 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(); parser.add_argument('--count',type=int,default=100000)
     parser.add_argument('--concurrency',type=int,default=50); parser.add_argument('--requests',type=int,default=500)
     parser.add_argument('--client',choices=['httpx','node','both'],default='httpx')
+    parser.add_argument('--case',dest='cases',action='append',choices=['suggest','lexical','hybrid','recommendations'])
+    parser.add_argument('--report-name',default='benchmark.json')
     args=parser.parse_args()
     assert 100<=args.count<=100000 and 1<=args.concurrency<=50 and 10<=args.requests<=5000
-    run(args.count,args.concurrency,args.requests,args.client)
+    run(args.count,args.concurrency,args.requests,args.client,args.cases,args.report_name)

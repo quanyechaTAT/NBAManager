@@ -31,7 +31,7 @@ function call(number) {
         try {
           const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
           done({status:response.statusCode,degraded:body.degraded !== false,count:(body.items||[]).length,
-            strategy:body.strategyVersion||'error'});
+            strategy:body.strategyVersion||'error',timing:response.headers['server-timing']||''});
         } catch { done({status:response.statusCode,degraded:true,count:0,strategy:'InvalidJson'}); }
       });
     });
@@ -53,5 +53,14 @@ function call(number) {
     requestsPerSecond:+(count*1000/elapsed).toFixed(1),clientCpuMs:+((usage.user+usage.system)/1000).toFixed(1),
     errors:rows.filter(row=>row.status!==200).length,empty:rows.filter(row=>row.count===0).length,
     degraded:rows.filter(row=>row.degraded).length,statusCounts:counts('status'),strategies:counts('strategy')};
+  const phases={};
+  for(const row of rows) for(const phase of (row.timing||'').split(',')) {
+    const match=/^([A-Za-z]+);dur=([0-9.]+)$/.exec(phase);
+    if(match) (phases[match[1]] ||= []).push(Number(match[2]));
+  }
+  if(Object.keys(phases).length) report.serverTiming=Object.fromEntries(Object.entries(phases).map(([name,times])=>{
+    times.sort((a,b)=>a-b);
+    return [name,{p50Ms:+times[Math.ceil(times.length*.5)-1].toFixed(1),p95Ms:+times[Math.ceil(times.length*.95)-1].toFixed(1)}];
+  }));
   console.log(JSON.stringify({client:'Node '+process.version+' native HTTP',case:operation,requests:count,concurrency,metrics:report}));
 })().catch(error=>{console.error(error.message);process.exitCode=1;}).finally(()=>agent.destroy());
