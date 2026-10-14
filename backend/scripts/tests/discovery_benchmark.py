@@ -27,7 +27,53 @@ START=10_000_000
 def percentile(values, fraction): return sorted(values)[max(0,math.ceil(len(values)*fraction)-1)]
 
 
-def run(count, concurrency, requests, load_client='httpx', cases=None, report_name='benchmark.json'):
+def measure(report, people, cases=None, load_client='both', report_name='benchmark.json'):
+    """Measure a prepared corpus with the same fixed public-API protocol."""
+    assert report_name.endswith('.json') and '/' not in report_name and '\\' not in report_name
+    cases=cases or ('suggest','lexical','hybrid','recommendations')
+    concurrency,requests=report['concurrency'],report['requestsPerCase']
+    report['cases']={}
+    report['loadGenerator']='Node native HTTP' if load_client in ('node','both') else 'Python httpx sync threads'
+    if load_client=='both': report['comparison']={'loadGenerator':'Python httpx sync threads','cases':{}}
+    else: report.pop('comparison',None)
+    queries=['库里','勇士','湖人','詹姆斯','凯尔特人','防守','进攻','三分']
+    report['querySet']=queries
+    with httpx.Client(base_url=JAVA,headers={'Authorization':'Bearer '+people[1]['token']},
+                      limits=httpx.Limits(max_connections=concurrency,max_keepalive_connections=concurrency),timeout=10) as client:
+        def call(case,number):
+            route='/api/discovery/suggest' if case=='suggest' else '/api/discovery/recommendations' if case=='recommendations' else '/api/discovery/search'
+            params={'scene':'HOME'} if case=='recommendations' else {'q':queries[number%len(queries)],'mode':'hybrid' if case=='hybrid' else 'lexical'}
+            start=time.perf_counter()
+            try:
+                response=client.get(route,params=params); data=response.json()
+                return {'ms':(time.perf_counter()-start)*1000,'status':response.status_code,
+                        'degraded':data.get('degraded',True),'strategy':data.get('strategyVersion','error'),'count':len(data.get('items',[]))}
+            except Exception as error:
+                return {'ms':(time.perf_counter()-start)*1000,'status':0,'degraded':True,'strategy':type(error).__name__,'count':0}
+        for case in cases:
+            for generator in (('node','httpx') if load_client=='both' else (load_client,)):
+                if generator=='node':
+                    result=subprocess.run(['node','tests/discovery_load.cjs','--runtime',str(RUNTIME),'--case',case,
+                        '--requests',str(requests),'--concurrency',str(concurrency)],capture_output=True,text=True,encoding='utf-8',check=True)
+                    payload=json.loads(result.stdout); metrics=payload['metrics']; report['nodeRuntime']=payload['client']
+                else:
+                    for number in range(16): call(case,number)
+                    started=time.perf_counter(); cpu=time.process_time()
+                    with ThreadPoolExecutor(max_workers=concurrency) as pool: rows=list(pool.map(lambda i:call(case,i),range(requests)))
+                    duration=time.perf_counter()-started; cpu=time.process_time()-cpu; latencies=[row['ms'] for row in rows]
+                    metrics={'p50Ms':round(percentile(latencies,.5),1),'p95Ms':round(percentile(latencies,.95),1),
+                             'p99Ms':round(percentile(latencies,.99),1),'requestsPerSecond':round(requests/duration,1),
+                             'clientCpuMs':round(cpu*1000,1),
+                             'errors':sum(row['status']!=200 for row in rows),'empty':sum(row['count']==0 for row in rows),
+                             'degraded':sum(row['degraded'] for row in rows),
+                             'statusCounts':{str(value):sum(row['status']==value for row in rows) for value in {row['status'] for row in rows}},
+                             'strategies':{value:sum(row['strategy']==value for row in rows) for value in {row['strategy'] for row in rows}}}
+                target=report['comparison']['cases'] if load_client=='both' and generator=='httpx' else report['cases']
+                target[case]=metrics; print(json.dumps({'client':generator,case:metrics}),flush=True)
+                (RUNTIME/report_name).write_text(json.dumps(report,indent=2),encoding='utf-8')
+
+
+def run(count, concurrency, requests, load_client='httpx', cases=None, report_name='benchmark.json', *, after_measure=None):
     assert report_name.endswith('.json') and '/' not in report_name and '\\' not in report_name
     cases=cases or ('suggest','lexical','hybrid','recommendations')
     s=settings(); db=Database(s); index=Index(s)
@@ -98,41 +144,8 @@ def run(count, concurrency, requests, load_client='httpx', cases=None, report_na
         alias_changed=True
         # Allow both candidate caches to expire after changing the corpus behind the alias.
         time.sleep(s.query_cache_seconds+1.1)
-        queries=['库里','勇士','湖人','詹姆斯','凯尔特人','防守','进攻','三分']
-        report['querySet']=queries
-        with httpx.Client(base_url=JAVA,headers={'Authorization':'Bearer '+people[1]['token']},
-                          limits=httpx.Limits(max_connections=concurrency,max_keepalive_connections=concurrency),timeout=10) as client:
-            def call(case,number):
-                route='/api/discovery/suggest' if case=='suggest' else '/api/discovery/recommendations' if case=='recommendations' else '/api/discovery/search'
-                params={'scene':'HOME'} if case=='recommendations' else {'q':queries[number%len(queries)],'mode':'hybrid' if case=='hybrid' else 'lexical'}
-                start=time.perf_counter()
-                try:
-                    response=client.get(route,params=params); data=response.json()
-                    return {'ms':(time.perf_counter()-start)*1000,'status':response.status_code,
-                            'degraded':data.get('degraded',True),'strategy':data.get('strategyVersion','error'),'count':len(data.get('items',[]))}
-                except Exception as error:
-                    return {'ms':(time.perf_counter()-start)*1000,'status':0,'degraded':True,'strategy':type(error).__name__,'count':0}
-            for case in cases:
-                for generator in (('node','httpx') if load_client=='both' else (load_client,)):
-                    if generator=='node':
-                        result=subprocess.run(['node','tests/discovery_load.cjs','--runtime',str(RUNTIME),'--case',case,
-                            '--requests',str(requests),'--concurrency',str(concurrency)],capture_output=True,text=True,encoding='utf-8',check=True)
-                        payload=json.loads(result.stdout); metrics=payload['metrics']; report['nodeRuntime']=payload['client']
-                    else:
-                        for number in range(16): call(case,number)
-                        started=time.perf_counter(); cpu=time.process_time()
-                        with ThreadPoolExecutor(max_workers=concurrency) as pool: rows=list(pool.map(lambda i:call(case,i),range(requests)))
-                        duration=time.perf_counter()-started; cpu=time.process_time()-cpu; latencies=[row['ms'] for row in rows]
-                        metrics={'p50Ms':round(percentile(latencies,.5),1),'p95Ms':round(percentile(latencies,.95),1),
-                                 'p99Ms':round(percentile(latencies,.99),1),'requestsPerSecond':round(requests/duration,1),
-                                 'clientCpuMs':round(cpu*1000,1),
-                                 'errors':sum(row['status']!=200 for row in rows),'empty':sum(row['count']==0 for row in rows),
-                                 'degraded':sum(row['degraded'] for row in rows),
-                                 'statusCounts':{str(value):sum(row['status']==value for row in rows) for value in {row['status'] for row in rows}},
-                                 'strategies':{value:sum(row['strategy']==value for row in rows) for value in {row['strategy'] for row in rows}}}
-                    target=report['comparison']['cases'] if load_client=='both' and generator=='httpx' else report['cases']
-                    target[case]=metrics; print(json.dumps({'client':generator,case:metrics}),flush=True)
-                    (RUNTIME/report_name).write_text(json.dumps(report,indent=2),encoding='utf-8')
+        measure(report,people,cases,load_client,report_name)
+        if after_measure is not None: after_measure(report,index,db,name)
     finally:
         if alias_changed:
             index.admin.indices.update_aliases(body={'actions':[{'remove':{'index':name,'alias':index.alias}}]+

@@ -39,6 +39,40 @@ class DiscoveryStoreTest {
         return new Event(id, request, "NEWS:1", kind, 0, dwell, clock.instant());
     }
 
+    @Test void persistedRequestIdsHaveTheUuidV7TimestampAndSortAcrossMilliseconds() {
+        long firstTime=clock.millis();
+        String first=serve();
+        UUID parsed=UUID.fromString(first);
+        assertThat(parsed.version()).isEqualTo(7);
+        assertThat(parsed.variant()).isEqualTo(2);
+        assertThat(parsed.getMostSignificantBits()>>>16).isEqualTo(firstTime);
+        clock.time=clock.time.plusMillis(1);
+        String second=serve();
+        assertThat(first.compareTo(second)).isNegative();
+        assertThat(jdbc.queryForList("SELECT request_id FROM discovery_requests ORDER BY request_id",String.class))
+                .containsExactly(first,second);
+    }
+
+    @Test void concurrentRequestsInTheSameMillisecondRemainDistinct() throws Exception {
+        var pool=java.util.concurrent.Executors.newFixedThreadPool(8);
+        try {
+            List<java.util.concurrent.Callable<String>> calls=new ArrayList<>();
+            for(int index=0;index<256;index++) calls.add(this::serve);
+            Set<String> identifiers=new HashSet<>();
+            for(var future:pool.invokeAll(calls)) identifiers.add(future.get());
+            assertThat(identifiers).hasSize(256);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM discovery_requests",Integer.class)).isEqualTo(256);
+        } finally {pool.shutdownNow();}
+    }
+
+    @Test void legacyRandomRequestIdsKeepTheirAttributionAndOwnershipChecks() {
+        String issued=serve(),legacy=UUID.randomUUID().toString();
+        jdbc.update("UPDATE discovery_requests SET request_id=? WHERE request_id=?",legacy,issued);
+        assertThatThrownBy(()->store.events(2,List.of(event(legacy,"wrong-owner","CLICK",0))))
+                .isInstanceOf(ApiException.class);
+        assertThat(store.events(1,List.of(event(legacy,"legacy-click","CLICK",0))).accepted()).isEqualTo(1);
+    }
+
     @Test void anotherUserCannotAttributeEventsToARequest() {
         String request = serve();
         assertThatThrownBy(() -> store.events(2, List.of(event(request, "x", "IMPRESSION", 0))))

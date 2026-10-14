@@ -4,6 +4,7 @@ import com.nbamanager.exception.ApiException;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 @Component
+@Slf4j
 public class DiscoveryGateway {
     private final RestClient client;
     private final RestClient recommendationClient;
@@ -40,6 +42,7 @@ public class DiscoveryGateway {
         return call(operation,request);
     }
     private Map<String,Object> call(String operation, Map<String,Object> request) {
+        long started=System.nanoTime();
         try {
             RestClient target=operation.equals("recommendations")?recommendationClient:client;
             return target.post().uri("/internal/"+operation).header("X-Discovery-Token",token)
@@ -47,7 +50,14 @@ public class DiscoveryGateway {
         } catch(RestClientResponseException error) {
             if(error.getStatusCode().value()==410) throw new ApiException(HttpStatus.GONE,"列表已过期，请刷新后重试");
             if(error.getStatusCode().value()==422) throw DiscoveryTypes.bad("搜索参数无效");
+            log.warn("Discovery {} returned status {} after {} ms",operation,error.getStatusCode().value(),
+                    (System.nanoTime()-started)/1_000_000);
             return null;
-        } catch(RestClientException error) { return null; }
+        } catch(RestClientException error) {
+            // Class names distinguish transport deadlines from HTTP failures without logging private request data.
+            log.warn("Discovery {} unavailable after {} ms ({})",operation,(System.nanoTime()-started)/1_000_000,
+                    error.getMostSpecificCause().getClass().getSimpleName());
+            return null;
+        }
     }
 }

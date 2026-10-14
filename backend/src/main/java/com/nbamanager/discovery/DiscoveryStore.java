@@ -76,11 +76,21 @@ public class DiscoveryStore {
 
     @Transactional public String served(long userId, String scene, String strategy, String model,
             Map<String, Object> context, List<Map<String, Object>> items) {
-        String requestId = UUID.randomUUID().toString();
+        String requestId = newRequestId();
         jdbc.update("INSERT INTO discovery_requests(request_id,user_id,scene,strategy_version,feature_version,model_version,"
                 + "context_json,items_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)", requestId, userId, scene, strategy,
                 DiscoveryTypes.FEATURE_VERSION, model, encode(context), encode(items), now());
         return requestId;
+    }
+
+    private String newRequestId() {
+        long millis=clock.millis();
+        if(millis<0 || millis>0xffffffffffffL) throw new IllegalStateException("Clock outside UUIDv7 timestamp range");
+        UUID random=UUID.randomUUID();
+        // RFC 9562 section 5.7: 48 timestamp bits, version 7, and 74 random bits with the UUID variant retained.
+        // Nearby inserts share index pages; existing UUID strings and attribution checks remain compatible.
+        long most=(millis<<16)|0x7000L|(random.getMostSignificantBits()&0xfffL);
+        return new UUID(most,random.getLeastSignificantBits()).toString();
     }
 
     @Transactional public EventReceipt events(long userId, List<Event> events) {

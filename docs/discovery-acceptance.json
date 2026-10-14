@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-15T04:01:20.705977+08:00",
+  "generatedAt": "2026-10-15T05:58:11.751329+08:00",
   "status": "PARTIAL_ACCEPTANCE",
   "scope": "Unified search and recommendations for NBAManager; advertising excluded",
   "baseline": {
@@ -61,11 +61,13 @@
       "hikariMinimumIdle": 50,
       "mysqlSyncBinlog": 1,
       "mysqlFlushLogAtCommit": 1,
-      "recommendationWorkers": 3,
+      "recommendationWorkers": 4,
       "recommendationPort": 19002,
       "recommendationTextEncoderEnabled": false,
       "kafkaHeapMinMiB": 256,
-      "kafkaHeapMaxMiB": 512
+      "kafkaHeapMaxMiB": 512,
+      "mysqlBufferPoolMiB": 128,
+      "startupRoleEnvironmentIsolated": true
     },
     "linuxPythonPackages": {
       "fastapi": "0.143.1",
@@ -84,14 +86,15 @@
     "java": {
       "profile": "discovery-package",
       "path": "backend/target/nba-manager-discovery.jar",
-      "bytes": 70119163,
-      "sha256": "9258b58608243e51786e768b8883984085e2cef8d122752123ebeee3ecf4899f"
+      "bytes": 70119896,
+      "sha256": "07d72073258a47d2330088ce4b85b3e508fdd784355d71dacd7dd3c026213f71"
     },
-    "pythonImage": "sha256:e71669f6ba864949cd2601546c9c19f5dde61d3c794934a7f2e61add15840c4d",
+    "pythonImage": "sha256:4a0fbdff752eb6c11df06f056a9121faafed0009f3d8dd64e463d2b23b2d499d",
     "linuxActualEncoder": {
       "sourceMatchesWorkspace": true,
+      "sourceFingerprint": "36ef5527af74c23cff75f3411d7f79baa8db094d702ed444ff76aed1cf46f835",
       "encoderDimensions": 1792,
-      "norm": 1.000000075541219,
+      "norm": 0.9999999389752379,
       "weightsReadOnly": true,
       "packages": {
         "fastapi": "0.143.1",
@@ -109,12 +112,26 @@
   "tests": {
     "java": {
       "classes": 126,
-      "tests": 666,
+      "tests": 669,
       "failures": 0,
       "errors": 0,
       "skipped": 3,
-      "passed": 663,
-      "skippedReason": "Three pre-existing migration/publication integration tests require COURTSIDE_MIGRATION_JDBC_URL"
+      "passed": 666,
+      "skippedReason": "Three pre-existing migration/publication integration tests require COURTSIDE_MIGRATION_JDBC_URL",
+      "fullSuiteCheckpoint": "d1d9877",
+      "fullSuiteBaseline": {
+        "classes": 126,
+        "tests": 666,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 3
+      },
+      "latestTargetedClasses": 6,
+      "latestTargetedTests": 26,
+      "latestTargetedFailures": 0,
+      "latestTargetedErrors": 0,
+      "packagedWithPreviouslyVerifiedTests": true,
+      "scope": "Report directory combines the prior full suite with six freshly rerun Discovery classes; it is not a new full-suite execution."
     },
     "retention": {
       "h2": "PASS",
@@ -131,8 +148,8 @@
       "build": "PASS"
     },
     "pythonUnit": {
-      "hostPassed": 34,
-      "linuxContainerPassed": 34,
+      "hostPassed": 38,
+      "linuxContainerPassed": 38,
       "files": [
         "test_discovery_learning.py",
         "test_discovery_serving.py",
@@ -149,7 +166,7 @@
       "failures": 0,
       "errors": 0,
       "skipped": 0,
-      "timestamp": "2026-10-15T03:44:37.806216+08:00",
+      "timestamp": "2026-10-15T04:54:22.367608+08:00",
       "cases": [
         "test_itemcf_neighbors_follow_one_active_generation_in_redis",
         "test_migrations_and_all_five_types_with_bilingual_alias_filters_and_real_targets",
@@ -177,10 +194,29 @@
       "result": "Saved user permission or managed policy still denied the retried access",
       "visualVerified": false,
       "browserInteractionVerified": false
+    },
+    "startupLauncher": {
+      "status": "PASS",
+      "configurationCases": [
+        "enabled",
+        "unset",
+        "disabled"
+      ],
+      "restoresAfterLaunchFailure": true,
+      "reproducesOldFailureAt": "d1d9877"
+    },
+    "embeddingWorkerLiveness": {
+      "at": "2026-10-15T05:56:58.886182+08:00",
+      "status": "PASS",
+      "sourceUpdateToFreshVectorMs": 6128.4,
+      "dimensions": 1792,
+      "sourceHashMatchesVectorHash": true,
+      "originalTitleAndVectorRestored": true,
+      "note": "One end-to-end worker liveness probe, not a percentile or a concurrent-load measurement."
     }
   },
   "benchmark": {
-    "generatedAt": "2026-10-15T03:53:10.330882",
+    "generatedAt": "2026-10-15T05:47:47.173884",
     "documents": 100000,
     "concurrency": 50,
     "requestsPerCase": 500,
@@ -190,14 +226,14 @@
     "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
     "python": "3.12.5",
     "vectorDimensions": 1792,
-    "vectorTemplates": 109,
+    "vectorTemplates": 110,
     "cases": {
       "suggest": {
-        "p50Ms": 160,
-        "p95Ms": 248.5,
-        "p99Ms": 264.4,
-        "requestsPerSecond": 300,
-        "clientCpuMs": 344,
+        "p50Ms": 83.3,
+        "p95Ms": 123.4,
+        "p99Ms": 136.2,
+        "requestsPerSecond": 560.3,
+        "clientCpuMs": 313,
         "errors": 0,
         "empty": 0,
         "degraded": 0,
@@ -208,15 +244,15 @@
           "bm25-v1": 500
         },
         "p95TargetMs": 150,
-        "p95TargetMet": false,
-        "meetsAllCriteria": false
+        "p95TargetMet": true,
+        "meetsAllCriteria": true
       },
       "lexical": {
-        "p50Ms": 222.1,
-        "p95Ms": 714.6,
-        "p99Ms": 896.5,
-        "requestsPerSecond": 180.2,
-        "clientCpuMs": 469,
+        "p50Ms": 181.9,
+        "p95Ms": 252.1,
+        "p99Ms": 358.5,
+        "requestsPerSecond": 258.9,
+        "clientCpuMs": 438,
         "errors": 0,
         "empty": 0,
         "degraded": 0,
@@ -227,15 +263,15 @@
           "bm25-v1": 500
         },
         "p95TargetMs": 300,
-        "p95TargetMet": false,
-        "meetsAllCriteria": false
+        "p95TargetMet": true,
+        "meetsAllCriteria": true
       },
       "hybrid": {
-        "p50Ms": 285,
-        "p95Ms": 396.8,
-        "p99Ms": 586.8,
-        "requestsPerSecond": 165.5,
-        "clientCpuMs": 532,
+        "p50Ms": 235.1,
+        "p95Ms": 336.8,
+        "p99Ms": 379.6,
+        "requestsPerSecond": 198.8,
+        "clientCpuMs": 687,
         "errors": 0,
         "empty": 0,
         "degraded": 0,
@@ -251,39 +287,38 @@
         "semanticPathVerified": true
       },
       "recommendations": {
-        "p50Ms": 297.2,
-        "p95Ms": 766.1,
-        "p99Ms": 1037.9,
-        "requestsPerSecond": 145.2,
-        "clientCpuMs": 438,
+        "p50Ms": 186.6,
+        "p95Ms": 449.4,
+        "p99Ms": 496.2,
+        "requestsPerSecond": 217.6,
+        "clientCpuMs": 281,
         "errors": 0,
         "empty": 0,
-        "degraded": 12,
+        "degraded": 0,
         "statusCounts": {
           "200": 500
         },
         "strategies": {
-          "baseline-v1": 488,
-          "database-fallback-v1": 12
+          "baseline-v1": 500
         },
         "p95TargetMs": 500,
-        "p95TargetMet": false,
-        "meetsAllCriteria": false
+        "p95TargetMet": true,
+        "meetsAllCriteria": true
       }
     },
-    "originalDocumentsRetained": 118,
-    "syntheticCopies": 99882,
+    "originalDocumentsRetained": 117,
+    "syntheticCopies": 99883,
     "corpusNote": "Original fixture IDs remain searchable so profile seeds and ItemCF references still resolve.",
     "loadGenerator": "Node native HTTP",
     "comparison": {
       "loadGenerator": "Python httpx sync threads",
       "cases": {
         "suggest": {
-          "p50Ms": 164.7,
-          "p95Ms": 303.3,
-          "p99Ms": 361.5,
-          "requestsPerSecond": 256.2,
-          "clientCpuMs": 1609.4,
+          "p50Ms": 137.0,
+          "p95Ms": 254.1,
+          "p99Ms": 346.7,
+          "requestsPerSecond": 298.9,
+          "clientCpuMs": 1687.5,
           "errors": 0,
           "empty": 0,
           "degraded": 0,
@@ -298,11 +333,11 @@
           "meetsAllCriteria": false
         },
         "lexical": {
-          "p50Ms": 239.5,
-          "p95Ms": 398.5,
-          "p99Ms": 479.5,
-          "requestsPerSecond": 185.1,
-          "clientCpuMs": 1281.2,
+          "p50Ms": 191.7,
+          "p95Ms": 475.8,
+          "p99Ms": 531.6,
+          "requestsPerSecond": 223.3,
+          "clientCpuMs": 1390.6,
           "errors": 0,
           "empty": 0,
           "degraded": 0,
@@ -317,11 +352,11 @@
           "meetsAllCriteria": false
         },
         "hybrid": {
-          "p50Ms": 313.7,
-          "p95Ms": 427.1,
-          "p99Ms": 553.1,
-          "requestsPerSecond": 153.0,
-          "clientCpuMs": 1468.8,
+          "p50Ms": 208.1,
+          "p95Ms": 438.6,
+          "p99Ms": 460.4,
+          "requestsPerSecond": 205.6,
+          "clientCpuMs": 1234.4,
           "errors": 0,
           "empty": 0,
           "degraded": 0,
@@ -337,11 +372,11 @@
           "semanticPathVerified": true
         },
         "recommendations": {
-          "p50Ms": 268.0,
-          "p95Ms": 443.3,
-          "p99Ms": 517.2,
-          "requestsPerSecond": 175.0,
-          "clientCpuMs": 1000.0,
+          "p50Ms": 184.5,
+          "p95Ms": 393.7,
+          "p99Ms": 425.6,
+          "requestsPerSecond": 223.5,
+          "clientCpuMs": 1109.4,
           "errors": 0,
           "empty": 0,
           "degraded": 0,
@@ -371,7 +406,7 @@
     "sourceTimestampTimezone": "Asia/Shanghai"
   },
   "quality": {
-    "at": "2026-10-15T03:49:52.617051+08:00",
+    "at": "2026-10-15T04:56:33.748887+08:00",
     "corpus": "Isolated synthetic fixtures; 19 fixed entity/name/alias queries",
     "modes": {
       "lexical": {
@@ -657,44 +692,44 @@
     },
     "textLag": {
       "observations": 20,
-      "p95Ms": 5139.1,
+      "p95Ms": 5142.6,
       "valuesMs": [
-        5141.6,
-        5138.9,
-        5126.1,
-        5125.1,
-        5123.7,
-        5128.3,
-        5125.5,
-        5122.1,
-        5123.9,
-        5124.1,
-        5135.0,
-        5125.9,
-        5139.1,
-        5134.6,
-        5123.3,
-        5136.0,
-        5124.7,
-        5123.5,
-        5130.1,
-        5126.6
+        5142.6,
+        5124.6,
+        5131.1,
+        5130.5,
+        5127.7,
+        5124.4,
+        5128.7,
+        5125.2,
+        5129.2,
+        5126.6,
+        5125.0,
+        5142.3,
+        5124.6,
+        5136.1,
+        5126.2,
+        5124.2,
+        5152.9,
+        5123.6,
+        5126.8,
+        5126.1
       ]
     },
     "featureLag": {
       "observations": 10,
-      "p95Ms": 645.7,
+      "p95Ms": 646.7,
       "valuesMs": [
-        356.6,
-        340.3,
-        645.7,
-        341.8,
-        644.8,
-        338.0,
-        643.1,
-        337.9,
-        643.2,
-        338.3
+        359.9,
+        646.7,
+        339.9,
+        640.6,
+        335.1,
+        639.3,
+        345.9,
+        637.9,
+        337.7,
+        638.3
       ]
     }
   },
@@ -735,7 +770,7 @@
     "timingsAre": "Single fault probes, not latency percentiles"
   },
   "restoration": {
-    "checkedAt": "2026-10-15T04:01:19.337615+08:00",
+    "checkedAt": "2026-10-15T05:58:09.968145+08:00",
     "benchmarkRowsRemaining": {
       "game_news": 0,
       "posts": 0
@@ -758,7 +793,7 @@
     "recommendationApiStatus": {
       "status": "up"
     },
-    "recommendationWorkers": 3,
+    "recommendationWorkers": 4,
     "recommendationTextEncoderEnabled": false,
     "finalHybridCheck": {
       "strategyVersion": "hybrid-rrf-v1",
@@ -768,7 +803,44 @@
       "binlog_group_commit_sync_delay": "0",
       "innodb_flush_log_at_trx_commit": "1",
       "sync_binlog": "1"
-    }
+    },
+    "isolatedProcesses": {
+      "recommendations": {
+        "workers": 4,
+        "pid": 23392,
+        "liveChildren": 2,
+        "commandIdentityVerified": true
+      },
+      "cdc": {
+        "pid": 25640,
+        "liveChildren": 2,
+        "commandIdentityVerified": true
+      },
+      "api": {
+        "workers": 1,
+        "pid": 3132,
+        "liveChildren": 2,
+        "commandIdentityVerified": true
+      },
+      "embeddings": {
+        "pid": 31944,
+        "liveChildren": 2,
+        "commandIdentityVerified": true
+      },
+      "jobs": {
+        "pid": 24012,
+        "liveChildren": 2,
+        "commandIdentityVerified": true
+      },
+      "java": {
+        "pid": 29540,
+        "liveChildren": 1,
+        "commandIdentityVerified": true
+      }
+    },
+    "processesCheckedAt": "2026-10-15T05:57:59.2665678+08:00",
+    "embeddingQueueDepth": 0,
+    "mysqlBufferPoolBytes": 134217728
   },
   "diagnosticSmallFixture50Concurrency": {
     "python-suggest": {
@@ -898,8 +970,8 @@
     "The fixed 19-query relevance set checks entity/name/alias regression only. Production relevance and online recommendation lift remain unproven.",
     "Text and feature lag were measured independently from query load.",
     "Synthetic model lifecycle tests do not satisfy the production training gate or justify rollout to real users. Online control was restored to the baseline.",
-    "One or more primary native HTTP latency/availability criteria remain unmet; inspect each case.",
-    "The same-host Python threaded client is retained as a separate comparison, including its CPU cost. Its results are not mixed with the native HTTP measurements or treated as interchangeable."
+    "The same-host Python threaded client is retained as a separate comparison, including its CPU cost. Its results are not mixed with the native HTTP measurements or treated as interchangeable.",
+    "Earlier d1d9877 and early held-corpus measurements did not verify embedding-worker liveness; the launcher issue is fixed and the latest run checks all isolated roles."
   ],
   "previousBenchmark": {
     "generatedAt": "2026-10-15T00:09:29.038529",
@@ -975,7 +1047,7 @@
     }
   },
   "previousPerformanceCheckpoint": {
-    "generatedAt": "2026-10-15T02:28:09.369421",
+    "generatedAt": "2026-10-15T03:53:10.330882",
     "documents": 100000,
     "concurrency": 50,
     "requestsPerCase": 500,
@@ -985,14 +1057,14 @@
     "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
     "python": "3.12.5",
     "vectorDimensions": 1792,
-    "vectorTemplates": 112,
+    "vectorTemplates": 109,
     "cases": {
       "suggest": {
-        "p50Ms": 121.2,
-        "p95Ms": 232.5,
-        "p99Ms": 247.7,
-        "requestsPerSecond": 370.8,
-        "clientCpuMs": 360,
+        "p50Ms": 160,
+        "p95Ms": 248.5,
+        "p99Ms": 264.4,
+        "requestsPerSecond": 300,
+        "clientCpuMs": 344,
         "errors": 0,
         "empty": 0,
         "degraded": 0,
@@ -1004,28 +1076,27 @@
         }
       },
       "lexical": {
-        "p50Ms": 173.5,
-        "p95Ms": 1190.3,
-        "p99Ms": 1223.4,
-        "requestsPerSecond": 165.9,
-        "clientCpuMs": 532,
+        "p50Ms": 222.1,
+        "p95Ms": 714.6,
+        "p99Ms": 896.5,
+        "requestsPerSecond": 180.2,
+        "clientCpuMs": 469,
         "errors": 0,
         "empty": 0,
-        "degraded": 49,
+        "degraded": 0,
         "statusCounts": {
           "200": 500
         },
         "strategies": {
-          "bm25-v1": 451,
-          "database-fallback-v1": 49
+          "bm25-v1": 500
         }
       },
       "hybrid": {
-        "p50Ms": 198.1,
-        "p95Ms": 280.1,
-        "p99Ms": 361.7,
-        "requestsPerSecond": 236.3,
-        "clientCpuMs": 438,
+        "p50Ms": 285,
+        "p95Ms": 396.8,
+        "p99Ms": 586.8,
+        "requestsPerSecond": 165.5,
+        "clientCpuMs": 532,
         "errors": 0,
         "empty": 0,
         "degraded": 0,
@@ -1037,31 +1108,35 @@
         }
       },
       "recommendations": {
-        "p50Ms": 313,
-        "p95Ms": 482.7,
-        "p99Ms": 508.4,
+        "p50Ms": 297.2,
+        "p95Ms": 766.1,
+        "p99Ms": 1037.9,
         "requestsPerSecond": 145.2,
-        "clientCpuMs": 515,
+        "clientCpuMs": 438,
         "errors": 0,
         "empty": 0,
-        "degraded": 0,
+        "degraded": 12,
         "statusCounts": {
           "200": 500
         },
         "strategies": {
-          "baseline-v1": 500
+          "baseline-v1": 488,
+          "database-fallback-v1": 12
         }
       }
     },
+    "originalDocumentsRetained": 118,
+    "syntheticCopies": 99882,
+    "corpusNote": "Original fixture IDs remain searchable so profile seeds and ItemCF references still resolve.",
     "loadGenerator": "Node native HTTP",
     "comparison": {
       "loadGenerator": "Python httpx sync threads",
       "cases": {
         "suggest": {
-          "p50Ms": 138.5,
-          "p95Ms": 233.5,
-          "p99Ms": 383.1,
-          "requestsPerSecond": 306.4,
+          "p50Ms": 164.7,
+          "p95Ms": 303.3,
+          "p99Ms": 361.5,
+          "requestsPerSecond": 256.2,
           "clientCpuMs": 1609.4,
           "errors": 0,
           "empty": 0,
@@ -1074,11 +1149,11 @@
           }
         },
         "lexical": {
-          "p50Ms": 190.0,
-          "p95Ms": 267.6,
-          "p99Ms": 306.5,
-          "requestsPerSecond": 249.5,
-          "clientCpuMs": 1093.8,
+          "p50Ms": 239.5,
+          "p95Ms": 398.5,
+          "p99Ms": 479.5,
+          "requestsPerSecond": 185.1,
+          "clientCpuMs": 1281.2,
           "errors": 0,
           "empty": 0,
           "degraded": 0,
@@ -1090,11 +1165,11 @@
           }
         },
         "hybrid": {
-          "p50Ms": 195.7,
-          "p95Ms": 227.6,
-          "p99Ms": 248.6,
-          "requestsPerSecond": 242.6,
-          "clientCpuMs": 1343.8,
+          "p50Ms": 313.7,
+          "p95Ms": 427.1,
+          "p99Ms": 553.1,
+          "requestsPerSecond": 153.0,
+          "clientCpuMs": 1468.8,
           "errors": 0,
           "empty": 0,
           "degraded": 0,
@@ -1106,11 +1181,11 @@
           }
         },
         "recommendations": {
-          "p50Ms": 410.2,
-          "p95Ms": 664.7,
-          "p99Ms": 682.0,
-          "requestsPerSecond": 113.7,
-          "clientCpuMs": 953.1,
+          "p50Ms": 268.0,
+          "p95Ms": 443.3,
+          "p99Ms": 517.2,
+          "requestsPerSecond": 175.0,
+          "clientCpuMs": 1000.0,
           "errors": 0,
           "empty": 0,
           "degraded": 0,
@@ -1135,7 +1210,170 @@
     ],
     "nodeRuntime": "Node v24.15.0 native HTTP"
   },
-  "primaryPerformanceCriteriaMet": false,
+  "beforeOrderedRequestIds": {
+    "generatedAt": "2026-10-15T05:03:59.044475",
+    "documents": 100000,
+    "concurrency": 50,
+    "requestsPerCase": 500,
+    "accountCount": 1,
+    "warmupRequestsPerCase": 16,
+    "boundary": "Public Java API including authentication, hydration, request persistence, Python and OpenSearch",
+    "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
+    "python": "3.12.5",
+    "vectorDimensions": 1792,
+    "vectorTemplates": 110,
+    "cases": {
+      "suggest": {
+        "p50Ms": 196.7,
+        "p95Ms": 353.9,
+        "p99Ms": 445.8,
+        "requestsPerSecond": 229,
+        "clientCpuMs": 532,
+        "errors": 0,
+        "empty": 0,
+        "degraded": 0,
+        "statusCounts": {
+          "200": 500
+        },
+        "strategies": {
+          "bm25-v1": 500
+        }
+      },
+      "lexical": {
+        "p50Ms": 249.9,
+        "p95Ms": 643.6,
+        "p99Ms": 804.3,
+        "requestsPerSecond": 167.7,
+        "clientCpuMs": 703,
+        "errors": 0,
+        "empty": 0,
+        "degraded": 0,
+        "statusCounts": {
+          "200": 500
+        },
+        "strategies": {
+          "bm25-v1": 500
+        }
+      },
+      "hybrid": {
+        "p50Ms": 232.2,
+        "p95Ms": 298.5,
+        "p99Ms": 360,
+        "requestsPerSecond": 206,
+        "clientCpuMs": 656,
+        "errors": 0,
+        "empty": 0,
+        "degraded": 0,
+        "statusCounts": {
+          "200": 500
+        },
+        "strategies": {
+          "hybrid-rrf-v1": 500
+        }
+      },
+      "recommendations": {
+        "p50Ms": 290.1,
+        "p95Ms": 507.4,
+        "p99Ms": 657.7,
+        "requestsPerSecond": 160,
+        "clientCpuMs": 406,
+        "errors": 0,
+        "empty": 0,
+        "degraded": 0,
+        "statusCounts": {
+          "200": 500
+        },
+        "strategies": {
+          "baseline-v1": 500
+        }
+      }
+    },
+    "originalDocumentsRetained": 117,
+    "syntheticCopies": 99883,
+    "corpusNote": "Original fixture IDs remain searchable so profile seeds and ItemCF references still resolve.",
+    "loadGenerator": "Node native HTTP",
+    "comparison": {
+      "loadGenerator": "Python httpx sync threads",
+      "cases": {
+        "suggest": {
+          "p50Ms": 172.6,
+          "p95Ms": 305.9,
+          "p99Ms": 366.5,
+          "requestsPerSecond": 246.3,
+          "clientCpuMs": 1578.1,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 0,
+          "statusCounts": {
+            "200": 500
+          },
+          "strategies": {
+            "bm25-v1": 500
+          }
+        },
+        "lexical": {
+          "p50Ms": 221.7,
+          "p95Ms": 282.1,
+          "p99Ms": 319.9,
+          "requestsPerSecond": 214.8,
+          "clientCpuMs": 1531.2,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 0,
+          "statusCounts": {
+            "200": 500
+          },
+          "strategies": {
+            "bm25-v1": 500
+          }
+        },
+        "hybrid": {
+          "p50Ms": 235.3,
+          "p95Ms": 375.0,
+          "p99Ms": 413.5,
+          "requestsPerSecond": 195.4,
+          "clientCpuMs": 1312.5,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 0,
+          "statusCounts": {
+            "200": 500
+          },
+          "strategies": {
+            "hybrid-rrf-v1": 500
+          }
+        },
+        "recommendations": {
+          "p50Ms": 279.0,
+          "p95Ms": 478.5,
+          "p99Ms": 520.0,
+          "requestsPerSecond": 163.9,
+          "clientCpuMs": 1296.9,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 0,
+          "statusCounts": {
+            "200": 500
+          },
+          "strategies": {
+            "baseline-v1": 500
+          }
+        }
+      }
+    },
+    "querySet": [
+      "库里",
+      "勇士",
+      "湖人",
+      "詹姆斯",
+      "凯尔特人",
+      "防守",
+      "进攻",
+      "三分"
+    ],
+    "nodeRuntime": "Node v24.15.0 native HTTP"
+  },
+  "primaryPerformanceCriteriaMet": true,
   "performanceDiagnosis": {
     "javaJfr": {
       "requests": 5000,
@@ -1209,7 +1447,7 @@
     "roleIsolation": {
       "configuration": {
         "searchWorkers": 1,
-        "recommendationWorkers": 3,
+        "recommendationWorkers": 4,
         "recommendationTextEncoderEnabled": false
       },
       "beforeStartupInitialization": {
@@ -1376,6 +1614,1461 @@
         "Concurrent identical cold query encodings recheck cache after a bounded wait.",
         "Isolated Kafka heap reduced from fixed 1 GiB to 256–512 MiB."
       ]
+    },
+    "latestChanges": [
+      "Cache hits and in-flight identical index queries share a completed/pending future without consuming recall executor slots.",
+      "Only cache misses are submitted to the bounded executor; independent cold channels remain parallel.",
+      "Executor rejection, queued cancellation and loader failure release pending entries and permit a fresh retry.",
+      "The local launcher restores the embedding switch after starting a recommendation role, including failed launches.",
+      "Server request IDs use UUIDv7 for time-local primary-key inserts, retaining legacy attribution and synchronous durable commits.",
+      "Four lightweight recommendation workers; search remains one process, with fifty Java database connections and unchanged request deadlines.",
+      "Java and Python failures record only operation/status/error class and elapsed time, without request data."
+    ],
+    "requestIds": {
+      "format": "UUIDv7",
+      "specification": "https://www.rfc-editor.org/rfc/rfc9562.html#name-uuid-version-7",
+      "sameHeldCorpusComparison": {
+        "unordered-ids": {
+          "at": "2026-10-15T05:14:50.490522+08:00",
+          "cases": {
+            "suggest": {
+              "metrics": {
+                "p50Ms": 75.1,
+                "p95Ms": 124.1,
+                "p99Ms": 138.2,
+                "requestsPerSecond": 620.2,
+                "clientCpuMs": 454,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "physicalDatabaseReads": 508
+            },
+            "lexical": {
+              "metrics": {
+                "p50Ms": 181.8,
+                "p95Ms": 263.8,
+                "p99Ms": 307.8,
+                "requestsPerSecond": 262.4,
+                "clientCpuMs": 437,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "physicalDatabaseReads": 530
+            }
+          }
+        },
+        "ordered-ids": {
+          "at": "2026-10-15T05:23:35.204044+08:00",
+          "cases": {
+            "suggest": {
+              "metrics": {
+                "p50Ms": 149.3,
+                "p95Ms": 381.9,
+                "p99Ms": 427.6,
+                "requestsPerSecond": 279.4,
+                "clientCpuMs": 547,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "physicalDatabaseReads": 9
+            },
+            "lexical": {
+              "metrics": {
+                "p50Ms": 219.4,
+                "p95Ms": 291.4,
+                "p99Ms": 553.7,
+                "requestsPerSecond": 213,
+                "clientCpuMs": 562,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "physicalDatabaseReads": 7
+            }
+          }
+        }
+      },
+      "durableStorageProbe": {
+        "status": "PASS",
+        "uuidVersion": 7,
+        "requestDurablyStored": true,
+        "impressionsCreated": 0
+      },
+      "limitation": "Database counters cover the whole instance, including background workers. The UUIDv7 sample followed a Java restart; it demonstrates fewer observed physical reads, not a controlled end-to-end latency improvement.",
+      "compatibility": "Existing UUIDv4 requests retain attribution and ownership checks. No schema migration or asynchronous persistence; timestamps are not used as an authorization credential."
+    },
+    "heldCorpus": {
+      "documents": 100000,
+      "cases": {
+        "pool128-round1": {
+          "at": "2026-10-15T04:22:16.561845+08:00",
+          "cases": {
+            "suggest": {
+              "metrics": {
+                "p50Ms": 101.4,
+                "p95Ms": 147.8,
+                "p99Ms": 203.7,
+                "requestsPerSecond": 450.4,
+                "clientCpuMs": 484,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "availableMiBAfter": 388,
+              "physicalDatabaseReads": 470
+            },
+            "lexical": {
+              "metrics": {
+                "p50Ms": 184.4,
+                "p95Ms": 936.9,
+                "p99Ms": 974,
+                "requestsPerSecond": 153.6,
+                "clientCpuMs": 406,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 64,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 436,
+                  "database-fallback-v1": 64
+                }
+              },
+              "availableMiBAfter": 362,
+              "physicalDatabaseReads": 482
+            },
+            "hybrid": {
+              "metrics": {
+                "p50Ms": 230,
+                "p95Ms": 325.9,
+                "p99Ms": 512.5,
+                "requestsPerSecond": 203,
+                "clientCpuMs": 391,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "hybrid-rrf-v1": 500
+                }
+              },
+              "availableMiBAfter": 333,
+              "physicalDatabaseReads": 475
+            },
+            "recommendations": {
+              "metrics": {
+                "p50Ms": 212.9,
+                "p95Ms": 400.9,
+                "p99Ms": 455.3,
+                "requestsPerSecond": 196.9,
+                "clientCpuMs": 329,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "baseline-v1": 500
+                }
+              },
+              "availableMiBAfter": 327,
+              "physicalDatabaseReads": 610
+            }
+          }
+        },
+        "pool128-round2": {
+          "at": "2026-10-15T04:23:57.583543+08:00",
+          "cases": {
+            "suggest": {
+              "metrics": {
+                "p50Ms": 72,
+                "p95Ms": 115,
+                "p99Ms": 130.7,
+                "requestsPerSecond": 639.7,
+                "clientCpuMs": 391,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "availableMiBAfter": 753,
+              "physicalDatabaseReads": 419
+            },
+            "lexical": {
+              "metrics": {
+                "p50Ms": 189.8,
+                "p95Ms": 237.7,
+                "p99Ms": 326.9,
+                "requestsPerSecond": 256.5,
+                "clientCpuMs": 423,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "availableMiBAfter": 691,
+              "physicalDatabaseReads": 478
+            },
+            "hybrid": {
+              "metrics": {
+                "p50Ms": 216.7,
+                "p95Ms": 259.9,
+                "p99Ms": 445.7,
+                "requestsPerSecond": 224.6,
+                "clientCpuMs": 516,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "hybrid-rrf-v1": 500
+                }
+              },
+              "availableMiBAfter": 673,
+              "physicalDatabaseReads": 474
+            },
+            "recommendations": {
+              "metrics": {
+                "p50Ms": 253.8,
+                "p95Ms": 773.2,
+                "p99Ms": 853.5,
+                "requestsPerSecond": 139.5,
+                "clientCpuMs": 562,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "baseline-v1": 500
+                }
+              },
+              "availableMiBAfter": 595,
+              "physicalDatabaseReads": 580
+            }
+          }
+        },
+        "fullroles-pool128": {
+          "at": "2026-10-15T04:27:57.589201+08:00",
+          "cases": {
+            "suggest": {
+              "metrics": {
+                "p50Ms": 61.6,
+                "p95Ms": 100.1,
+                "p99Ms": 114.8,
+                "requestsPerSecond": 755.3,
+                "clientCpuMs": 343,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "availableMiBAfter": 594,
+              "physicalDatabaseReads": 385
+            },
+            "lexical": {
+              "metrics": {
+                "p50Ms": 165.9,
+                "p95Ms": 208.2,
+                "p99Ms": 329,
+                "requestsPerSecond": 285.4,
+                "clientCpuMs": 406,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "availableMiBAfter": 575,
+              "physicalDatabaseReads": 434
+            },
+            "hybrid": {
+              "metrics": {
+                "p50Ms": 188.6,
+                "p95Ms": 384.1,
+                "p99Ms": 393,
+                "requestsPerSecond": 232.8,
+                "clientCpuMs": 361,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "hybrid-rrf-v1": 500
+                }
+              },
+              "availableMiBAfter": 584,
+              "physicalDatabaseReads": 420
+            },
+            "recommendations": {
+              "metrics": {
+                "p50Ms": 235.3,
+                "p95Ms": 347.8,
+                "p99Ms": 383.2,
+                "requestsPerSecond": 204.2,
+                "clientCpuMs": 672,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "baseline-v1": 500
+                }
+              },
+              "availableMiBAfter": 539,
+              "physicalDatabaseReads": 570
+            }
+          }
+        },
+        "pool256-round1": {
+          "at": "2026-10-15T04:28:47.275007+08:00",
+          "cases": {
+            "suggest": {
+              "metrics": {
+                "p50Ms": 64.9,
+                "p95Ms": 101.3,
+                "p99Ms": 116.4,
+                "requestsPerSecond": 720.9,
+                "clientCpuMs": 468,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "availableMiBAfter": 360,
+              "physicalDatabaseReads": 365
+            },
+            "lexical": {
+              "metrics": {
+                "p50Ms": 155.3,
+                "p95Ms": 195.5,
+                "p99Ms": 312.6,
+                "requestsPerSecond": 311.1,
+                "clientCpuMs": 390,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "availableMiBAfter": 385,
+              "physicalDatabaseReads": 392
+            },
+            "hybrid": {
+              "metrics": {
+                "p50Ms": 186.5,
+                "p95Ms": 215.7,
+                "p99Ms": 354.3,
+                "requestsPerSecond": 258.2,
+                "clientCpuMs": 406,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "hybrid-rrf-v1": 500
+                }
+              },
+              "availableMiBAfter": 382,
+              "physicalDatabaseReads": 369
+            },
+            "recommendations": {
+              "metrics": {
+                "p50Ms": 220,
+                "p95Ms": 338,
+                "p99Ms": 394.3,
+                "requestsPerSecond": 213.4,
+                "clientCpuMs": 423,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "baseline-v1": 500
+                }
+              },
+              "availableMiBAfter": 388,
+              "physicalDatabaseReads": 457
+            }
+          }
+        },
+        "pool256-round2": {
+          "at": "2026-10-15T04:29:23.947208+08:00",
+          "cases": {
+            "suggest": {
+              "metrics": {
+                "p50Ms": 58.4,
+                "p95Ms": 99.3,
+                "p99Ms": 114.3,
+                "requestsPerSecond": 798.4,
+                "clientCpuMs": 485,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "availableMiBAfter": 404,
+              "physicalDatabaseReads": 299
+            },
+            "lexical": {
+              "metrics": {
+                "p50Ms": 163,
+                "p95Ms": 187.1,
+                "p99Ms": 328.9,
+                "requestsPerSecond": 296.1,
+                "clientCpuMs": 421,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "availableMiBAfter": 363,
+              "physicalDatabaseReads": 310
+            },
+            "hybrid": {
+              "metrics": {
+                "p50Ms": 220.2,
+                "p95Ms": 259.6,
+                "p99Ms": 436.3,
+                "requestsPerSecond": 215.9,
+                "clientCpuMs": 594,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "hybrid-rrf-v1": 500
+                }
+              },
+              "availableMiBAfter": 243,
+              "physicalDatabaseReads": 323
+            },
+            "recommendations": {
+              "metrics": {
+                "p50Ms": 208.4,
+                "p95Ms": 450.9,
+                "p99Ms": 937.3,
+                "requestsPerSecond": 196.2,
+                "clientCpuMs": 485,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 20,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "baseline-v1": 480,
+                  "database-fallback-v1": 20
+                }
+              },
+              "availableMiBAfter": 317,
+              "physicalDatabaseReads": 445
+            }
+          }
+        },
+        "restored-pool128": {
+          "at": "2026-10-15T04:30:28.972441+08:00",
+          "cases": {
+            "suggest": {
+              "metrics": {
+                "p50Ms": 60.5,
+                "p95Ms": 91.2,
+                "p99Ms": 106.3,
+                "requestsPerSecond": 768.8,
+                "clientCpuMs": 359,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "availableMiBAfter": 845,
+              "physicalDatabaseReads": 347
+            },
+            "lexical": {
+              "metrics": {
+                "p50Ms": 156.3,
+                "p95Ms": 185.3,
+                "p99Ms": 268.9,
+                "requestsPerSecond": 304.6,
+                "clientCpuMs": 548,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "bm25-v1": 500
+                }
+              },
+              "availableMiBAfter": 710,
+              "physicalDatabaseReads": 389
+            },
+            "hybrid": {
+              "metrics": {
+                "p50Ms": 198.1,
+                "p95Ms": 240.9,
+                "p99Ms": 383.5,
+                "requestsPerSecond": 241.7,
+                "clientCpuMs": 577,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "hybrid-rrf-v1": 500
+                }
+              },
+              "availableMiBAfter": 684,
+              "physicalDatabaseReads": 400
+            },
+            "recommendations": {
+              "metrics": {
+                "p50Ms": 233.1,
+                "p95Ms": 356.3,
+                "p99Ms": 376.9,
+                "requestsPerSecond": 216.3,
+                "clientCpuMs": 390,
+                "errors": 0,
+                "empty": 0,
+                "degraded": 0,
+                "statusCounts": {
+                  "200": 500
+                },
+                "strategies": {
+                  "baseline-v1": 500
+                }
+              },
+              "availableMiBAfter": 736,
+              "physicalDatabaseReads": 503
+            }
+          }
+        }
+      },
+      "earlyDiagnosticLimitation": "The embedding worker was discovered inactive before fullroles-pool128 and then restored; early rounds are diagnostic, not full-stack acceptance.",
+      "largerDatabasePoolAdopted": false,
+      "finalBufferPoolMiB": 128,
+      "longRecommendationRun": {
+        "client": "Node v24.15.0 native HTTP",
+        "case": "recommendations",
+        "requests": 5000,
+        "concurrency": 50,
+        "metrics": {
+          "p50Ms": 305.9,
+          "p95Ms": 505.1,
+          "p99Ms": 611.4,
+          "requestsPerSecond": 158.4,
+          "clientCpuMs": 2782,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 23,
+          "statusCounts": {
+            "200": 5000
+          },
+          "strategies": {
+            "baseline-v1": 4977,
+            "database-fallback-v1": 23
+          }
+        }
+      },
+      "note": "All repetitions are retained, including failed rounds. They were separate diagnostics before the final startup/caching fix."
+    },
+    "gcExperiment": {
+      "adopted": false,
+      "before": {
+        "p50Ms": 213,
+        "p95Ms": 306.4,
+        "p99Ms": 368.7,
+        "requestsPerSecond": 226.6,
+        "clientCpuMs": 2845,
+        "errors": 0,
+        "empty": 0,
+        "degraded": 0,
+        "statusCounts": {
+          "200": 5000
+        },
+        "strategies": {
+          "baseline-v1": 5000
+        }
+      },
+      "after": {
+        "p50Ms": 183.1,
+        "p95Ms": 320,
+        "p99Ms": 382.5,
+        "requestsPerSecond": 239.5,
+        "clientCpuMs": 3063,
+        "errors": 0,
+        "empty": 0,
+        "degraded": 0,
+        "statusCounts": {
+          "200": 5000
+        },
+        "strategies": {
+          "baseline-v1": 5000
+        }
+      },
+      "reason": "Reduced observed GC pauses did not consistently lower P95. Final code retains normal garbage collection."
+    },
+    "postFixSmallCorpus": {
+      "generatedAt": "2026-10-15T04:53:03.758939",
+      "documents": 1000,
+      "concurrency": 50,
+      "requestsPerCase": 5000,
+      "accountCount": 1,
+      "warmupRequestsPerCase": 16,
+      "boundary": "Public Java API including authentication, hydration, request persistence, Python and OpenSearch",
+      "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
+      "python": "3.12.5",
+      "vectorDimensions": 1792,
+      "vectorTemplates": 111,
+      "cases": {
+        "suggest": {
+          "p50Ms": 76.3,
+          "p95Ms": 116.6,
+          "p99Ms": 141.4,
+          "requestsPerSecond": 629.7,
+          "clientCpuMs": 2611,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 0,
+          "statusCounts": {
+            "200": 5000
+          },
+          "strategies": {
+            "bm25-v1": 5000
+          }
+        },
+        "recommendations": {
+          "p50Ms": 213,
+          "p95Ms": 322.4,
+          "p99Ms": 396.6,
+          "requestsPerSecond": 226.1,
+          "clientCpuMs": 2594,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 0,
+          "statusCounts": {
+            "200": 5000
+          },
+          "strategies": {
+            "baseline-v1": 5000
+          }
+        }
+      },
+      "originalDocumentsRetained": 118,
+      "syntheticCopies": 882,
+      "corpusNote": "Original fixture IDs remain searchable so profile seeds and ItemCF references still resolve.",
+      "loadGenerator": "Node native HTTP",
+      "querySet": [
+        "库里",
+        "勇士",
+        "湖人",
+        "詹姆斯",
+        "凯尔特人",
+        "防守",
+        "进攻",
+        "三分"
+      ],
+      "nodeRuntime": "Node v24.15.0 native HTTP"
+    },
+    "parallelismAndConnectionPool": {
+      "threeRecommendationWorkers": {
+        "generatedAt": "2026-10-15T05:39:32.364169",
+        "documents": 1000,
+        "concurrency": 50,
+        "requestsPerCase": 5000,
+        "accountCount": 1,
+        "warmupRequestsPerCase": 16,
+        "boundary": "Public Java API including authentication, hydration, request persistence, Python and OpenSearch",
+        "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
+        "python": "3.12.5",
+        "vectorDimensions": 1792,
+        "vectorTemplates": 110,
+        "cases": {
+          "recommendations": {
+            "p50Ms": 264.5,
+            "p95Ms": 431.6,
+            "p99Ms": 501.5,
+            "requestsPerSecond": 199.2,
+            "clientCpuMs": 3094,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 5000
+            },
+            "strategies": {
+              "baseline-v1": 5000
+            }
+          }
+        },
+        "originalDocumentsRetained": 117,
+        "syntheticCopies": 883,
+        "corpusNote": "Original fixture IDs remain searchable so profile seeds and ItemCF references still resolve.",
+        "loadGenerator": "Node native HTTP",
+        "querySet": [
+          "库里",
+          "勇士",
+          "湖人",
+          "詹姆斯",
+          "凯尔特人",
+          "防守",
+          "进攻",
+          "三分"
+        ],
+        "nodeRuntime": "Node v24.15.0 native HTTP"
+      },
+      "fourRecommendationWorkers": {
+        "generatedAt": "2026-10-15T05:40:40.489998",
+        "documents": 1000,
+        "concurrency": 50,
+        "requestsPerCase": 5000,
+        "accountCount": 1,
+        "warmupRequestsPerCase": 16,
+        "boundary": "Public Java API including authentication, hydration, request persistence, Python and OpenSearch",
+        "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
+        "python": "3.12.5",
+        "vectorDimensions": 1792,
+        "vectorTemplates": 110,
+        "cases": {
+          "recommendations": {
+            "p50Ms": 186.7,
+            "p95Ms": 355.7,
+            "p99Ms": 441.1,
+            "requestsPerSecond": 244.7,
+            "clientCpuMs": 2860,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 5000
+            },
+            "strategies": {
+              "baseline-v1": 5000
+            }
+          }
+        },
+        "originalDocumentsRetained": 117,
+        "syntheticCopies": 883,
+        "corpusNote": "Original fixture IDs remain searchable so profile seeds and ItemCF references still resolve.",
+        "loadGenerator": "Node native HTTP",
+        "querySet": [
+          "库里",
+          "勇士",
+          "湖人",
+          "詹姆斯",
+          "凯尔特人",
+          "防守",
+          "进攻",
+          "三分"
+        ],
+        "nodeRuntime": "Node v24.15.0 native HTTP"
+      },
+      "fiftyConnectionSuggestControl": {
+        "generatedAt": "2026-10-15T05:41:46.539486",
+        "documents": 1000,
+        "concurrency": 50,
+        "requestsPerCase": 5000,
+        "accountCount": 1,
+        "warmupRequestsPerCase": 16,
+        "boundary": "Public Java API including authentication, hydration, request persistence, Python and OpenSearch",
+        "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
+        "python": "3.12.5",
+        "vectorDimensions": 1792,
+        "vectorTemplates": 110,
+        "cases": {
+          "suggest": {
+            "p50Ms": 64.5,
+            "p95Ms": 89,
+            "p99Ms": 132.8,
+            "requestsPerSecond": 739.9,
+            "clientCpuMs": 2531,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 5000
+            },
+            "strategies": {
+              "bm25-v1": 5000
+            }
+          }
+        },
+        "originalDocumentsRetained": 117,
+        "syntheticCopies": 883,
+        "corpusNote": "Original fixture IDs remain searchable so profile seeds and ItemCF references still resolve.",
+        "loadGenerator": "Node native HTTP",
+        "querySet": [
+          "库里",
+          "勇士",
+          "湖人",
+          "詹姆斯",
+          "凯尔特人",
+          "防守",
+          "进攻",
+          "三分"
+        ],
+        "nodeRuntime": "Node v24.15.0 native HTTP"
+      },
+      "twentyConnectionsAfterRestart": {
+        "generatedAt": "2026-10-15T05:43:00.043846",
+        "documents": 1000,
+        "concurrency": 50,
+        "requestsPerCase": 5000,
+        "accountCount": 1,
+        "warmupRequestsPerCase": 16,
+        "boundary": "Public Java API including authentication, hydration, request persistence, Python and OpenSearch",
+        "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
+        "python": "3.12.5",
+        "vectorDimensions": 1792,
+        "vectorTemplates": 110,
+        "cases": {
+          "suggest": {
+            "p50Ms": 119.3,
+            "p95Ms": 231,
+            "p99Ms": 335.1,
+            "requestsPerSecond": 379.8,
+            "clientCpuMs": 3282,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 5000
+            },
+            "strategies": {
+              "bm25-v1": 5000
+            }
+          },
+          "recommendations": {
+            "p50Ms": 253.7,
+            "p95Ms": 446.1,
+            "p99Ms": 604.3,
+            "requestsPerSecond": 190.7,
+            "clientCpuMs": 2859,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 5000
+            },
+            "strategies": {
+              "baseline-v1": 5000
+            }
+          }
+        },
+        "originalDocumentsRetained": 117,
+        "syntheticCopies": 883,
+        "corpusNote": "Original fixture IDs remain searchable so profile seeds and ItemCF references still resolve.",
+        "loadGenerator": "Node native HTTP",
+        "querySet": [
+          "库里",
+          "勇士",
+          "湖人",
+          "詹姆斯",
+          "凯尔特人",
+          "防守",
+          "进攻",
+          "三分"
+        ],
+        "nodeRuntime": "Node v24.15.0 native HTTP"
+      },
+      "twentyConnectionsWarmed": {
+        "generatedAt": "2026-10-15T05:44:15.054758",
+        "documents": 1000,
+        "concurrency": 50,
+        "requestsPerCase": 5000,
+        "accountCount": 1,
+        "warmupRequestsPerCase": 16,
+        "boundary": "Public Java API including authentication, hydration, request persistence, Python and OpenSearch",
+        "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
+        "python": "3.12.5",
+        "vectorDimensions": 1792,
+        "vectorTemplates": 110,
+        "cases": {
+          "suggest": {
+            "p50Ms": 82.2,
+            "p95Ms": 153,
+            "p99Ms": 199.8,
+            "requestsPerSecond": 556.4,
+            "clientCpuMs": 2500,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 5000
+            },
+            "strategies": {
+              "bm25-v1": 5000
+            }
+          },
+          "recommendations": {
+            "p50Ms": 203.5,
+            "p95Ms": 383.9,
+            "p99Ms": 507.4,
+            "requestsPerSecond": 220.1,
+            "clientCpuMs": 3140,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 13,
+            "statusCounts": {
+              "200": 5000
+            },
+            "strategies": {
+              "baseline-v1": 4987,
+              "database-fallback-v1": 13
+            }
+          }
+        },
+        "originalDocumentsRetained": 117,
+        "syntheticCopies": 883,
+        "corpusNote": "Original fixture IDs remain searchable so profile seeds and ItemCF references still resolve.",
+        "loadGenerator": "Node native HTTP",
+        "querySet": [
+          "库里",
+          "勇士",
+          "湖人",
+          "詹姆斯",
+          "凯尔特人",
+          "防守",
+          "进攻",
+          "三分"
+        ],
+        "nodeRuntime": "Node v24.15.0 native HTTP"
+      },
+      "fiftyConnectionsRestored": {
+        "generatedAt": "2026-10-15T05:46:03.236902",
+        "documents": 1000,
+        "concurrency": 50,
+        "requestsPerCase": 5000,
+        "accountCount": 1,
+        "warmupRequestsPerCase": 16,
+        "boundary": "Public Java API including authentication, hydration, request persistence, Python and OpenSearch",
+        "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
+        "python": "3.12.5",
+        "vectorDimensions": 1792,
+        "vectorTemplates": 110,
+        "cases": {
+          "suggest": {
+            "p50Ms": 103.1,
+            "p95Ms": 154.1,
+            "p99Ms": 208,
+            "requestsPerSecond": 465.8,
+            "clientCpuMs": 2844,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 5000
+            },
+            "strategies": {
+              "bm25-v1": 5000
+            }
+          },
+          "recommendations": {
+            "p50Ms": 249.1,
+            "p95Ms": 453,
+            "p99Ms": 571.9,
+            "requestsPerSecond": 188.3,
+            "clientCpuMs": 2984,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 5000
+            },
+            "strategies": {
+              "baseline-v1": 5000
+            }
+          }
+        },
+        "originalDocumentsRetained": 117,
+        "syntheticCopies": 883,
+        "corpusNote": "Original fixture IDs remain searchable so profile seeds and ItemCF references still resolve.",
+        "loadGenerator": "Node native HTTP",
+        "querySet": [
+          "库里",
+          "勇士",
+          "湖人",
+          "詹姆斯",
+          "凯尔特人",
+          "防守",
+          "进攻",
+          "三分"
+        ],
+        "nodeRuntime": "Node v24.15.0 native HTTP"
+      },
+      "finalRecommendationWorkers": 4,
+      "finalJavaConnections": 50,
+      "note": "1000-document diagnostics, 50 concurrency, 5000 requests per case. JVM restart/warmth differs between connection-pool rounds; all rounds, including degraded responses, are retained. Final full-corpus measurements remain separate."
+    },
+    "fourWorkerFullCorpus": {
+      "afterConstruction": {
+        "generatedAt": "2026-10-15T05:47:47.173884",
+        "documents": 100000,
+        "concurrency": 50,
+        "requestsPerCase": 500,
+        "accountCount": 1,
+        "warmupRequestsPerCase": 16,
+        "boundary": "Public Java API including authentication, hydration, request persistence, Python and OpenSearch",
+        "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
+        "python": "3.12.5",
+        "vectorDimensions": 1792,
+        "vectorTemplates": 110,
+        "cases": {
+          "suggest": {
+            "p50Ms": 83.3,
+            "p95Ms": 123.4,
+            "p99Ms": 136.2,
+            "requestsPerSecond": 560.3,
+            "clientCpuMs": 313,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 500
+            },
+            "strategies": {
+              "bm25-v1": 500
+            }
+          },
+          "lexical": {
+            "p50Ms": 181.9,
+            "p95Ms": 252.1,
+            "p99Ms": 358.5,
+            "requestsPerSecond": 258.9,
+            "clientCpuMs": 438,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 500
+            },
+            "strategies": {
+              "bm25-v1": 500
+            }
+          },
+          "hybrid": {
+            "p50Ms": 235.1,
+            "p95Ms": 336.8,
+            "p99Ms": 379.6,
+            "requestsPerSecond": 198.8,
+            "clientCpuMs": 687,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 500
+            },
+            "strategies": {
+              "hybrid-rrf-v1": 500
+            }
+          },
+          "recommendations": {
+            "p50Ms": 186.6,
+            "p95Ms": 449.4,
+            "p99Ms": 496.2,
+            "requestsPerSecond": 217.6,
+            "clientCpuMs": 281,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 500
+            },
+            "strategies": {
+              "baseline-v1": 500
+            }
+          }
+        },
+        "originalDocumentsRetained": 117,
+        "syntheticCopies": 99883,
+        "corpusNote": "Original fixture IDs remain searchable so profile seeds and ItemCF references still resolve.",
+        "loadGenerator": "Node native HTTP",
+        "comparison": {
+          "loadGenerator": "Python httpx sync threads",
+          "cases": {
+            "suggest": {
+              "p50Ms": 137.0,
+              "p95Ms": 254.1,
+              "p99Ms": 346.7,
+              "requestsPerSecond": 298.9,
+              "clientCpuMs": 1687.5,
+              "errors": 0,
+              "empty": 0,
+              "degraded": 0,
+              "statusCounts": {
+                "200": 500
+              },
+              "strategies": {
+                "bm25-v1": 500
+              }
+            },
+            "lexical": {
+              "p50Ms": 191.7,
+              "p95Ms": 475.8,
+              "p99Ms": 531.6,
+              "requestsPerSecond": 223.3,
+              "clientCpuMs": 1390.6,
+              "errors": 0,
+              "empty": 0,
+              "degraded": 0,
+              "statusCounts": {
+                "200": 500
+              },
+              "strategies": {
+                "bm25-v1": 500
+              }
+            },
+            "hybrid": {
+              "p50Ms": 208.1,
+              "p95Ms": 438.6,
+              "p99Ms": 460.4,
+              "requestsPerSecond": 205.6,
+              "clientCpuMs": 1234.4,
+              "errors": 0,
+              "empty": 0,
+              "degraded": 0,
+              "statusCounts": {
+                "200": 500
+              },
+              "strategies": {
+                "hybrid-rrf-v1": 500
+              }
+            },
+            "recommendations": {
+              "p50Ms": 184.5,
+              "p95Ms": 393.7,
+              "p99Ms": 425.6,
+              "requestsPerSecond": 223.5,
+              "clientCpuMs": 1109.4,
+              "errors": 0,
+              "empty": 0,
+              "degraded": 0,
+              "statusCounts": {
+                "200": 500
+              },
+              "strategies": {
+                "baseline-v1": 500
+              }
+            }
+          }
+        },
+        "querySet": [
+          "库里",
+          "勇士",
+          "湖人",
+          "詹姆斯",
+          "凯尔特人",
+          "防守",
+          "进攻",
+          "三分"
+        ],
+        "nodeRuntime": "Node v24.15.0 native HTTP"
+      },
+      "afterFixedSettlingInterval": {
+        "generatedAt": "2026-10-15T05:55:24.261702",
+        "documents": 100000,
+        "concurrency": 50,
+        "requestsPerCase": 500,
+        "accountCount": 1,
+        "warmupRequestsPerCase": 16,
+        "boundary": "Public Java API including authentication, hydration, request persistence, Python and OpenSearch",
+        "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
+        "python": "3.12.5",
+        "vectorDimensions": 1792,
+        "vectorTemplates": 110,
+        "cases": {
+          "suggest": {
+            "p50Ms": 73.8,
+            "p95Ms": 102.3,
+            "p99Ms": 111.6,
+            "requestsPerSecond": 647.6,
+            "clientCpuMs": 485,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 500
+            },
+            "strategies": {
+              "bm25-v1": 500
+            },
+            "p95TargetMs": 150,
+            "p95TargetMet": true,
+            "meetsAllCriteria": true
+          },
+          "lexical": {
+            "p50Ms": 201.3,
+            "p95Ms": 285.5,
+            "p99Ms": 355,
+            "requestsPerSecond": 232.5,
+            "clientCpuMs": 484,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 500
+            },
+            "strategies": {
+              "bm25-v1": 500
+            },
+            "p95TargetMs": 300,
+            "p95TargetMet": true,
+            "meetsAllCriteria": true
+          },
+          "hybrid": {
+            "p50Ms": 217.6,
+            "p95Ms": 291.6,
+            "p99Ms": 301.1,
+            "requestsPerSecond": 218.5,
+            "clientCpuMs": 564,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 500
+            },
+            "strategies": {
+              "hybrid-rrf-v1": 500
+            },
+            "p95TargetMs": 500,
+            "p95TargetMet": true,
+            "meetsAllCriteria": true,
+            "semanticPathVerified": true
+          },
+          "recommendations": {
+            "p50Ms": 225.7,
+            "p95Ms": 440.6,
+            "p99Ms": 507.2,
+            "requestsPerSecond": 209.4,
+            "clientCpuMs": 500,
+            "errors": 0,
+            "empty": 0,
+            "degraded": 0,
+            "statusCounts": {
+              "200": 500
+            },
+            "strategies": {
+              "baseline-v1": 500
+            },
+            "p95TargetMs": 500,
+            "p95TargetMet": true,
+            "meetsAllCriteria": true
+          }
+        },
+        "originalDocumentsRetained": 117,
+        "syntheticCopies": 99883,
+        "corpusNote": "Original fixture IDs remain searchable so profile seeds and ItemCF references still resolve.",
+        "loadGenerator": "Node native HTTP",
+        "comparison": {
+          "loadGenerator": "Python httpx sync threads",
+          "cases": {
+            "suggest": {
+              "p50Ms": 108.7,
+              "p95Ms": 217.0,
+              "p99Ms": 318.5,
+              "requestsPerSecond": 365.8,
+              "clientCpuMs": 1343.8,
+              "errors": 0,
+              "empty": 0,
+              "degraded": 0,
+              "statusCounts": {
+                "200": 500
+              },
+              "strategies": {
+                "bm25-v1": 500
+              },
+              "p95TargetMs": 150,
+              "p95TargetMet": false,
+              "meetsAllCriteria": false
+            },
+            "lexical": {
+              "p50Ms": 188.6,
+              "p95Ms": 244.1,
+              "p99Ms": 274.8,
+              "requestsPerSecond": 240.8,
+              "clientCpuMs": 1156.2,
+              "errors": 0,
+              "empty": 0,
+              "degraded": 0,
+              "statusCounts": {
+                "200": 500
+              },
+              "strategies": {
+                "bm25-v1": 500
+              },
+              "p95TargetMs": 300,
+              "p95TargetMet": true,
+              "meetsAllCriteria": true
+            },
+            "hybrid": {
+              "p50Ms": 230.7,
+              "p95Ms": 323.5,
+              "p99Ms": 355.2,
+              "requestsPerSecond": 201.9,
+              "clientCpuMs": 1281.2,
+              "errors": 0,
+              "empty": 0,
+              "degraded": 0,
+              "statusCounts": {
+                "200": 500
+              },
+              "strategies": {
+                "hybrid-rrf-v1": 500
+              },
+              "p95TargetMs": 500,
+              "p95TargetMet": true,
+              "meetsAllCriteria": true,
+              "semanticPathVerified": true
+            },
+            "recommendations": {
+              "p50Ms": 203.7,
+              "p95Ms": 361.3,
+              "p99Ms": 411.5,
+              "requestsPerSecond": 227.4,
+              "clientCpuMs": 1203.1,
+              "errors": 0,
+              "empty": 0,
+              "degraded": 0,
+              "statusCounts": {
+                "200": 500
+              },
+              "strategies": {
+                "baseline-v1": 500
+              },
+              "p95TargetMs": 500,
+              "p95TargetMet": true,
+              "meetsAllCriteria": true
+            }
+          }
+        },
+        "querySet": [
+          "库里",
+          "勇士",
+          "湖人",
+          "詹姆斯",
+          "凯尔特人",
+          "防守",
+          "进攻",
+          "三分"
+        ],
+        "nodeRuntime": "Node v24.15.0 native HTTP",
+        "setupState": {
+          "initialMeasurement": "benchmark-four-workers-100k.json",
+          "secondsSinceInitialMeasurement": 60.0,
+          "fixedMinimumSettlingSeconds": 60,
+          "note": "Separate diagnostic after a fixed setup interval; no latency-based retries or best-run selection."
+        }
+      },
+      "note": "The initial run and the single settled comparison use the same 100000-document corpus and identical load protocols. Results are retained separately rather than selecting the faster case from either run.",
+      "resources": {
+        "sampleCount": 67,
+        "intervalSeconds": 5,
+        "availableHostMemoryMiB": {
+          "minimum": 366,
+          "maximum": 1056
+        },
+        "firstSampleAt": "2026-10-15T05:50:23.389916+08:00",
+        "lastSampleAt": "2026-10-15T05:55:55.162963+08:00",
+        "note": "Observation during corpus construction and measurement; low available memory alone does not establish the cause of any individual slow request."
+      }
     }
-  }
+  },
+  "settledComparisonCriteriaMet": true,
+  "performanceCriteriaMet": true
 }

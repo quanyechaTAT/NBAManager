@@ -1,4 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 import threading
 import time
 import pytest
@@ -71,6 +71,59 @@ def test_failures_do_not_poison_the_cache_or_future_requests():
     cache=QueryCache()
     with pytest.raises(RuntimeError): cache.get('q',lambda:(_ for _ in ()).throw(RuntimeError('offline')))
     assert cache.get('q',lambda:['NEWS:1'])==['NEWS:1']
+
+
+def test_cached_retrieval_completes_while_executor_is_busy():
+    cache=QueryCache(); release=threading.Event(); entered=threading.Event()
+    cache.get('cached',lambda:['NEWS:1'])
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pool.submit(lambda:(entered.set(),release.wait(2)))
+        assert entered.wait(1)
+        try:
+            result=cache.submit('cached',lambda:pytest.fail('Cache hit must not reload'),pool)
+            assert result.result(.1)==['NEWS:1']
+        finally: release.set()
+
+
+def test_identical_inflight_queries_leave_executor_capacity_for_other_queries():
+    cache=QueryCache(); release=threading.Event(); entered=threading.Event(); calls=[]
+    def loader():
+        calls.append(1); entered.set(); release.wait(2); return ['NEWS:1']
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first=cache.submit('popular',loader,pool)
+        assert entered.wait(1)
+        try:
+            followers=[cache.submit('popular',loader,pool) for _ in range(30)]
+            assert cache.submit('unrelated',lambda:['POST:2'],pool).result(.2)==['POST:2']
+        finally: release.set()
+        assert first.result(1)==['NEWS:1']
+        assert all(future.result(1)==['NEWS:1'] for future in followers)
+    assert len(calls)==1
+
+
+def test_async_failure_and_executor_rejection_allow_a_fresh_retry():
+    cache=QueryCache()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        failed=cache.submit('offline',lambda:(_ for _ in ()).throw(RuntimeError('offline')),pool)
+        with pytest.raises(RuntimeError,match='offline'): failed.result(1)
+        assert cache.submit('offline',lambda:['NEWS:1'],pool).result(1)==['NEWS:1']
+    rejected=cache.submit('closed',lambda:['POST:2'],pool)
+    with pytest.raises(RuntimeError): rejected.result(1)
+    assert cache.get('closed',lambda:['POST:3'])==['POST:3']
+
+
+def test_cancelled_queued_retrieval_does_not_leave_waiters_or_poison_retry():
+    cache=QueryCache(); release=threading.Event(); entered=threading.Event()
+    pool=ThreadPoolExecutor(max_workers=1)
+    pool.submit(lambda:(entered.set(),release.wait(2)))
+    assert entered.wait(1)
+    try:
+        queued=cache.submit('queued',lambda:['NEWS:1'],pool)
+        pool.shutdown(wait=False,cancel_futures=True)
+        with pytest.raises(CancelledError): queued.result(.2)
+        assert cache.get('queued',lambda:['NEWS:2'])==['NEWS:2']
+    finally:
+        release.set(); pool.shutdown()
 
 
 def test_cached_documents_do_not_share_request_candidates_and_refresh_after_expiry(monkeypatch):

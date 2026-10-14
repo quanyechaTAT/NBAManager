@@ -101,15 +101,15 @@ class Serving:
         if request.get('cursor'): return self.cursors.next(request)
         hybrid = not suggest and request.get('mode') != 'lexical' and bool(request.get('q'))
         # A single-channel request has nothing to parallelize and must not queue behind recommendation recalls.
-        lexical = self.pool.submit(self.index.lexical, request, 150, False) if hybrid else None
+        lexical = self.index.lexical_future(self.pool, request, 150, False) if hybrid else None
         vector = None
         if hybrid:
             try: vector = self.embedder.encode(request['q'])
             except Exception: log.warning('Query encoder unavailable; using lexical retrieval')
-        semantic = self.pool.submit(self.index.semantic, vector, request, 100, False) if vector else None
+        semantic = self.index.semantic_future(self.pool, vector, request, 100, False) if vector else None
         degraded = request.get('mode') != 'lexical' and not suggest and vector is None
-        lexical_hits = lexical.result() if lexical else self.index.lexical(request, 10 if suggest else 150, suggest)
-        try: semantic_hits = semantic.result() if semantic else []
+        lexical_hits = lexical.result(timeout=.5) if lexical else self.index.lexical(request, 10 if suggest else 150, suggest)
+        try: semantic_hits = semantic.result(timeout=.5) if semantic else []
         except Exception:
             semantic_hits, degraded = [], True
         rows = rrf(lexical_hits, semantic_hits)
@@ -136,19 +136,19 @@ class Serving:
             seeds = self.index.documents(list(followed)[:100])
             profile = {'entities': {entity: 3.0 for doc in seeds for entity in doc.entities},
                        'seeds': [doc.item_key for doc in seeds if doc.kind in ('NEWS', 'POST')][:20]}
-        tasks = {'hot': self.pool.submit(self.index.recall, request, kinds),
-                 'explore': self.pool.submit(self.index.recall, request, kinds, latest=True)}
-        if followed: tasks['followed'] = self.pool.submit(self.index.recall, request, kinds, entities=followed)
+        tasks = {'hot': self.index.recall_future(self.pool, request, kinds),
+                 'explore': self.index.recall_future(self.pool, request, kinds, latest=True)}
+        if followed: tasks['followed'] = self.index.recall_future(self.pool, request, kinds, entities=followed)
         seeds = ([request['itemKey']] if request.get('itemKey') else profile.get('seeds', [])[:3])
         channels = {}
         content_docs = self.index.documents(seeds)
         if content_docs:
             vector = self.index.content_vector(seeds)
             query = {**request, 'types': kinds}
-            if vector: tasks['content'] = self.pool.submit(self.index.semantic, vector, query, 100)
+            if vector: tasks['content'] = self.index.semantic_future(self.pool, vector, query, 100)
             else:
                 entities = set(entity for doc in content_docs for entity in doc.entities)
-                if entities: tasks['content_entities'] = self.pool.submit(self.index.recall, request, kinds, entities=entities)
+                if entities: tasks['content_entities'] = self.index.recall_future(self.pool, request, kinds, entities=entities)
         if personalized and not degraded and seeds:
             try:
                 scores = {}
@@ -158,9 +158,9 @@ class Serving:
                     sorted(scores, key=lambda key: -scores[key])[:100])]
             except redis.RedisError: degraded = True
         for name, future in tasks.items():
-            try: channels[name] = self.candidates(future.result(), semantic=name == 'content')
-            except Exception:
-                log.warning('Recall channel unavailable: %s', name)
+            try: channels[name] = self.candidates(future.result(timeout=.5), semantic=name == 'content')
+            except Exception as error:
+                log.warning('Recall channel unavailable: %s (%s)', name, type(error).__name__)
                 degraded = True
         if 'hot' not in channels and 'explore' not in channels:
             raise RuntimeError('No retrieval channel available')

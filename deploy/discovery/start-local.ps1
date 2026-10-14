@@ -52,12 +52,18 @@ if($Role -in @('bootstrap','java')) {
 } else {
     $python=Join-Path $scriptRoot 'venv312/Scripts/python.exe'
     if(!(Test-Path -LiteralPath $python)) { throw 'Create the Python venv312 environment and install requirements-discovery.txt first.' }
-    if($Role -eq 'recommendations') { $env:DISCOVERY_EMBEDDING_ENABLED='false' }
-    $pythonArgs=if($Role -in @('api','recommendations')) {
-        $apiPort=if($Role -eq 'api'){19001}else{19002}
-        "-m uvicorn discovery_app.api:app --host 127.0.0.1 --port $apiPort --workers $ApiWorkers"
-    } else { '-m discovery_app.worker '+$Role }
-    $process=Start-Process $python -ArgumentList $pythonArgs -WorkingDirectory $scriptRoot -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+    $embeddingEnabled=$env:DISCOVERY_EMBEDDING_ENABLED
+    try {
+        if($Role -eq 'recommendations') { $env:DISCOVERY_EMBEDDING_ENABLED='false' }
+        $pythonArgs=if($Role -in @('api','recommendations')) {
+            $apiPort=if($Role -eq 'api'){19001}else{19002}
+            "-m uvicorn discovery_app.api:app --host 127.0.0.1 --port $apiPort --workers $ApiWorkers"
+        } else { '-m discovery_app.worker '+$Role }
+        $process=Start-Process $python -ArgumentList $pythonArgs -WorkingDirectory $scriptRoot -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+    } finally {
+        # Role-specific settings must not disable an API/embedding role started in the same shell.
+        $env:DISCOVERY_EMBEDDING_ENABLED=$embeddingEnabled
+    }
 }
 $process.Id | Set-Content -LiteralPath (Join-Path $runtimeRoot "$Role.pid")
 Write-Output "$Role started (PID $($process.Id)); logs are in backend/scripts/runtime/discovery."

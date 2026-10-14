@@ -104,6 +104,7 @@ def test_opt_out_does_not_use_saved_interests_following_or_itemcf():
     index.documents.return_value = []
     docs = [Document('NEWS:1', '今天的新闻', published_at=time.time()), Document('POST:2', '球迷讨论', published_at=time.time())]
     index.recall.return_value = [{'_id': doc.item_key, '_source': doc.as_index()} for doc in docs]
+    index.recall_future.side_effect=lambda pool,*args,**kwargs:pool.submit(index.recall,*args,**kwargs)
     service = Serving(db, Cache(), index, embedder, profiles, Settings())
     result = service.recommendations({'userId': 1, 'scene': 'HOME', 'limit': 6, 'personalized': False,
                                       'followed': ['TEAM:2'], 'blocked': ['NEWS:1']})
@@ -140,6 +141,7 @@ def test_home_ranks_only_the_visible_page_and_does_not_allocate_a_cursor():
     db,index=Mock(),Mock(); db.control.return_value={}; index.documents.return_value=[]
     docs=[Document(f'{"NEWS" if n%2 else "POST"}:{n}','内容',published_at=time.time()) for n in range(1,41)]
     index.recall.return_value=[{'_id':doc.item_key,'_source':doc.as_index()} for doc in docs]
+    index.recall_future.side_effect=lambda pool,*args,**kwargs:pool.submit(index.recall,*args,**kwargs)
     service=Serving(db,cache,index,Mock(),Mock(),Settings())
     try:
         response=service.recommendations({'userId':1,'scene':'HOME','limit':6,'personalized':False})

@@ -26,24 +26,39 @@ class QueryCache:
         self.lock=threading.Lock(); self.values=OrderedDict(); self.pending={}
 
     def get(self, key, loader):
+        return self.submit(key,loader).result(timeout=.5)
+
+    def submit(self, key, loader, executor=None):
+        """Schedule only a cache miss; hits and concurrent followers share the same future."""
         with self.lock:
             entry=self.values.get(key)
             if entry and entry[0]>time.monotonic():
                 self.values.move_to_end(key); return entry[1]
             future=self.pending.get(key); owner=future is None
             if owner: future=Future(); self.pending[key]=future
-        if not owner: return future.result(timeout=.5)
-        try:
-            value=loader()
+        if not owner: return future
+        def failed(error):
             with self.lock:
-                self.values[key]=(time.monotonic()+self.ttl,value); self.values.move_to_end(key)
-                while len(self.values)>self.capacity: self.values.popitem(last=False)
-            future.set_result(value)
-            return value
-        except Exception as error:
-            future.set_exception(error); raise
-        finally:
-            with self.lock: self.pending.pop(key,None)
+                self.pending.pop(key,None)
+            future.set_exception(error)
+        def retrieve():
+            try:
+                value=loader()
+                with self.lock:
+                    self.values[key]=(time.monotonic()+self.ttl,future); self.values.move_to_end(key)
+                    while len(self.values)>self.capacity: self.values.popitem(last=False)
+                    self.pending.pop(key,None)
+                future.set_result(value)
+            except Exception as error: failed(error)
+        def completed(job):
+            if job.cancelled():
+                with self.lock: self.pending.pop(key,None)
+                future.cancel()
+        if executor is None: retrieve()
+        else:
+            try: executor.submit(retrieve).add_done_callback(completed)
+            except Exception as error: failed(error)
+        return future
 
 
 class Embedder:
@@ -197,6 +212,9 @@ class Index:
         return filters
 
     def search(self, query: dict, size=100, *, sort=None, documents=False, cache_key=None) -> list[dict]:
+        return self.search_future(None,query,size,sort=sort,documents=documents,cache_key=cache_key).result(timeout=.5)
+
+    def search_future(self, executor, query: dict, size=100, *, sort=None, documents=False, cache_key=None):
         # Source filtering still decodes the entire 1792-dimensional vector for every hit.
         # Retrieval needs IDs; ranking reads only compact doc values, not full stored source JSON.
         body = {'size': min(size, 300), 'query': query, '_source': False, 'track_total_hits': False}
@@ -214,29 +232,38 @@ class Index:
                     # Share only the index document; each request creates its own candidate and features.
                     hit['_document']=Document.from_index(hit['_source'])
             return hits
-        return self.queries.get(key,retrieve)
+        return self.queries.submit(key,retrieve,executor)
 
     def lexical(self, request: dict, size=100, suggest=False):
+        return self.lexical_future(None,request,size,suggest).result(timeout=.5)
+
+    def lexical_future(self, executor, request: dict, size=100, suggest=False):
         q = request.get('q', '').strip()
         must = [] if not q else [{'multi_match': {'query': q, 'type': 'bool_prefix' if suggest else 'best_fields',
                     'fields': ['title^5', 'title_en^4', 'aliases^5'] + ([] if suggest else ['text']), 'operator': 'and'}}]
         query = {'bool': {'filter': self.filters(request), 'must': must}}
-        return self.search(query, size=size, sort=None if q else [{'published_at': 'desc'}, {'item_key': 'asc'}])
+        return self.search_future(executor,query, size=size, sort=None if q else [{'published_at': 'desc'}, {'item_key': 'asc'}])
 
     def semantic(self, vector: list[float], request: dict, size=100, documents=True):
+        return self.semantic_future(None,vector,request,size,documents).result(timeout=.5)
+
+    def semantic_future(self, executor, vector: list[float], request: dict, size=100, documents=True):
         filters=self.filters(request)
         # Tuple hashing handles the dense vector directly; JSON encoding is only needed on a cache miss.
         key=('semantic',tuple(vector),json.dumps(filters,sort_keys=True,separators=(',',':')),size,documents)
-        return self.search({'knn': {'embedding': {'vector': vector, 'k': size,
+        return self.search_future(executor,{'knn': {'embedding': {'vector': vector, 'k': size,
                             'filter': {'bool': {'filter': filters}}}}}, size=size,documents=documents,cache_key=key)
 
     def recall(self, request: dict, kinds: list[str], *, entities=None, latest=False):
+        return self.recall_future(None,request,kinds,entities=entities,latest=latest).result(timeout=.5)
+
+    def recall_future(self, executor, request: dict, kinds: list[str], *, entities=None, latest=False):
         filters = self.filters(request, kinds)
         if entities: filters.append({'terms': {'entities': list(entities)[:100]}})
         sort = [{'published_at': 'desc'}, {'item_key': 'asc'}] if latest else [
             {'favorites': 'desc'}, {'likes': 'desc'}, {'views': 'desc'}, {'published_at': 'desc'}, {'item_key': 'asc'}]
         if not latest: filters.append({'range': {'published_at': {'gte': int(time.time()/60)*60000-30*86400000}}})
-        return self.search({'bool': {'filter': filters}}, size=100, sort=sort,documents=True)
+        return self.search_future(executor,{'bool': {'filter': filters}}, size=100, sort=sort,documents=True)
 
 
 def rrf(*rankings: list[dict]) -> list[dict]:
