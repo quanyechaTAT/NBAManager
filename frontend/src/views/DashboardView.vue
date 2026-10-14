@@ -263,10 +263,12 @@
         </router-link>
       </div>
     </section>
+    <DiscoveryFeed scene="HOME" compact />
   </div>
 </template>
 
 <script setup lang="ts">
+import DiscoveryFeed from '@/components/discovery/DiscoveryFeed.vue'
 import { ref, computed, onMounted } from 'vue'
 import type { Directive } from 'vue'
 import { useRouter } from 'vue-router'

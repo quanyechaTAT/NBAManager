@@ -64,7 +64,7 @@ class PostServiceTopicsTest {
         service = new PostService(postRepository, postLikeRepository, commentRepository,
                 commentLikeRepository, userFavoriteRepository, userBrowseHistoryRepository,
                 notificationService, pollRepository, pollVoteRepository, userAccountRepository,
-                new com.nbamanager.service.support.FakeTransactionManager(), postListCache, viewCountBuffer);
+                new com.nbamanager.service.support.FakeTransactionManager(), postListCache, viewCountBuffer, org.mockito.Mockito.mock(com.nbamanager.discovery.DiscoveryStore.class));
         // 单元测试里没有 Spring 缓存代理：把缓存入口直接接到真实查询实现，
         // 这样筛选/排序/分页逻辑仍然是被真实执行的（缓存语义由 PostListCacheTest 覆盖）。
         lenient().when(postListCache.load(any(), any(), any(), any(Pageable.class)))

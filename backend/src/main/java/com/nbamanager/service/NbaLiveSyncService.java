@@ -60,12 +60,16 @@ public class NbaLiveSyncService {
      */
     @PostConstruct
     public void init() {
+        if (!startupEnabled) return;
         try {
             cleanDuplicateNews();
         } catch (Exception e) {
             log.warn("启动时清理重复新闻失败: {}", e.getMessage());
         }
     }
+
+    @org.springframework.beans.factory.annotation.Value("${app.startup.enabled:true}")
+    private boolean startupEnabled = true;
 
     /**
      * 每6小时清理一次重复新闻
@@ -176,7 +180,7 @@ public class NbaLiveSyncService {
             }
             if (parsed.fetched() == 0) {
                 progress.accept(90, "RETAINING");
-                gameNewsService.cleanupOldNews(100);
+                gameNewsService.cleanupOldNews();
                 return parsed;
             }
 
@@ -680,7 +684,7 @@ public class NbaLiveSyncService {
                 return parsed;
             }
             if (parsed.fetched() == 0) {
-                gameNewsService.cleanupOldNews(100);
+                gameNewsService.cleanupOldNews();
                 return parsed;
             }
 
@@ -740,7 +744,7 @@ public class NbaLiveSyncService {
         }
 
         int backfilled = backfillNbaGameId();
-        gameNewsService.cleanupOldNews(100);
+        gameNewsService.cleanupOldNews();
         return new TodayGamesPersistResult(updated, backfilled);
     }
 

@@ -65,13 +65,13 @@ class ToggleAtomicityTest {
         postService = new PostService(postRepository, postLikeRepository, commentRepository,
                 commentLikeRepository, userFavoriteRepository, null, notificationService,
                 pollRepository, pollVoteRepository, userAccountRepository,
-                new com.nbamanager.service.support.FakeTransactionManager(), postListCache, viewCountBuffer);
+                new com.nbamanager.service.support.FakeTransactionManager(), postListCache, viewCountBuffer, org.mockito.Mockito.mock(com.nbamanager.discovery.DiscoveryStore.class));
         commentService = new CommentService(commentRepository, commentLikeRepository, postRepository,
                 userAccountRepository, notificationService,
                 new com.nbamanager.service.support.FakeTransactionManager());
         var newsListCacheProvider = org.mockito.Mockito.mock(org.springframework.beans.factory.ObjectProvider.class);
         gameNewsService = new GameNewsService(gameNewsRepository, userFavoriteRepository,
-                newsListCacheProvider, null);
+                newsListCacheProvider, null, null, org.mockito.Mockito.mock(com.nbamanager.discovery.DiscoveryStore.class));
     }
 
     // ---------- 帖子点赞 ----------
@@ -162,7 +162,7 @@ class ToggleAtomicityTest {
 
     @Test
     void newsFavoriteDeleteWinsTogglesOffAndDecrementsAtomically() {
-        when(gameNewsRepository.findById(3L)).thenReturn(Optional.of(new GameNews()));
+        when(gameNewsRepository.findForUpdateById(3L)).thenReturn(Optional.of(new GameNews()));
         when(userFavoriteRepository.deleteByUserIdAndTargetTypeAndTargetId(7L, "NEWS", 3L))
                 .thenReturn(1);
 
@@ -174,7 +174,7 @@ class ToggleAtomicityTest {
 
     @Test
     void newsFavoriteInsertWinsTogglesOnAndIncrementsAtomically() {
-        when(gameNewsRepository.findById(3L)).thenReturn(Optional.of(new GameNews()));
+        when(gameNewsRepository.findForUpdateById(3L)).thenReturn(Optional.of(new GameNews()));
         when(userFavoriteRepository.deleteByUserIdAndTargetTypeAndTargetId(7L, "NEWS", 3L))
                 .thenReturn(0);
         when(userFavoriteRepository.insertIgnore(7L, "NEWS", 3L)).thenReturn(1);
@@ -186,7 +186,7 @@ class ToggleAtomicityTest {
 
     @Test
     void concurrentNewsFavoriteInsertLoserGetsConflict() {
-        when(gameNewsRepository.findById(3L)).thenReturn(Optional.of(new GameNews()));
+        when(gameNewsRepository.findForUpdateById(3L)).thenReturn(Optional.of(new GameNews()));
         when(userFavoriteRepository.deleteByUserIdAndTargetTypeAndTargetId(7L, "NEWS", 3L))
                 .thenReturn(0);
         when(userFavoriteRepository.insertIgnore(7L, "NEWS", 3L)).thenReturn(0);

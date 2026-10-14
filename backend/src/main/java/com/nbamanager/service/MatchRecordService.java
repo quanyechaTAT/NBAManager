@@ -18,6 +18,10 @@ public class MatchRecordService {
 
     private final MatchRecordRepository matchRecordRepository;
 
+    public MatchRecordDto getById(Long id) {
+        return matchRecordRepository.findById(id).map(MatchRecordDto::from).orElse(null);
+    }
+
     @Cacheable(value = "matchRecord", key = "@matchCacheGeneration.key(#gameId)", sync = true)
     public MatchRecordDto getByGameId(String gameId) {
         var match = matchRecordRepository.findByNbaGameId(gameId);

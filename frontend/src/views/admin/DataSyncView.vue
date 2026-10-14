@@ -64,6 +64,7 @@
         </button>
       </div>
     </header>
+    <DiscoveryAdmin />
 
     <!-- 加载中指示器 -->
     <div v-if="initialLoading" class="status-banner loading-banner" role="status">
@@ -565,6 +566,7 @@
 </template>
 
 <script setup lang="ts">
+import DiscoveryAdmin from '@/components/discovery/DiscoveryAdmin.vue'
 import { ref, watch, nextTick } from 'vue'
 import {
   useSyncCenter,

@@ -92,7 +92,7 @@ class PostLikeDeadlockTest {
         postService = new PostService(postRepository, postLikeRepository, commentRepository,
                 commentLikeRepository, userFavoriteRepository, userBrowseHistoryRepository,
                 notificationService, pollRepository, pollVoteRepository, userAccountRepository,
-                txManager, postListCache, viewCountBuffer);
+                txManager, postListCache, viewCountBuffer, org.mockito.Mockito.mock(com.nbamanager.discovery.DiscoveryStore.class));
         likeRows.put(POST_ID, new CopyOnWriteArraySet<>());
         likeCounts.put(POST_ID, new AtomicInteger(0));
 

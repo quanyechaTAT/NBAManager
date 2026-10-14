@@ -36,6 +36,7 @@
     </Teleport>
 
     <!-- 导航条 -->
+    <DiscoveryPreferences />
     <nav class="profile-nav" role="tablist">
       <button
         v-for="tab in tabs"
@@ -207,6 +208,7 @@
 </template>
 
 <script setup lang="ts">
+import DiscoveryPreferences from '@/components/discovery/DiscoveryPreferences.vue'
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

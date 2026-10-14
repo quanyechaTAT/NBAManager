@@ -1,85 +1,90 @@
 package com.nbamanager.service;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 import com.nbamanager.domain.GameNews;
+import com.nbamanager.domain.UserFavorite;
+import com.nbamanager.domain.UserBrowseHistory;
 import com.nbamanager.repository.GameNewsRepository;
 import com.nbamanager.repository.UserBrowseHistoryRepository;
-import com.nbamanager.repository.UserFavoriteRepository;
-import com.nbamanager.web.dto.GameNewsRequest;
+import jakarta.persistence.EntityManager;
 import java.time.LocalDateTime;
-import java.util.List;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Pageable;
+import org.hibernate.SessionFactory;
+import org.hibernate.cfg.Configuration;
+import org.junit.jupiter.api.*;
+import org.springframework.data.jpa.repository.support.JpaRepositoryFactory;
+import static org.assertj.core.api.Assertions.assertThat;
 
-@ExtendWith(MockitoExtension.class)
+/** Exercises real selection/deletion queries and protects favorites and game records. */
 class GameNewsRetentionTest {
+    static SessionFactory factory;
+    EntityManager em;
+    GameNewsRepository news;
+    UserBrowseHistoryRepository history;
+    final LocalDateTime now = LocalDateTime.of(2026, 10, 14, 12, 0);
 
-    @Mock private GameNewsRepository newsRepository;
-    @Mock private UserFavoriteRepository favoriteRepository;
-    @Mock private UserBrowseHistoryRepository historyRepository;
-    @Mock private org.springframework.beans.factory.ObjectProvider<NewsListCache> newsListCacheProvider;
+    @BeforeAll static void database() {
+        boolean mysql = "true".equals(System.getenv("DISCOVERY_RETENTION_MYSQL"));
+        factory = new Configuration().addAnnotatedClass(GameNews.class).addAnnotatedClass(UserFavorite.class)
+                .addAnnotatedClass(UserBrowseHistory.class)
+                .setPhysicalNamingStrategy(new org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy())
+                .setProperty("hibernate.connection.driver_class", mysql?"com.mysql.cj.jdbc.Driver":"org.h2.Driver")
+                .setProperty("hibernate.connection.url", mysql?
+                        "jdbc:mysql://127.0.0.1:13306/nba_retention_test?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai":
+                        "jdbc:h2:mem:news_retention;DB_CLOSE_DELAY=-1")
+                .setProperty("hibernate.connection.username", mysql?"root":"sa")
+                .setProperty("hibernate.connection.password", mysql?System.getenv("DISCOVERY_RETENTION_PASSWORD"):"")
+                .setProperty("hibernate.hbm2ddl.auto", "create-drop").buildSessionFactory();
+    }
+    @AfterAll static void closeDatabase() { factory.close(); }
+    @BeforeEach void begin() {
+        em = factory.createEntityManager(); em.getTransaction().begin();
+        var repositories = new JpaRepositoryFactory(em);
+        news = repositories.getRepository(GameNewsRepository.class);
+        history = repositories.getRepository(UserBrowseHistoryRepository.class);
+    }
+    @AfterEach void rollback() { em.getTransaction().rollback(); em.close(); }
 
-    private GameNewsService service;
-
-    @BeforeEach
-    void setUp() {
-        service = new GameNewsService(newsRepository, favoriteRepository, newsListCacheProvider,
-                historyRepository);
+    @Test void ageLimitUsesPublicationTimeAndProtectsFavoritesAndGames() {
+        var old = article("old", 91, "general");
+        var favorite = article("favorite", 200, "trade");
+        var game = article("game", 200, "game");
+        var live = article("live", 200, "general"); live.setStatus("LIVE");
+        var fresh = article("fresh", 2, "general");
+        var f = new UserFavorite(); f.setUserId(1L); f.setTargetType("NEWS"); f.setTargetId(favorite.getId()); em.persist(f);
+        var h = new UserBrowseHistory(); h.setUserId(1L); h.setTargetType("NEWS"); h.setTargetId(old.getId()); em.persist(h);
+        em.flush();
+        assertThat(new NewsRetentionService(news, history, 90, 10_000).cleanupAt(now)).isEqualTo(1);
+        em.clear();
+        assertThat(news.findAll()).extracting(GameNews::getId)
+                .containsExactlyInAnyOrder(favorite.getId(), game.getId(), live.getId(), fresh.getId());
+        assertThat(history.count()).isZero();
+        assertThat(em.createQuery("select count(f) from UserFavorite f", Long.class).getSingleResult()).isEqualTo(1);
     }
 
-    @Test
-    void cleanup_keepsExactlyLimitAcrossAllCategories() {
-        when(newsRepository.count()).thenReturn(105L);
-        when(newsRepository.findOldestIds(any(Pageable.class)))
-                .thenReturn(List.of(1L, 2L, 3L, 4L, 5L));
-
-        int deleted = service.cleanupOldNews(100);
-
-        assertThat(deleted).isEqualTo(5);
-        verify(favoriteRepository).deleteNewsTargetsByIds("NEWS", List.of(1L, 2L, 3L, 4L, 5L));
-        verify(historyRepository).deleteNewsTargetsByIds("NEWS", List.of(1L, 2L, 3L, 4L, 5L));
-        verify(newsRepository).deleteAllByIdInBatch(List.of(1L, 2L, 3L, 4L, 5L));
+    @Test void countLimitAppliesOnlyToUnprotectedOrdinaryNews() {
+        var oldest = article("a", 3, "injury");
+        var middle = article("b", 2, "trade");
+        var newest = article("c", 1, "general");
+        var game = article("game", 4, "summer_game");
+        em.flush();
+        assertThat(new NewsRetentionService(news, history, 90, 2).cleanupAt(now)).isEqualTo(1);
+        em.clear();
+        assertThat(news.findAll()).extracting(GameNews::getId)
+                .containsExactlyInAnyOrder(middle.getId(), newest.getId(), game.getId());
+        assertThat(news.existsById(oldest.getId())).isFalse();
     }
 
-    @Test
-    void cleanup_doesNothingAtLimit() {
-        when(newsRepository.count()).thenReturn(100L);
-
-        assertThat(service.cleanupOldNews(100)).isZero();
-
-        verify(newsRepository, never()).findOldestIds(any(Pageable.class));
-        verify(newsRepository, never()).deleteAllByIdInBatch(any());
+    @Test void exactCutoffAndLegacyMissingPublicationRemainStable() {
+        article("boundary", 90, "general");
+        var legacy = article("legacy", 2, "general"); legacy.setPublishedAt(null); legacy.setCreateTime(now.minusDays(2));
+        em.flush();
+        assertThat(new NewsRetentionService(news, history, 90, 10_000).cleanupAt(now)).isZero();
+        assertThat(news.count()).isEqualTo(2);
     }
 
-    @Test
-    void manualCreate_enforcesSameOneHundredRecordLimit() {
-        when(newsRepository.save(any(GameNews.class))).thenAnswer(invocation -> {
-            GameNews news = invocation.getArgument(0);
-            news.setId(101L);
-            return news;
-        });
-        when(newsRepository.count()).thenReturn(101L);
-        when(newsRepository.findOldestIds(any(Pageable.class))).thenReturn(List.of(1L));
-
-        service.create(request());
-
-        verify(newsRepository).deleteAllByIdInBatch(List.of(1L));
-    }
-
-    private static GameNewsRequest request() {
-        LocalDateTime start = LocalDateTime.of(2026, 7, 20, 12, 0);
-        return new GameNewsRequest(
-                "title", "summary", "content", "湖人", "勇士",
-                null, null, start, start.plusHours(2), "FINISHED",
-                null, "general", "https://example.com/manual", null);
+    private GameNews article(String title, int daysAgo, String category) {
+        var row = new GameNews(); row.setTitle(title); row.setSummary(title); row.setContent(title);
+        row.setHomeTeam(""); row.setAwayTeam(""); row.setGameStartTime(now); row.setGameEndTime(now.plusHours(2));
+        row.setCreateTime(now); row.setPublishedAt(now.minusDays(daysAgo)); row.setCategory(category); row.setStatus("FINISHED");
+        em.persist(row); return row;
     }
 }

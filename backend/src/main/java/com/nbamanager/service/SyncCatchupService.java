@@ -20,6 +20,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 @Service
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        name = "app.startup.enabled", havingValue = "true", matchIfMissing = true)
 @RequiredArgsConstructor
 @Slf4j
 public class SyncCatchupService {

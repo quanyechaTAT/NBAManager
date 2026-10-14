@@ -140,6 +140,13 @@
 
     <profiles>
         <profile>
+            <id>discovery-package</id>
+            <build>
+                <!-- Keep the executable used by the existing local server separate from acceptance builds. -->
+                <finalName>nba-manager-discovery</finalName>
+            </build>
+        </profile>
+        <profile>
             <id>integration-test</id>
             <build>
                 <plugins>

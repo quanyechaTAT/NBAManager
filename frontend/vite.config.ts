@@ -31,12 +31,12 @@ export default defineConfig({
     },
     proxy: {
       '/ws': {
-        target: 'http://localhost:8080',
+        target: process.env.VITE_BACKEND_URL || 'http://localhost:8080',
         ws: true,
         changeOrigin: true,
       },
       '/api': {
-        target: 'http://localhost:8080',
+        target: process.env.VITE_BACKEND_URL || 'http://localhost:8080',
         changeOrigin: true,
         // SSE 流式响应需要禁用缓冲
         configure: (proxy) => {
@@ -60,7 +60,7 @@ export default defineConfig({
         },
       },
       '/uploads': {
-        target: 'http://localhost:8080',
+        target: process.env.VITE_BACKEND_URL || 'http://localhost:8080',
         changeOrigin: true,
       },
     },

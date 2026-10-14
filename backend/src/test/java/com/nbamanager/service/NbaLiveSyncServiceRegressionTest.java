@@ -63,7 +63,7 @@ class NbaLiveSyncServiceRegressionTest {
         assertThat(result.providerSucceeded()).isFalse();
         assertThat(result.errorCode()).isEqualTo("PYTHON_TIMEOUT");
         assertThat(result.error()).contains("超时").contains("900秒");
-        verify(gameNewsService, never()).cleanupOldNews(any(Integer.class));
+        verify(gameNewsService, never()).cleanupOldNews();
     }
 
     @Test
@@ -101,7 +101,7 @@ class NbaLiveSyncServiceRegressionTest {
         assertThat(knownFile.get()).isNotNull();
         assertThat(Files.exists(knownFile.get())).isFalse();
         verify(newsPersistenceService).persist(any(JSONArray.class));
-        verify(gameNewsService, never()).cleanupOldNews(any(Integer.class));
+        verify(gameNewsService, never()).cleanupOldNews();
     }
 
     @Test
@@ -121,7 +121,7 @@ class NbaLiveSyncServiceRegressionTest {
 
         assertThat(result.providerSucceeded()).isFalse();
         verify(newsPersistenceService, never()).persist(any(JSONArray.class));
-        verify(gameNewsService, never()).cleanupOldNews(any(Integer.class));
+        verify(gameNewsService, never()).cleanupOldNews();
     }
 
     @Test
@@ -140,7 +140,7 @@ class NbaLiveSyncServiceRegressionTest {
         SyncExecResult result = service.syncNbaNewsWithResult(99L);
 
         assertThat(result.providerSucceeded()).isTrue();
-        verify(gameNewsService).cleanupOldNews(100);
+        verify(gameNewsService).cleanupOldNews();
     }
 
     @Test
@@ -166,7 +166,7 @@ class NbaLiveSyncServiceRegressionTest {
         SyncExecResult result = service.syncTodayGamesWithResult(99L);
 
         assertThat(result.providerSucceeded()).isTrue();
-        verify(gameNewsService).cleanupOldNews(100);
+        verify(gameNewsService).cleanupOldNews();
     }
 
     @Test

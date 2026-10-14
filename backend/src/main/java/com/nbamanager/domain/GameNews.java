@@ -75,6 +75,12 @@ public class GameNews {
     @Column(nullable = false)
     private LocalDateTime createTime;
 
+    /** Source publication time, independent from a game's start time. */
+    private LocalDateTime publishedAt;
+
+    @Column(length = 24)
+    private String publishedAtSource;
+
     /** 比赛状态：SCHEDULED / LIVE / FINISHED */
     @Column(nullable = false, length = 16)
     private String status = "SCHEDULED";

@@ -9,6 +9,7 @@ import {
   type StoredProfile,
 } from '@/utils/authStorage'
 import { uploadAvatarApi } from '@/api/auth'
+import { resetDiscoveryTelemetry } from '@/utils/discoveryTelemetry'
 
 export function sanitizeAvatarUrl(url?: string | null): string | null {
   if (!url || typeof url !== 'string') return null
@@ -64,6 +65,7 @@ export const useAuthStore = defineStore('auth', () => {
       : (sanitizeAvatarUrl(p.avatarUrl) || getAvatarForUser(p.username))
     const cleanProfile: StoredProfile = { ...p, avatarUrl: cleanAvatar }
     saveToken(jwt)
+    resetDiscoveryTelemetry()
     setProfile(cleanProfile)
     token.value = jwt
     profile.value = cleanProfile
@@ -73,6 +75,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function logout() {
     clearAuthStorage()
+    resetDiscoveryTelemetry()
     token.value = null
     profile.value = null
     avatarUrl.value = null

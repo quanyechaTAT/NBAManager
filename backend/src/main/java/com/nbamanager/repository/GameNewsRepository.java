@@ -18,6 +18,27 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface GameNewsRepository extends JpaRepository<GameNews, Long> {
 
+    String RETENTION_ELIGIBLE = "COALESCE(g.category, 'general') NOT IN ('game', 'summer_game') "
+            + "AND COALESCE(g.status, 'FINISHED') NOT IN ('SCHEDULED', 'LIVE') "
+            + "AND NOT EXISTS (SELECT f.id FROM UserFavorite f WHERE f.targetType = 'NEWS' AND f.targetId = g.id)";
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT g FROM GameNews g WHERE g.id = :id")
+    java.util.Optional<GameNews> findForUpdateById(@Param("id") Long id);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT g FROM GameNews g WHERE " + RETENTION_ELIGIBLE
+            + " AND COALESCE(g.publishedAt, g.createTime) < :cutoff ORDER BY COALESCE(g.publishedAt, g.createTime), g.id")
+    List<GameNews> findExpiredRetentionCandidates(@Param("cutoff") LocalDateTime cutoff, Pageable pageable);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT g FROM GameNews g WHERE " + RETENTION_ELIGIBLE
+            + " ORDER BY COALESCE(g.publishedAt, g.createTime), g.id")
+    List<GameNews> findRetentionCandidates(Pageable pageable);
+
+    @Query("SELECT COUNT(g) FROM GameNews g WHERE " + RETENTION_ELIGIBLE)
+    long countRetentionCandidates();
+
     @Modifying
     @Query("UPDATE GameNews g SET g.favoriteCount = COALESCE(g.favoriteCount, 0) + :delta WHERE g.id = :id")
     int bumpFavoriteCount(@Param("id") Long id, @Param("delta") int delta);

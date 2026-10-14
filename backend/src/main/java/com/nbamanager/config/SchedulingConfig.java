@@ -6,8 +6,13 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 @Configuration
-@EnableScheduling
 public class SchedulingConfig {
+
+    @Configuration
+    @EnableScheduling
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "app.scheduling.enabled", havingValue = "true", matchIfMissing = true)
+    static class Timers {}
 
     /**
      * 同步作业共用有界预算，覆盖手动、定时和登录补偿来源。

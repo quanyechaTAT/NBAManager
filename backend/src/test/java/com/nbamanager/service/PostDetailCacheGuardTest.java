@@ -56,7 +56,7 @@ class PostDetailCacheGuardTest {
         service = new PostService(postRepository, postLikeRepository, commentRepository,
                 commentLikeRepository, userFavoriteRepository, userBrowseHistoryRepository,
                 notificationService, pollRepository, pollVoteRepository, userAccountRepository,
-                transactionManager, postListCache, viewCountBuffer);
+                transactionManager, postListCache, viewCountBuffer, org.mockito.Mockito.mock(com.nbamanager.discovery.DiscoveryStore.class));
         SecurityContextHolder.clearContext();
     }
 

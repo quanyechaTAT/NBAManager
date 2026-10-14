@@ -1,6 +1,10 @@
 import request from '@/utils/request'
 import type { MatchRecord } from '@/api/types'
 
+export function fetchMatchRecordById(id: number, signal?: AbortSignal) {
+  return request.get<MatchRecord>(`/match-records/id/${id}`, { signal })
+}
+
 /** Read one game without downloading the full match archive. */
 export function fetchMatchRecord(gameId: string, signal?: AbortSignal) {
   return request.get<MatchRecord>(`/match-records/game/${encodeURIComponent(gameId)}`, { signal })

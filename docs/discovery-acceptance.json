@@ -1,0 +1,653 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-15T00:29:31.306434+08:00",
+  "status": "PARTIAL_ACCEPTANCE",
+  "scope": "Unified search and recommendations for NBAManager; advertising excluded",
+  "baseline": {
+    "remote": "https://github.com/quanyechaTAT/NBAManager",
+    "commit": "8fbb1277ba26f7c00608671874f9c233f3069bad",
+    "tag": "backup/pre-search-recommendation-2026-10-14",
+    "remoteVerified": true
+  },
+  "implementation": {
+    "branch": "codex/discovery-system",
+    "pushed": false
+  },
+  "hardware": {
+    "cpu": "AMD Ryzen 5 5600H",
+    "physicalCores": 6,
+    "logicalProcessors": 12,
+    "hostMemoryBytes": 17024741376,
+    "dockerLogicalProcessors": 12,
+    "dockerMemoryBytes": 8248766464,
+    "openSearchHeapMiB": 1024,
+    "reference": {
+      "cores": 8,
+      "memoryGiB": 32
+    },
+    "matchesReference": false
+  },
+  "runtime": {
+    "python": "3.12.5",
+    "java": "17.0.1",
+    "mysql": "8.0.41",
+    "redis": "7.4.2",
+    "opensearch": "2.19.2",
+    "kafka": "3.9.1",
+    "debezium": "3.1.2.Final",
+    "dockerEngine": "29.5.3",
+    "hostPythonPackages": {
+      "fastapi": "0.139.0",
+      "uvicorn": "0.51.0",
+      "pydantic": "2.13.4",
+      "opensearch-py": "3.2.0",
+      "redis": "6.4.0",
+      "confluent-kafka": "2.16.0",
+      "pymysql": "1.2.0",
+      "numpy": "2.5.1",
+      "pyarrow": "23.0.1",
+      "lightgbm": "4.7.0",
+      "sentence-transformers": "5.6.0",
+      "torch": "2.13.0"
+    }
+  },
+  "builds": {
+    "frontend": "PASS (existing ECharts chunk size warning)",
+    "java": {
+      "profile": "discovery-package",
+      "path": "backend/target/nba-manager-discovery.jar",
+      "bytes": 70113410,
+      "sha256": "72fa7a687bd99a3ae6e2766a0b4e61f0fe8aee4a5d92117128e742934551c95e"
+    },
+    "pythonImage": "sha256:c12310e3a28f3a6fb15f99658a68848d4a416b9c190f4ac59e9c60d972263ddd",
+    "linuxActualEncoder": {
+      "status": "PASS",
+      "model": "richinfoai/ritrieve_zh_v1",
+      "dimensions": 1792,
+      "weightsReadOnly": true
+    }
+  },
+  "tests": {
+    "java": {
+      "classes": 124,
+      "tests": 659,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 3,
+      "passed": 656,
+      "skippedReason": "Three pre-existing migration/publication integration tests require COURTSIDE_MIGRATION_JDBC_URL"
+    },
+    "retention": {
+      "h2": "PASS",
+      "isolatedMysql": "PASS",
+      "cases": 3
+    },
+    "frontend": {
+      "initialFullSuiteFiles": 41,
+      "initialFullSuiteTests": 206,
+      "subsequentNewAccountRaceTest": 1,
+      "subsequentTelemetryAndReadingRegressionTests": 4,
+      "distinctTestsPassed": 207,
+      "typecheck": "PASS",
+      "build": "PASS"
+    },
+    "pythonUnit": {
+      "hostPassed": 23,
+      "linuxContainerPassed": 23,
+      "files": [
+        "test_discovery_learning.py",
+        "test_discovery_serving.py",
+        "test_discovery_query_cache.py"
+      ]
+    },
+    "syncFetcherRegression": {
+      "passed": 10,
+      "mode": "Offline mocked providers"
+    },
+    "realStack": {
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "timestamp": "2026-10-15T00:18:25.823826+08:00",
+      "cases": [
+        "test_migrations_and_all_five_types_with_bilingual_alias_filters_and_real_targets",
+        "test_snapshot_cursor_identity_and_deletion_are_checked_again_before_response",
+        "test_real_request_attribution_idempotency_trusted_favorites_and_profile_updates",
+        "test_dismiss_undo_opt_out_clear_and_cursor_invalidation",
+        "test_direct_python_translation_delete_duplicate_and_stale_vector_guards",
+        "test_training_gate_and_admin_operations_are_real_jobs",
+        "test_rebuild_then_rollback_preserves_concurrent_updates",
+        "test_cleared_history_rejects_delayed_client_events_and_home_is_mixed",
+        "test_real_coengagement_builds_itemcf_without_fabricated_impressions",
+        "test_actual_synthetic_candidate_shadow_rollout_and_rollback"
+      ]
+    },
+    "browser": {
+      "status": "BLOCKED",
+      "origin": "http://127.0.0.1:15173",
+      "userAuthorized": true,
+      "result": "Saved user permission or managed policy still denied the retried access",
+      "visualVerified": false,
+      "browserInteractionVerified": false
+    }
+  },
+  "benchmark": {
+    "generatedAt": "2026-10-15T00:09:29.038529",
+    "documents": 100000,
+    "concurrency": 50,
+    "requestsPerCase": 500,
+    "boundary": "Public Java API including authentication, hydration, request persistence, Python and OpenSearch",
+    "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
+    "python": "3.12.5",
+    "vectorDimensions": 1792,
+    "vectorTemplates": 114,
+    "cases": {
+      "suggest": {
+        "p50Ms": 171.6,
+        "p95Ms": 421.2,
+        "p99Ms": 444.6,
+        "requestsPerSecond": 223.9,
+        "errors": 0,
+        "empty": 0,
+        "degraded": 0,
+        "statusCounts": {
+          "200": 500
+        },
+        "strategies": {
+          "bm25-v1": 500
+        },
+        "p95TargetMs": 150,
+        "p95TargetMet": false
+      },
+      "lexical": {
+        "p50Ms": 189.2,
+        "p95Ms": 257.7,
+        "p99Ms": 296.0,
+        "requestsPerSecond": 249.8,
+        "errors": 0,
+        "empty": 0,
+        "degraded": 0,
+        "statusCounts": {
+          "200": 500
+        },
+        "strategies": {
+          "bm25-v1": 500
+        },
+        "p95TargetMs": 300,
+        "p95TargetMet": true
+      },
+      "hybrid": {
+        "p50Ms": 251.6,
+        "p95Ms": 382.5,
+        "p99Ms": 480.6,
+        "requestsPerSecond": 183.8,
+        "errors": 0,
+        "empty": 0,
+        "degraded": 0,
+        "statusCounts": {
+          "200": 500
+        },
+        "strategies": {
+          "hybrid-rrf-v1": 500
+        },
+        "p95TargetMs": 500,
+        "p95TargetMet": true
+      },
+      "recommendations": {
+        "p50Ms": 431.4,
+        "p95Ms": 669.6,
+        "p99Ms": 713.8,
+        "requestsPerSecond": 103.6,
+        "errors": 0,
+        "empty": 0,
+        "degraded": 0,
+        "statusCounts": {
+          "200": 500
+        },
+        "strategies": {
+          "baseline-v1": 500
+        },
+        "p95TargetMs": 500,
+        "p95TargetMet": false
+      }
+    },
+    "accountCount": 1,
+    "warmupRequestsPerCase": 16,
+    "querySet": [
+      "库里",
+      "勇士",
+      "湖人",
+      "詹姆斯",
+      "凯尔特人",
+      "防守",
+      "进攻",
+      "三分"
+    ],
+    "sourceTimestampTimezone": "Asia/Shanghai"
+  },
+  "quality": {
+    "at": "2026-10-15T00:20:00.346440+08:00",
+    "corpus": "Isolated synthetic fixtures; 19 fixed entity/name/alias queries",
+    "modes": {
+      "lexical": {
+        "queries": [
+          {
+            "query": "库里",
+            "expected": "PLAYER:2",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "Stephen Curry",
+            "expected": "PLAYER:2",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "Curry",
+            "expected": "PLAYER:2",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "萌神",
+            "expected": "PLAYER:2",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "詹姆斯",
+            "expected": "PLAYER:1",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "LeBron James",
+            "expected": "PLAYER:1",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "LBJ",
+            "expected": "PLAYER:1",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "老詹",
+            "expected": "PLAYER:1",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "塔图姆",
+            "expected": "PLAYER:3",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "Jayson Tatum",
+            "expected": "PLAYER:3",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "湖人",
+            "expected": "TEAM:1",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "Lakers",
+            "expected": "TEAM:1",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "LAL",
+            "expected": "TEAM:1",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "勇士",
+            "expected": "TEAM:2",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "Golden State Warriors",
+            "expected": "TEAM:2",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "GSW",
+            "expected": "TEAM:2",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "金州勇士",
+            "expected": "TEAM:2",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "凯尔特人",
+            "expected": "TEAM:3",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          },
+          {
+            "query": "Celtics",
+            "expected": "TEAM:3",
+            "rank": 1,
+            "strategy": "bm25-v1",
+            "degraded": false
+          }
+        ],
+        "mrrAt10": 1.0,
+        "recallAt10": 1.0,
+        "degraded": 0
+      },
+      "hybrid": {
+        "queries": [
+          {
+            "query": "库里",
+            "expected": "PLAYER:2",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "Stephen Curry",
+            "expected": "PLAYER:2",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "Curry",
+            "expected": "PLAYER:2",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "萌神",
+            "expected": "PLAYER:2",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "詹姆斯",
+            "expected": "PLAYER:1",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "LeBron James",
+            "expected": "PLAYER:1",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "LBJ",
+            "expected": "PLAYER:1",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "老詹",
+            "expected": "PLAYER:1",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "塔图姆",
+            "expected": "PLAYER:3",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "Jayson Tatum",
+            "expected": "PLAYER:3",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "湖人",
+            "expected": "TEAM:1",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "Lakers",
+            "expected": "TEAM:1",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "LAL",
+            "expected": "TEAM:1",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "勇士",
+            "expected": "TEAM:2",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "Golden State Warriors",
+            "expected": "TEAM:2",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "GSW",
+            "expected": "TEAM:2",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "金州勇士",
+            "expected": "TEAM:2",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "凯尔特人",
+            "expected": "TEAM:3",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          },
+          {
+            "query": "Celtics",
+            "expected": "TEAM:3",
+            "rank": 1,
+            "strategy": "hybrid-rrf-v1",
+            "degraded": false
+          }
+        ],
+        "mrrAt10": 1.0,
+        "recallAt10": 1.0,
+        "degraded": 0
+      }
+    },
+    "textLag": {
+      "observations": 20,
+      "p95Ms": 2428.7,
+      "valuesMs": [
+        1219.9,
+        1221.5,
+        1223.3,
+        1219.4,
+        1220.0,
+        2428.7,
+        1217.5,
+        1223.8,
+        1227.1,
+        2432.1,
+        1223.3,
+        1225.4,
+        2425.5,
+        1221.8,
+        1233.4,
+        1236.8,
+        1222.3,
+        1220.1,
+        1221.6,
+        1219.9
+      ]
+    },
+    "featureLag": {
+      "observations": 10,
+      "p95Ms": 667.3,
+      "valuesMs": [
+        667.3,
+        640.8,
+        335.9,
+        644.1,
+        359.0,
+        647.1,
+        347.1,
+        652.7,
+        339.6,
+        645.9
+      ]
+    }
+  },
+  "failureRecovery": {
+    "redisDown": [
+      {
+        "path": "/api/discovery/search",
+        "milliseconds": 98.0,
+        "strategy": "bm25-v1",
+        "degraded": false,
+        "items": 20
+      },
+      {
+        "path": "/api/discovery/recommendations",
+        "milliseconds": 624.8,
+        "strategy": "baseline-v1",
+        "degraded": true,
+        "items": 6
+      }
+    ],
+    "openSearchDown": [
+      {
+        "path": "/api/discovery/search",
+        "milliseconds": 735.2,
+        "strategy": "database-fallback-v1",
+        "degraded": true,
+        "items": 20
+      },
+      {
+        "path": "/api/discovery/recommendations",
+        "milliseconds": 583.7,
+        "strategy": "database-fallback-v1",
+        "degraded": true,
+        "items": 6
+      }
+    ],
+    "consumerAndConnectorRestart": "Source update arrived after restarting the consumer and resuming Connect; original fixture title restored",
+    "timingsAre": "Single fault probes, not latency percentiles"
+  },
+  "restoration": {
+    "checkedAt": "2026-10-15T00:21:37.813627+08:00",
+    "benchmarkRowsRemaining": {
+      "game_news": 0,
+      "posts": 0
+    },
+    "activeIndex": [
+      "nba-discovery-initial"
+    ],
+    "benchmarkIndicesRemaining": [],
+    "activeModel": {},
+    "redisPing": true,
+    "connector": "RUNNING",
+    "connectorTasks": [
+      "RUNNING"
+    ],
+    "pythonApiStatus": {
+      "status": "up"
+    }
+  },
+  "diagnosticSmallFixture50Concurrency": {
+    "python-suggest": {
+      "p50Ms": 63.7,
+      "p95Ms": 118.5,
+      "rps": 637.9,
+      "errors": 0,
+      "degraded": 0
+    },
+    "python-recommendations": {
+      "p50Ms": 369.1,
+      "p95Ms": 964.4,
+      "rps": 107.1,
+      "errors": 0,
+      "degraded": 0
+    },
+    "java-suggest": {
+      "p50Ms": 187.6,
+      "p95Ms": 308.4,
+      "rps": 230.3,
+      "errors": 0,
+      "degraded": 0
+    },
+    "java-recommendations": {
+      "p50Ms": 588.2,
+      "p95Ms": 840.5,
+      "rps": 77.3,
+      "errors": 0,
+      "degraded": 13
+    }
+  },
+  "limitations": [
+    "Browser visual and interaction acceptance remains blocked by the tool permission policy.",
+    "Suggest and recommendations did not meet the initial P95 latency targets on this host; performance is not fully accepted.",
+    "Additional small-fixture probes show latency variability and some recommendation degradation; the 2000-request benchmark is one measured run, not a sustained availability guarantee.",
+    "The benchmark uses one test account, eight fixed warmed queries and synthetic documents with copied real fixture vectors. It does not represent 50 distinct user profiles, cold arbitrary queries or production semantic relevance.",
+    "The fixed 19-query relevance set checks entity/name/alias regression only. Production relevance and online recommendation lift remain unproven.",
+    "Text and feature lag were measured independently from query load.",
+    "Synthetic model lifecycle tests do not satisfy the production training gate or justify rollout to real users. Online control was restored to the baseline.",
+    "The host does not match the 8-core/32-GiB reference; no reference-hardware performance claim is made."
+  ]
+}

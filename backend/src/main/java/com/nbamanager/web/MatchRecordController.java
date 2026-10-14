@@ -25,6 +25,14 @@ public class MatchRecordController {
 
     private final MatchRecordService matchRecordService;
 
+    @GetMapping("/id/{id}")
+    public MatchRecordDto record(@PathVariable Long id) {
+        if (id <= 0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "无效的比赛记录 ID");
+        var match = matchRecordService.getById(id);
+        if (match == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "未找到该比赛记录");
+        return match;
+    }
+
     @GetMapping("/game/{gameId}")
     public MatchRecordDto game(@PathVariable String gameId) {
         if (!gameId.matches("[0-9]{1,16}")) {

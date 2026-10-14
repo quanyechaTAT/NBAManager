@@ -9,6 +9,9 @@ import org.springframework.data.repository.query.Param;
 
 public interface PlayerRepository extends JpaRepository<Player, Long>, org.springframework.data.jpa.repository.JpaSpecificationExecutor<Player> {
 
+    @Query("select p from Player p join fetch p.team where p.id in :ids")
+    java.util.List<Player> findDiscoveryByIdIn(@Param("ids") java.util.Collection<Long> ids);
+
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = "team")
     Page<Player> findAll(org.springframework.data.jpa.domain.Specification<Player> specification, Pageable pageable);
 

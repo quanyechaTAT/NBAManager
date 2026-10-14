@@ -22,6 +22,7 @@ public class FavoriteService {
     private final NotificationService notificationService;
     private final com.nbamanager.repository.PostRepository postRepository;
     private final com.nbamanager.repository.UserAccountRepository userAccountRepository;
+    private final com.nbamanager.discovery.DiscoveryStore discoveryStore;
 
     @Transactional(readOnly = true)
     public List<UserFavoriteDto> list(Long userId) {
@@ -43,6 +44,10 @@ public class FavoriteService {
         if (!"TEAM".equals(targetType) && !"PLAYER".equals(targetType) && !"POST".equals(targetType) && !"NEWS".equals(targetType)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "targetType 必须是 TEAM、PLAYER、POST 或 NEWS");
         }
+        if ("NEWS".equals(targetType)) {
+            gameNewsRepository.findForUpdateById(targetId)
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "赛事资讯不存在: " + targetId));
+        }
 
         // 同一 (userId, targetType, targetId) 串行化：DELETE + INSERT 并发交错会死锁
         return com.nbamanager.service.support.KeyedMutex.execute(
@@ -54,6 +59,7 @@ public class FavoriteService {
                         if ("NEWS".equals(targetType)) {
                             updateNewsFavoriteCount(targetId, -1);
                         }
+                        discoveryStore.recordAction(userId, targetType+":"+targetId, "UNFAVORITE");
                         return false;
                     }
 
@@ -69,6 +75,7 @@ public class FavoriteService {
                     if ("POST".equals(targetType)) {
                         notifyPostFavorited(userId, targetId);
                     }
+                    discoveryStore.recordAction(userId, targetType+":"+targetId, "FAVORITE");
                     return true;
                 });
     }

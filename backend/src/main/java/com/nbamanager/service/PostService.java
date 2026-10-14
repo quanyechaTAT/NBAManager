@@ -73,6 +73,7 @@ public class PostService {
     private final PlatformTransactionManager transactionManager;
     private final PostListCache postListCache;
     private final com.nbamanager.service.support.ViewCountBuffer viewCountBuffer;
+    private final com.nbamanager.discovery.DiscoveryStore discoveryStore;
 
     /** 同帖并发切换的最大尝试次数（首次 + 重试）。翻转语义下重试安全。 */
     private static final int TOGGLE_MAX_ATTEMPTS = 3;
@@ -382,6 +383,7 @@ public class PostService {
                         int deleted = postLikeRepository.deleteByPostIdAndUserId(postId, userId);
                         if (deleted > 0) {
                             postRepository.bumpLikeCount(postId, -1);
+                            discoveryStore.recordAction(userId, "POST:"+postId, "UNLIKE");
                             return false;
                         }
 
@@ -392,6 +394,7 @@ public class PostService {
                             String senderName = getSenderName(userId);
                             notificationService.notifyPostAuthor(
                                     post.getUserId(), userId, senderName, post.getTitle(), postId);
+                            discoveryStore.recordAction(userId, "POST:"+postId, "LIKE");
                             return true;
                         }
 

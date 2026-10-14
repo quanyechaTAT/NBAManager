@@ -33,6 +33,8 @@ public class GameNewsService {
     private final UserFavoriteRepository userFavoriteRepository;
     private final org.springframework.beans.factory.ObjectProvider<NewsListCache> newsListCache;
     private final UserBrowseHistoryRepository userBrowseHistoryRepository;
+    private final NewsRetentionService newsRetentionService;
+    private final com.nbamanager.discovery.DiscoveryStore discoveryStore;
 
     /** 资讯列表允许的排序字段（白名单，未知字段返回 400 而非 500）。 */
     private static final Set<String> ALLOWED_SORTS = Set.of(
@@ -105,7 +107,7 @@ public class GameNewsService {
     /** 收藏/取消收藏（原子化：以唯一键为准，计数走原子 UPDATE） */
     @Transactional
     public boolean toggleFavorite(Long userId, Long newsId) {
-        gameNewsRepository.findById(newsId).orElseThrow(() -> notFound(newsId));
+        gameNewsRepository.findForUpdateById(newsId).orElseThrow(() -> notFound(newsId));
         // 资讯收藏与帖子收藏共用同一张 user_favorites 表，按同键串行化避免死锁
         return com.nbamanager.service.support.KeyedMutex.execute(
                 "favorite:" + userId + ":NEWS:" + newsId,
@@ -114,12 +116,14 @@ public class GameNewsService {
                             userId, "NEWS", newsId);
                     if (deleted > 0) {
                         gameNewsRepository.bumpFavoriteCount(newsId, -1);
+                        discoveryStore.recordAction(userId, "NEWS:"+newsId, "UNFAVORITE");
                         return false;
                     }
 
                     int inserted = userFavoriteRepository.insertIgnore(userId, "NEWS", newsId);
                     if (inserted > 0) {
                         gameNewsRepository.bumpFavoriteCount(newsId, +1);
+                        discoveryStore.recordAction(userId, "NEWS:"+newsId, "FAVORITE");
                         return true;
                     }
 
@@ -147,8 +151,12 @@ public class GameNewsService {
         GameNews g = new GameNews();
         apply(g, req);
         g.setCreateTime(LocalDateTime.now());
+        if (!Set.of("game", "summer_game").contains(g.getCategory())) {
+            g.setPublishedAt(g.getCreateTime());
+            g.setPublishedAtSource("INGESTED");
+        }
         GameNews saved = gameNewsRepository.save(g);
-        cleanupOldNews(100);
+        cleanupOldNews();
         return toDto(saved, false);
     }
 
@@ -181,22 +189,11 @@ public class GameNewsService {
         return (int) count;
     }
 
-    /** 所有资讯类型共用一个保留上限，并批量清理关联数据。 */
+    /** Shared retention policy, including protection for favorite and game records. */
     @CacheEvict(value = {"news", "todayGames", "dashboard"}, allEntries = true)
     @Transactional
-    public int cleanupOldNews(int keepCount) {
-        int boundedKeepCount = Math.max(0, keepCount);
-        long excess = gameNewsRepository.count() - boundedKeepCount;
-        if (excess <= 0) return 0;
-
-        int deleteCount = (int) Math.min(excess, Integer.MAX_VALUE);
-        List<Long> ids = gameNewsRepository.findOldestIds(PageRequest.of(0, deleteCount));
-        if (ids.isEmpty()) return 0;
-
-        userFavoriteRepository.deleteNewsTargetsByIds("NEWS", ids);
-        userBrowseHistoryRepository.deleteNewsTargetsByIds("NEWS", ids);
-        gameNewsRepository.deleteAllByIdInBatch(ids);
-        return ids.size();
+    public int cleanupOldNews() {
+        return newsRetentionService.cleanup();
     }
 
     private void apply(GameNews g, GameNewsRequest req) {

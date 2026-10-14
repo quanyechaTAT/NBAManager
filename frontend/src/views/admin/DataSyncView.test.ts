@@ -249,3 +249,4 @@ describe('DataSyncView task lifecycle', () => {
     expect(api.getSyncOverview).toHaveBeenCalledTimes(2)
   })
 })
+vi.mock('@/components/discovery/DiscoveryAdmin.vue', () => ({ default: { template: '<section />' } }))

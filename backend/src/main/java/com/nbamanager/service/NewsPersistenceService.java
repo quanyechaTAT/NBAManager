@@ -28,19 +28,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class NewsPersistenceService {
 
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
-    private static final int MAX_NEWS_COUNT = 100;
 
     private final GameNewsRepository repository;
-    private final UserFavoriteRepository userFavoriteRepository;
-    private final UserBrowseHistoryRepository userBrowseHistoryRepository;
+    private final NewsRetentionService retention;
 
     public NewsPersistenceService(
             GameNewsRepository repository,
-            UserFavoriteRepository userFavoriteRepository,
-            UserBrowseHistoryRepository userBrowseHistoryRepository) {
+            NewsRetentionService retention) {
         this.repository = repository;
-        this.userFavoriteRepository = userFavoriteRepository;
-        this.userBrowseHistoryRepository = userBrowseHistoryRepository;
+        this.retention = retention;
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
@@ -93,7 +89,7 @@ public class NewsPersistenceService {
         if (!toInsert.isEmpty()) {
             repository.saveAll(toInsert);
         }
-        trimToLimit(MAX_NEWS_COUNT);
+        retention.cleanup();
         return new PersistResult(items.size(), toInsert.size(), skipped);
     }
 
@@ -111,22 +107,6 @@ public class NewsPersistenceService {
         return keys;
     }
 
-    private int trimToLimit(int keepCount) {
-        long excess = repository.count() - Math.max(0, keepCount);
-        if (excess <= 0) {
-            return 0;
-        }
-        int deleteCount = (int) Math.min(excess, Integer.MAX_VALUE);
-        List<Long> ids = repository.findOldestIds(PageRequest.of(0, deleteCount));
-        if (ids.isEmpty()) {
-            return 0;
-        }
-        userFavoriteRepository.deleteNewsTargetsByIds("NEWS", ids);
-        userBrowseHistoryRepository.deleteNewsTargetsByIds("NEWS", ids);
-        repository.deleteAllByIdInBatch(ids);
-        return ids.size();
-    }
-
     private GameNews toEntity(JSONObject item, String normalizedUrl) {
         String headline = nonBlank(item.optString("headline", ""),
                 item.optString("headlineEn", "资讯"));
@@ -134,7 +114,8 @@ public class NewsPersistenceService {
         String description = nonBlank(item.optString("description", ""), headline);
         String content = nonBlank(item.optString("content", ""), description);
         String contentEn = nonBlank(item.optString("contentEn", ""), content);
-        LocalDateTime publishedAt = parsePublishedAt(item.optString("published", ""));
+        LocalDateTime sourceTime = parsePublishedAt(item.optString("published", ""));
+        LocalDateTime publishedAt = sourceTime == null ? LocalDateTime.now(SHANGHAI) : sourceTime;
 
         GameNews news = new GameNews();
         news.setTitle(truncate(headline, 120));
@@ -149,6 +130,8 @@ public class NewsPersistenceService {
         news.setGameStartTime(publishedAt);
         news.setGameEndTime(publishedAt.plusHours(2));
         news.setCreateTime(LocalDateTime.now());
+        news.setPublishedAt(publishedAt);
+        news.setPublishedAtSource(sourceTime == null ? "INGESTED" : "SOURCE");
         news.setStatus("FINISHED");
         news.setNbaGameId(nullableTruncated(item.optString("nbaGameId", ""), 16));
         news.setCategory(truncate(nonBlank(item.optString("category", ""), "general"), 20));
@@ -187,7 +170,7 @@ public class NewsPersistenceService {
     }
 
     private static LocalDateTime parsePublishedAt(String value) {
-        if (value == null || value.isBlank()) return LocalDateTime.now();
+        if (value == null || value.isBlank()) return null;
         try {
             return OffsetDateTime.parse(value.replace("Z", "+00:00"))
                     .atZoneSameInstant(SHANGHAI).toLocalDateTime();
@@ -199,7 +182,7 @@ public class NewsPersistenceService {
                     return ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME)
                             .withZoneSameInstant(SHANGHAI).toLocalDateTime();
                 } catch (Exception ignoredFinally) {
-                    return LocalDateTime.now();
+                    return null;
                 }
             }
         }

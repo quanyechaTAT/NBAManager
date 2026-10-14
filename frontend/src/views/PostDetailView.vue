@@ -72,6 +72,7 @@
           </div>
         </div>
 
+        <DiscoveryFeed v-if="!loading" scene="POST_DETAIL" :item-key="`POST:${post.id}`" title="继续逛社区" compact />
         <!-- 评论区 -->
         <div class="comment-section">
           <div class="comment-section-header">
@@ -240,6 +241,8 @@
 </template>
 
 <script setup lang="ts">
+import DiscoveryFeed from '@/components/discovery/DiscoveryFeed.vue'
+import { useDiscoveryReading } from '@/composables/useDiscoveryReading'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -282,6 +285,7 @@ const commentEditContent = ref('')
 const commentEditEmojiBtn = ref<HTMLElement | null>(null)
 
 const postId = computed(() => Number(route.query.id) || 0)
+useDiscoveryReading(() => !loading.value && post.value?.id === postId.value ? `POST:${postId.value}` : null)
 
 useCommentRealtime(
   () => postId.value ? `/topic/comments/post/${postId.value}` : null,

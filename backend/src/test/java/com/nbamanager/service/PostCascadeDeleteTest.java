@@ -55,7 +55,7 @@ class PostCascadeDeleteTest {
         service = new PostService(postRepository, postLikeRepository, commentRepository,
                 commentLikeRepository, userFavoriteRepository, userBrowseHistoryRepository,
                 notificationService, pollRepository, pollVoteRepository, userAccountRepository,
-                new com.nbamanager.service.support.FakeTransactionManager(), postListCache, viewCountBuffer);
+                new com.nbamanager.service.support.FakeTransactionManager(), postListCache, viewCountBuffer, org.mockito.Mockito.mock(com.nbamanager.discovery.DiscoveryStore.class));
     }
 
     @Test

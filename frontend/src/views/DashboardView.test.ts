@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import DashboardView from './DashboardView.vue'
+vi.mock('@/components/discovery/DiscoveryFeed.vue', () => ({ default: { template: '<section />' } }))
 
 const fixtures = vi.hoisted(() => ({
   west: Array.from({ length: 15 }, (_, i) => ({

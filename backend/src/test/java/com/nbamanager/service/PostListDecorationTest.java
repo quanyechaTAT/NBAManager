@@ -69,7 +69,7 @@ class PostListDecorationTest {
         service = new PostService(postRepository, postLikeRepository, commentRepository,
                 commentLikeRepository, userFavoriteRepository, userBrowseHistoryRepository,
                 notificationService, pollRepository, pollVoteRepository, userAccountRepository,
-                new com.nbamanager.service.support.FakeTransactionManager(), postListCache, viewCountBuffer);
+                new com.nbamanager.service.support.FakeTransactionManager(), postListCache, viewCountBuffer, org.mockito.Mockito.mock(com.nbamanager.discovery.DiscoveryStore.class));
         // 共享 stub：hot() 走的是 findByOrderByViewCountDesc，用不到 findAll
         lenient().when(postRepository.findAll(any(Pageable.class)))
                 .thenReturn(pageOf(post(10L, 1L), post(11L, 2L)));

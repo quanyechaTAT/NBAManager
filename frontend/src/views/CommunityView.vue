@@ -29,12 +29,13 @@
     <div class="community-toolbar">
       <el-tabs v-model="activeCategory" class="community-tabs" @tab-change="onCategoryChange">
         <el-tab-pane label="全部" name="ALL" />
+        <el-tab-pane label="为你推荐" name="RECOMMENDED" />
         <el-tab-pane label="讨论" name="DISCUSSION" />
         <el-tab-pane label="新闻" name="NEWS" />
         <el-tab-pane label="辩论" name="DEBATE" />
         <el-tab-pane label="预测" name="PREDICTION" />
       </el-tabs>
-      <div class="toolbar-actions">
+      <div v-show="activeCategory !== 'RECOMMENDED'" class="toolbar-actions">
         <span v-if="activeTopic" class="topic-filter">
           # {{ activeTopic }}
           <button title="清除话题筛选" @click="clearTopic">×</button>
@@ -47,7 +48,8 @@
       </div>
     </div>
 
-    <div class="community-layout">
+    <DiscoveryFeed v-if="activeCategory === 'RECOMMENDED'" scene="COMMUNITY_FEED" />
+    <div v-show="activeCategory !== 'RECOMMENDED'" class="community-layout">
       <main class="community-main" v-loading="loading">
         <article v-for="post in visiblePosts" :key="post.id" class="post-card" tabindex="0" @click="goToPost(post.id)" @keydown.enter="goToPost(post.id)">
           <div class="post-author-block">
@@ -187,6 +189,7 @@
 </template>
 
 <script setup lang="ts">
+import DiscoveryFeed from '@/components/discovery/DiscoveryFeed.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -355,6 +358,7 @@ function formatTime(value?: string) {
 }
 
 async function loadPosts() {
+  if (activeCategory.value === 'RECOMMENDED') return
   loading.value = true
   try {
     const params: { page: number; size: number; category?: string; tag?: string; sort?: string } = { page: page.value - 1, size: 10, sort: sortMap[sortMode.value] }
@@ -371,6 +375,7 @@ async function loadHot() {
 }
 
 async function loadTopics() {
+  if (activeCategory.value === 'RECOMMENDED') return
   try {
     const category = activeCategory.value !== 'ALL' ? activeCategory.value : undefined
     const { data } = await fetchTopics({ category, limit: 8 })

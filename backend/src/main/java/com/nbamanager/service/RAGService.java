@@ -43,10 +43,13 @@ public class RAGService {
     private final java.util.concurrent.atomic.AtomicLong statsCacheAt = new java.util.concurrent.atomic.AtomicLong();
 
     private volatile boolean serverStarted = false;
+    @org.springframework.beans.factory.annotation.Value("${app.startup.enabled:true}")
+    private boolean startupEnabled = true;
 
     /** 启动即后台拉起 RAG 并预热模型：避免首个用户请求承担 30~60s 的冷启动 */
     @jakarta.annotation.PostConstruct
     public void warmupAsync() {
+        if (!startupEnabled) return;
         Thread t = new Thread(() -> {
             try {
                 ensureServerStarted();

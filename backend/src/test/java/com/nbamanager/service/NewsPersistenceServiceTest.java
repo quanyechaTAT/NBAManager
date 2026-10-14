@@ -33,11 +33,13 @@ class NewsPersistenceServiceTest {
     @Mock
     private UserBrowseHistoryRepository historyRepository;
 
+    @Mock private NewsRetentionService retention;
+
     private NewsPersistenceService service;
 
     @BeforeEach
     void setUp() {
-        service = new NewsPersistenceService(repository, favoriteRepository, historyRepository);
+        service = new NewsPersistenceService(repository, retention);
         when(repository.findBySourceUrlIn(anyCollection())).thenReturn(List.of());
         when(repository.findByTitleIn(anyCollection())).thenReturn(List.of());
         when(repository.findByTitleEnIn(anyCollection())).thenReturn(List.of());
@@ -100,15 +102,11 @@ class NewsPersistenceServiceTest {
 
     @Test
     void persist_trimsOldestRowsInsidePersistenceOperation() {
-        when(repository.count()).thenReturn(101L);
-        when(repository.findOldestIds(any(Pageable.class))).thenReturn(List.of(7L));
-
         service.persist(new JSONArray()
                 .put(candidate("Newest", "https://example.com/newest")));
 
-        verify(favoriteRepository).deleteNewsTargetsByIds("NEWS", List.of(7L));
-        verify(historyRepository).deleteNewsTargetsByIds("NEWS", List.of(7L));
-        verify(repository).deleteAllByIdInBatch(List.of(7L));
+        verify(retention).cleanup();
+        org.mockito.Mockito.verifyNoInteractions(favoriteRepository, historyRepository);
     }
 
     private static org.json.JSONObject candidate(String headline, String sourceUrl) {

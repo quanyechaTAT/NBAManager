@@ -599,6 +599,7 @@
 </template>
 
 <script setup lang="ts">
+import { fetchMatchRecordById } from '@/api/matchRecord'
 import { ref, computed, defineAsyncComponent, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1212,10 +1213,12 @@ function applyIdentityToComment(c: Comment): Comment {
 }
 
 async function loadMatchRecordFallback() {
-  if (!gameId.value) return
+  const recordId = Number(route.query.recordId)
+  if (!gameId.value && !recordId) return
   try {
     const requestedGameId = gameId.value
-    const { data } = await fetchMatchRecord(requestedGameId, pageRequests.signal)
+    const { data } = requestedGameId ? await fetchMatchRecord(requestedGameId, pageRequests.signal)
+      : await fetchMatchRecordById(recordId, pageRequests.signal)
     if (!pageRequests.signal.aborted && gameId.value === requestedGameId) matchRecordFallback.value = data
   } catch {
     // ignore

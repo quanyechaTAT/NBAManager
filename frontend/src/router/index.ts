@@ -108,6 +108,7 @@ const router = createRouter({
           component: () => import('@/views/SmartSearchView.vue'),
           meta: { title: 'AI 助手' },
         },
+        { path: 'search', name: 'search', component: () => import('@/views/SearchView.vue'), meta: { title: '全站搜索' } },
         {
           path: 'profile',
           name: 'profile',

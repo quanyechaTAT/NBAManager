@@ -66,7 +66,12 @@
       <p v-else class="today-inline">今日暂无赛事，赛程同步后在此展示今日比赛</p>
     </section>
 
-    <section class="news-layout">
+    <el-tabs v-model="discoveryTab" aria-label="资讯浏览方式">
+      <el-tab-pane label="最新资讯" name="latest" />
+      <el-tab-pane label="为你推荐" name="recommended" />
+    </el-tabs>
+    <DiscoveryFeed v-if="discoveryTab === 'recommended'" scene="NEWS_FEED" />
+    <section v-show="discoveryTab === 'latest'" class="news-layout">
       <main class="feed-panel">
         <div class="feed-header">
           <div>
@@ -161,6 +166,7 @@
             <el-button type="info" plain size="small" disabled>比赛数据（暂无）</el-button>
           </el-tooltip>
         </div>
+        <DiscoveryFeed v-if="dialogVisible" :key="current.id" scene="NEWS_DETAIL" :item-key="`NEWS:${current.id}`" title="接着读" compact />
       </template>
     </el-dialog>
 
@@ -246,7 +252,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import DiscoveryFeed from '@/components/discovery/DiscoveryFeed.vue'
+import { useDiscoveryReading } from '@/composables/useDiscoveryReading'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { fetchNews, fetchNewsDetail, fetchTodayNews, createNews, updateNews, toggleNewsFavorite, type GameNewsPayload } from '@/api/news'
@@ -273,6 +281,8 @@ const todayNews = ref<GameNews[]>([])
 const todayLoading = ref(false)
 const dialogVisible = ref(false)
 const current = ref<GameNews | null>(null)
+const discoveryTab = ref('latest')
+useDiscoveryReading(() => dialogVisible.value && current.value ? `NEWS:${current.value.id}` : null)
 const failedThumbs = ref<Record<string, boolean>>({})
 const newsUrl = computed(() => `${window.location.origin}/news?newsId=${current.value?.id || ''}`)
 
@@ -678,28 +688,25 @@ async function handleDataRefresh(signal: DataRefreshSignal) {
   }
 }
 
+let detailRequest = 0
+async function openNewsFromRoute() {
+  const id = Number(route.query.newsId)
+  const sequence = ++detailRequest
+  if (!Number.isSafeInteger(id) || id <= 0) return
+  try {
+    const { data } = await fetchNewsDetail(id)
+    if (sequence !== detailRequest || refreshDisposed) return
+    current.value = data
+    dialogVisible.value = true
+    if (auth.token) void recordBrowse('NEWS', id).catch(() => {})
+  } catch { if (sequence === detailRequest) ElMessage.info('该资讯不存在或已被删除') }
+}
+watch(() => route.query.newsId, () => { void openNewsFromRoute() })
+
 onMounted(async () => {
   unsubscribeDataRefresh = subscribeDataRefresh(handleDataRefresh)
   await Promise.all([loadToday(), load()])
-  // 如果 URL 中有 newsId 参数，自动打开对应的资讯详情
-  const newsId = route.query.newsId
-  if (newsId) {
-    const id = Number(newsId)
-    const found = list.value.find(n => n.id === id) || todayNews.value.find(n => n.id === id)
-    if (found) {
-      showDetail(found)
-    } else {
-      // 如果列表中没有，直接从 API 获取（不重复调用 showDetail 避免浏览量+2）
-      try {
-        const { data } = await fetchNewsDetail(id)
-        current.value = data
-        dialogVisible.value = true
-        if (auth.token) {
-          recordBrowse('NEWS', id).catch(() => {})
-        }
-      } catch { /* ignore */ }
-    }
-  }
+  await openNewsFromRoute()
 })
 
 onUnmounted(() => {

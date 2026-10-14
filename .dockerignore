@@ -1,0 +1,17 @@
+.git
+.env*
+**/.env*
+**/node_modules
+**/target
+**/venv*
+**/.venv
+**/runtime
+**/__pycache__
+**/uploads
+**/*.log
+**/models
+**/chroma_db
+outputs
+output
+database
+test-evidence
