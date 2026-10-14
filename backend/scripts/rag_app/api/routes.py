@@ -209,14 +209,18 @@ def create_router(engine_provider: Callable[[], RAGEngine]) -> APIRouter:
         clear_first = bool(body.get("clear_first", True))
 
         def _run():
+            current = None
+            usable = False
             try:
                 current = engine()
-                current.retriever._index_status = 'building'
+                usable = current.retriever.store.has_published_index()
+                current.retriever._index_status = 'rebuilding' if usable else 'building'
                 build_all_indexes(current.settings, clear_first=clear_first, store=current.retriever.store)
                 current.retriever._index_status = 'ready'
                 print("[rebuild] index rebuild finished", flush=True)
             except Exception as exc:
-                engine().retriever._index_status = 'failed'
+                if current is not None:
+                    current.retriever._index_status = 'ready' if usable else 'failed'
                 print(f"[rebuild] index rebuild failed: {exc}", file=sys.stderr, flush=True)
             finally:
                 with _rebuild_lock:

@@ -370,7 +370,7 @@ public class SyncCoordinator {
 
             // markRunning 可能因 cancelRequested 直接标记为 CANCELLED
             job = syncJobRepository.findById(jobId).orElse(null);
-            if (job != null && "CANCELLED".equals(job.getStatus())) {
+            if (job == null || !"RUNNING".equals(job.getStatus())) {
                 return;
             }
 

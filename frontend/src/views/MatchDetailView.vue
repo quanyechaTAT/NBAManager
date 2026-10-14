@@ -205,7 +205,7 @@
           </el-card>
         </el-tab-pane>
 
-        <el-tab-pane label="投篮热图" name="shotchart">
+        <el-tab-pane label="投篮热图" name="shotchart" lazy>
           <GameShotChartPanel
             :shots="gameShots"
             :mode="shotChartMode"
@@ -219,7 +219,7 @@
           />
         </el-tab-pane>
 
-        <el-tab-pane label="战术情报与复盘" name="playbyplay">
+        <el-tab-pane label="战术情报与复盘" name="playbyplay" lazy>
           <div v-if="replayLoading" class="loading-state">加载中...</div>
           <ReplayAvailabilityPanel
             :state="replayState"
@@ -263,11 +263,11 @@
           <div v-if="!replayLoading && !replaySummaryOnly && !showReplayCenter" class="empty-inline">暂无可展示的比赛回放事实</div>
         </el-tab-pane>
 
-        <el-tab-pane label="观赛聊天室" name="livechat">
+        <el-tab-pane label="观赛聊天室" name="livechat" lazy>
           <LiveChat :game-id="gameId" :home-team="homeTeamName !== '--' ? homeTeamName : ''" :away-team="awayTeamName !== '--' ? awayTeamName : ''" />
         </el-tab-pane>
 
-        <el-tab-pane label="赛后热评" name="comments">
+        <el-tab-pane label="赛后热评" name="comments" lazy>
           <!-- 战术复盘与赛后热评区 -->
           <div class="comment-section">
             <!-- 评论区顶栏：标题、战术标签与排序切换 -->
@@ -322,8 +322,8 @@
               <div class="comment-composer-heading">
                 <div class="composer-user-preview">
                   <span class="composer-avatar">
-                    <img v-if="auth.avatarUrl" :src="auth.avatarUrl" alt="" @error="onCommentAvatarError" />
-                    <span v-else class="composer-avatar-text">{{ auth.username?.charAt(0)?.toUpperCase() || '我' }}</span>
+                    <img v-if="hasValidComposerAvatar" :src="auth.avatarUrl!" alt="" @error="onComposerAvatarError" />
+                    <span v-else class="composer-avatar-text">{{ formatComposerInitial(auth.username) }}</span>
                   </span>
                   <div class="composer-user-text">
                     <span class="composer-username">{{ auth.username || '登录参与复盘' }}</span>
@@ -389,9 +389,9 @@
                   <div class="comment-body">
                     <!-- 评论头部 -->
                     <div class="comment-meta">
-                      <span class="comment-avatar comment-avatar--lg" :class="{ 'has-img': !!comment.avatarUrl }">
-                        <span class="comment-avatar-fallback">{{ comment.username?.charAt(0)?.toUpperCase() }}</span>
-                        <img v-if="comment.avatarUrl" :src="comment.avatarUrl" alt="" @error="onCommentAvatarError" />
+                      <span class="comment-avatar comment-avatar--lg" :class="{ 'has-img': hasCommentAvatar(comment) }">
+                        <img v-if="hasCommentAvatar(comment)" :src="comment.avatarUrl!" alt="" @error="onCommentAvatarError(comment.id)" />
+                        <span v-else class="comment-avatar-fallback">{{ formatUserInitial(comment.username) }}</span>
                       </span>
                       <div class="comment-author-info">
                         <div class="comment-author-line">
@@ -467,9 +467,9 @@
                       <div class="reply-node-curve" aria-hidden="true"></div>
                       <div class="reply-node-body">
                         <div class="comment-meta">
-                          <span class="comment-avatar comment-avatar--sm" :class="{ 'has-img': !!reply.avatarUrl }">
-                            <span class="comment-avatar-fallback">{{ reply.username?.charAt(0)?.toUpperCase() }}</span>
-                            <img v-if="reply.avatarUrl" :src="reply.avatarUrl" alt="" @error="onCommentAvatarError" />
+                          <span class="comment-avatar comment-avatar--sm" :class="{ 'has-img': hasReplyAvatar(reply) }">
+                            <img v-if="hasReplyAvatar(reply)" :src="reply.avatarUrl!" alt="" @error="onReplyAvatarError(reply.id)" />
+                            <span v-else class="comment-avatar-fallback">{{ formatUserInitial(reply.username) }}</span>
                           </span>
                           <div class="comment-author-info">
                             <div class="comment-author-line">
@@ -599,19 +599,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, defineAsyncComponent, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fetchBoxScore, fetchQuarterScores } from '@/api/matchDetail'
-import { fetchMatchRecords } from '@/api/matchRecord'
+import { fetchMatchRecord } from '@/api/matchRecord'
 import { getGameShotChart } from '@/api/shotChart'
 import { fetchGameComments, createComment, deleteComment, updateComment, toggleCommentLike } from '@/api/community'
 import EmojiPicker from '@/components/EmojiPicker.vue'
 import { useEmojiPicker } from '@/composables/useEmojiPicker'
 import { useCommentRealtime } from '@/composables/useCommentRealtime'
-import GameShotChartPanel from '@/components/shot-chart/GameShotChartPanel.vue'
-import LiveChat from '@/components/LiveChat.vue'
-import GameIntelligenceCenter from '@/components/game-intelligence/GameIntelligenceCenter.vue'
+const GameShotChartPanel = defineAsyncComponent(() => import('@/components/shot-chart/GameShotChartPanel.vue'))
+const LiveChat = defineAsyncComponent(() => import('@/components/LiveChat.vue'))
+const GameIntelligenceCenter = defineAsyncComponent(() => import('@/components/game-intelligence/GameIntelligenceCenter.vue'))
 import ReplayAvailabilityPanel from '@/components/game-intelligence/ReplayAvailabilityPanel.vue'
 import { useGameReplay } from '@/composables/useGameReplay'
 import type { BoxScore, BoxScorePlayer, MatchRecord, QuarterScore, TimelineEvent, MomentumSnapshot, Highlight, TurningPoint, ShotData } from '@/api/types'
@@ -626,6 +626,15 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const identityStore = useIdentityStore()
+const pageRequests = new AbortController()
+const LIVE_REFRESH_INTERVAL_MS = 10_000
+let liveRefreshTimer: ReturnType<typeof setTimeout> | null = null
+let matchRefreshInFlight = false
+onUnmounted(() => {
+  pageRequests.abort()
+  stopLiveRefresh()
+  document.removeEventListener('visibilitychange', handleMatchVisibilityChange)
+})
 
 const matchRecordFallback = ref<MatchRecord | null>(null)
 const gameId = computed(() => (route.query.gameId as string) || '')
@@ -759,7 +768,7 @@ const canEditComment = (comment: Comment) =>
 
 
 useCommentRealtime(
-  () => gameId.value ? `/topic/comments/game/${gameId.value}` : null,
+  () => activeTab.value === 'comments' && gameId.value ? `/topic/comments/game/${gameId.value}` : null,
   () => void loadComments(),
 )
 
@@ -892,14 +901,16 @@ async function loadBoxScore() {
   boxscoreLoading.value = true
   loading.value = true
   try {
-    const { data } = await fetchBoxScore(gameId.value)
+    const requestedGameId = gameId.value
+    const { data } = await fetchBoxScore(requestedGameId, pageRequests.signal)
+    if (pageRequests.signal.aborted || gameId.value !== requestedGameId) return
     boxScore.value = data
-    if (data.quarterScores?.length) {
+    if (data.quarterScores?.length && !quarterScores.value.length) {
       quarterScores.value = data.quarterScores
       quarterFallbackAttempted.value = false
     }
   } catch {
-    ElMessage.error('加载比赛数据失败')
+    if (!pageRequests.signal.aborted) ElMessage.error('加载比赛数据失败')
   } finally {
     boxscoreLoading.value = false
     loading.value = false
@@ -997,20 +1008,22 @@ async function loadGameShotChart(gameIdStr: string) {
   }
 }
 
-async function loadQuarterScores() {
+async function loadQuarterScores(force = false) {
   if (!gameId.value) return
   // 如果boxScore已经加载了quarterScores，跳过单独的API调用
-  if (quarterScores.value.length > 0) {
+  if (!force && quarterScores.value.length > 0) {
     quarterFallbackAttempted.value = false
     return
   }
   quarterLoading.value = true
   try {
-    const { data } = await fetchQuarterScores(gameId.value)
+    const requestedGameId = gameId.value
+    const { data } = await fetchQuarterScores(requestedGameId, pageRequests.signal)
+    if (pageRequests.signal.aborted || gameId.value !== requestedGameId) return
     if (data && data.length > 0) {
       quarterScores.value = data
       quarterFallbackAttempted.value = false
-    } else {
+    } else if (!quarterScores.value.length) {
       quarterFallbackAttempted.value = true
       if (status.value !== 'SCHEDULED') {
         if (timelineEvents.value.length > 0) {
@@ -1019,12 +1032,13 @@ async function loadQuarterScores() {
             quarterScores.value = derived
             quarterFallbackAttempted.value = false
           }
-        } else {
+        } else if (!force) {
           void replay.load()
         }
       }
     }
   } catch {
+    if (pageRequests.signal.aborted || quarterScores.value.length) return
     quarterFallbackAttempted.value = true
     if (status.value !== 'SCHEDULED') {
       if (timelineEvents.value.length > 0) {
@@ -1033,7 +1047,7 @@ async function loadQuarterScores() {
           quarterScores.value = derived
           quarterFallbackAttempted.value = false
         }
-      } else {
+      } else if (!force) {
         void replay.load()
       }
     }
@@ -1136,9 +1150,56 @@ watch(() => identityStore.revision, () => {
   comments.value = comments.value.map(c => applyIdentityToComment(c))
 })
 
-function onCommentAvatarError(e: Event) {
-  const img = e.target as HTMLImageElement
-  img.style.display = 'none'
+const composerAvatarError = ref(false)
+watch(() => auth.avatarUrl, () => {
+  composerAvatarError.value = false
+})
+const hasValidComposerAvatar = computed(() => {
+  const url = auth.avatarUrl
+  if (!url || typeof url !== 'string') return false
+  const trimmed = url.trim()
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false
+  return !composerAvatarError.value
+})
+
+function onComposerAvatarError() {
+  composerAvatarError.value = true
+  auth.clearBrokenAvatar?.()
+}
+
+function formatComposerInitial(username?: string): string {
+  const name = (username || '我').trim()
+  return (name.charAt(0) || '我').toUpperCase()
+}
+
+function formatUserInitial(username?: string): string {
+  const name = (username || '?').trim()
+  return (name.charAt(0) || '?').toUpperCase()
+}
+
+const failedCommentAvatars = ref<Set<number>>(new Set())
+const failedReplyAvatars = ref<Set<number>>(new Set())
+
+function hasCommentAvatar(c: { id: number; avatarUrl?: string | null }): boolean {
+  if (!c.avatarUrl || typeof c.avatarUrl !== 'string') return false
+  const trimmed = c.avatarUrl.trim()
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false
+  return !failedCommentAvatars.value.has(c.id)
+}
+
+function onCommentAvatarError(commentId: number) {
+  failedCommentAvatars.value = new Set([...failedCommentAvatars.value, commentId])
+}
+
+function hasReplyAvatar(r: { id: number; avatarUrl?: string | null }): boolean {
+  if (!r.avatarUrl || typeof r.avatarUrl !== 'string') return false
+  const trimmed = r.avatarUrl.trim()
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false
+  return !failedReplyAvatars.value.has(r.id)
+}
+
+function onReplyAvatarError(replyId: number) {
+  failedReplyAvatars.value = new Set([...failedReplyAvatars.value, replyId])
 }
 
 function applyIdentityToComment(c: Comment): Comment {
@@ -1153,27 +1214,50 @@ function applyIdentityToComment(c: Comment): Comment {
 async function loadMatchRecordFallback() {
   if (!gameId.value) return
   try {
-    const { data } = await fetchMatchRecords()
-    if (data && data.length > 0) {
-      const target = data.find(m => m.nbaGameId === gameId.value || String(m.id) === gameId.value)
-      if (target) {
-        matchRecordFallback.value = target
-      }
-    }
+    const requestedGameId = gameId.value
+    const { data } = await fetchMatchRecord(requestedGameId, pageRequests.signal)
+    if (!pageRequests.signal.aborted && gameId.value === requestedGameId) matchRecordFallback.value = data
   } catch {
     // ignore
   }
 }
 
-onMounted(async () => {
-  // 先核对状态，避免从旧网址或技术统计中显示未开赛比赛的比分。
-  await Promise.all([
-    loadComments(),
-    loadMatchRecordFallback(),
-  ])
-  if (status.value !== 'SCHEDULED') {
-    await Promise.all([loadBoxScore(), loadQuarterScores()])
+function stopLiveRefresh() {
+  if (liveRefreshTimer) clearTimeout(liveRefreshTimer)
+  liveRefreshTimer = null
+}
+
+function scheduleLiveRefresh() {
+  stopLiveRefresh()
+  if (pageRequests.signal.aborted || status.value !== 'LIVE' || document.visibilityState === 'hidden') return
+  liveRefreshTimer = setTimeout(() => void refreshMatchDetails(true), LIVE_REFRESH_INTERVAL_MS)
+}
+
+function handleMatchVisibilityChange() {
+  stopLiveRefresh()
+  if (document.visibilityState !== 'hidden' && status.value === 'LIVE') void refreshMatchDetails(true)
+}
+
+async function refreshMatchDetails(forceQuarters = false) {
+  if (matchRefreshInFlight || pageRequests.signal.aborted) return
+  matchRefreshInFlight = true
+  try {
+    // 核对状态与总比分，再读取每节比分；进行中比赛每次都刷新已有节次。
+    await loadMatchRecordFallback()
+    if (pageRequests.signal.aborted) return
+    if (status.value !== 'SCHEDULED') {
+      await Promise.all([loadBoxScore(), loadQuarterScores(forceQuarters)])
+    }
+  } finally {
+    matchRefreshInFlight = false
+    scheduleLiveRefresh()
   }
+}
+
+onMounted(async () => {
+  document.addEventListener('visibilitychange', handleMatchVisibilityChange)
+  await refreshMatchDetails()
+  if (pageRequests.signal.aborted) return
   // 如果默认 tab 是 playbyplay，也加载回放数据
   if (activeTab.value === 'playbyplay' && gameId.value) {
     void loadReplayData()
@@ -1843,7 +1927,7 @@ onMounted(async () => {
 
 .comment-composer:focus-within {
   border-color: var(--accent, #0891B2);
-  box-shadow: 0 0 0 2px var(--accent-lighter), 0 6px 24px rgba(0, 0, 0, 0.14);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
 }
 
 .composer-user-preview {
@@ -2143,10 +2227,6 @@ onMounted(async () => {
 
 .comment-avatar.has-img .comment-avatar-fallback {
   display: none;
-}
-
-.comment-avatar img[style*="display: none"] ~ .comment-avatar-fallback {
-  display: flex;
 }
 
 .comment-text {

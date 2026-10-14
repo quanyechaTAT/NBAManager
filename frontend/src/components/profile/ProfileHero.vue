@@ -11,8 +11,8 @@
     <div class="profile-hero__identity">
       <div class="profile-hero__avatar-wrap" @click="$emit('avatar-click')">
         <div class="profile-hero__avatar">
-          <img v-if="avatarUrl" :src="avatarUrl" class="profile-hero__avatar-img" />
-          <span v-else>{{ initial }}</span>
+          <img v-if="hasValidAvatar" :src="avatarUrl!" class="profile-hero__avatar-img" alt="" @error="onAvatarError" />
+          <span v-else class="avatar-fallback">{{ initialLetter }}</span>
         </div>
         <button
           class="profile-hero__camera"
@@ -34,7 +34,7 @@
           <span class="profile-hero__role" :class="{ 'is-admin': isAdmin }">
             {{ isAdmin ? '系统管理员' : '认证球迷' }}
           </span>
-          <span class="profile-hero__label">Courtside 专属主场</span>
+          <span class="profile-hero__label">NBA 数据中心 · 个人主页</span>
         </div>
         <button
           class="profile-hero__upload-btn"
@@ -70,7 +70,9 @@
 </template>
 
 <script setup lang="ts">
-withDefaults(defineProps<{
+import { computed, ref, watch } from 'vue'
+
+const props = withDefaults(defineProps<{
   username: string
   avatarUrl: string | null
   initial: string
@@ -80,11 +82,35 @@ withDefaults(defineProps<{
   uploading: false,
 })
 
-defineEmits<{
+const emit = defineEmits<{
   'avatar-click': []
   'upload-click': []
   'reset-avatar': []
+  'avatar-error': []
 }>()
+
+const avatarError = ref(false)
+watch(() => props.avatarUrl, () => {
+  avatarError.value = false
+})
+
+const hasValidAvatar = computed(() => {
+  const url = props.avatarUrl
+  if (!url || typeof url !== 'string') return false
+  const trimmed = url.trim()
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false
+  return !avatarError.value
+})
+
+const initialLetter = computed(() => {
+  const name = (props.username || props.initial || '?').trim()
+  return (name.charAt(0) || '?').toUpperCase()
+})
+
+function onAvatarError() {
+  avatarError.value = true
+  emit('avatar-error')
+}
 </script>
 
 <style scoped>
@@ -174,6 +200,15 @@ defineEmits<{
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.profile-hero__avatar .avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  user-select: none;
 }
 
 .profile-hero__camera {

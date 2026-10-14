@@ -2,7 +2,7 @@
   <div class="community-page">
     <section class="community-hero">
       <div class="hero-copy">
-        <span class="hero-kicker">COURTSIDE FAN LOUNGE</span>
+        <span class="hero-kicker">NBA ANALYTICS · 球迷数据社区</span>
         <h1>球迷社区</h1>
         <p>探讨球员表现、战术分析、季后赛预测，汇聚专业篮球讨论与球迷交流</p>
         <div class="hero-stats" aria-label="社区数据摘要">
@@ -51,8 +51,10 @@
       <main class="community-main" v-loading="loading">
         <article v-for="post in visiblePosts" :key="post.id" class="post-card" tabindex="0" @click="goToPost(post.id)" @keydown.enter="goToPost(post.id)">
           <div class="post-author-block">
-            <span class="author-avatar" v-if="post.avatarUrl"><img :src="post.avatarUrl" alt="" @error="(e: Event) => { (e.target as HTMLImageElement).style.display='none'; (e.target as HTMLImageElement).nextElementSibling?.setAttribute('style', 'display:grid') }" /><span style="display:none">{{ userInitial(post.username) }}</span></span>
-            <span class="author-avatar" v-else>{{ userInitial(post.username) }}</span>
+            <span class="author-avatar" v-if="hasPostAvatar(post)">
+              <img :src="post.avatarUrl!" alt="" @error="onPostAvatarError(post.id)" />
+            </span>
+            <span class="author-avatar" v-else><span class="avatar-fallback">{{ userInitial(post.username) }}</span></span>
             <div><strong>{{ post.username || '社区用户' }}</strong><span>{{ formatTime(post.createTime) }}</span></div>
           </div>
           <div class="post-content">
@@ -323,7 +325,23 @@ const pageInteractionCount = computed(() => posts.value.reduce((sum, post) => su
 function postTags(post: Post) { return (post.tags || '').split(/[,，#]/).map(tag => tag.trim()).filter(Boolean) }
 function categoryLabel(category: string) { return categoryMap[category] || category }
 function categoryClass(category: string) { return categoryClassMap[category] || '' }
-function userInitial(username?: string) { return (username || '球').trim().slice(0, 1).toUpperCase() }
+const failedPostAvatars = ref<Set<number>>(new Set())
+
+function hasPostAvatar(p: { id: number; avatarUrl?: string | null }): boolean {
+  if (!p.avatarUrl || typeof p.avatarUrl !== 'string') return false
+  const trimmed = p.avatarUrl.trim()
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false
+  return !failedPostAvatars.value.has(p.id)
+}
+
+function onPostAvatarError(postId: number) {
+  failedPostAvatars.value = new Set([...failedPostAvatars.value, postId])
+}
+
+function userInitial(username?: string) {
+  const name = (username || '').trim()
+  return (name.charAt(0) || '?').toUpperCase()
+}
 function excerpt(content: string) { return content.length > 100 ? `${content.slice(0, 100)}...` : content }
 function isHot(post: Post) { return (post.viewCount > 100 || post.likeCount > 20 || post.commentCount > 10) && !post.isTop && !post.isFeatured }
 function compactNumber(value: number) { return new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 }).format(value || 0) }

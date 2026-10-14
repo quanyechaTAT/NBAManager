@@ -16,6 +16,9 @@ public abstract class ModuleSyncWorker {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private org.springframework.cache.CacheManager cacheManager;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MatchCacheGeneration matchCacheGeneration;
+
     private final ThreadLocal<ProgressRange> progressRange = new ThreadLocal<>();
 
     public final SyncResult sync(Long jobId) {
@@ -33,8 +36,9 @@ public abstract class ModuleSyncWorker {
             return doSync(jobId);
         } finally {
             progressRange.remove();
+            if (matchCacheGeneration != null) matchCacheGeneration.advance();
             // Even partial writes or cancellation invalidate read caches. The final/self call cannot use AOP.
-            if (cacheManager != null) for (String name : java.util.List.of("players", "playerList", "playerDetail", "playerCareer", "leagueAverages", "teams", "rankings", "dashboard", "historicalStats", "matchRecords", "matchRecordsByTeam", "headToHead")) {
+            if (cacheManager != null) for (String name : java.util.List.of("players", "playerList", "playerDetail", "playerCareer", "leagueAverages", "teams", "rankings", "dashboard", "historicalStats", "matchRecord", "matchRecords", "matchRecordsByTeam", "headToHead")) {
                 var cache = cacheManager.getCache(name);
                 if (cache != null) try { cache.clear(); } catch (RuntimeException ex) { log.warn("Cache invalidation failed for {}", name, ex); }
             }

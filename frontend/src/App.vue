@@ -1,9 +1,13 @@
 <template>
   <!-- 布局层不做过渡：切页时导航/赛况条保持稳定，页面级过渡见 MainLayout 内层 router-view -->
-  <router-view />
+  <el-config-provider :locale="zhCn">
+    <router-view />
+  </el-config-provider>
 </template>
 
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+</script>
 
 <style>
 html,

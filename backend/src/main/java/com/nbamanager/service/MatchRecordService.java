@@ -18,8 +18,18 @@ public class MatchRecordService {
 
     private final MatchRecordRepository matchRecordRepository;
 
+    @Cacheable(value = "matchRecord", key = "@matchCacheGeneration.key(#gameId)", sync = true)
+    public MatchRecordDto getByGameId(String gameId) {
+        var match = matchRecordRepository.findByNbaGameId(gameId);
+        // Older links can identify a manually recorded game by its database ID.
+        if (match.isEmpty() && gameId.matches("[0-9]{1,16}")) {
+            match = matchRecordRepository.findById(Long.parseLong(gameId));
+        }
+        return match.map(MatchRecordDto::from).orElse(null);
+    }
+
     /** Return the recorded range; callers can apply season and competition filters without truncated samples. */
-    @Cacheable(value = "matchRecordsByTeam", key = "#teamName")
+    @Cacheable(value = "matchRecordsByTeam", key = "@matchCacheGeneration.key(#teamName)", sync = true)
     public List<MatchRecordDto> getByTeam(String teamName) {
         return matchRecordRepository.findByTeamName(teamName).stream()
                 .filter(m -> m.getMatchDate() != null)
@@ -29,7 +39,7 @@ public class MatchRecordService {
     }
 
     /** Completed, verified head-to-head records in the full recorded range. */
-    @Cacheable(value = "headToHead", key = "#team1 + ':' + #team2")
+    @Cacheable(value = "headToHead", key = "@matchCacheGeneration.key(#team1 + ':' + #team2)", sync = true)
     public List<MatchRecordDto> getHeadToHead(String team1, String team2) {
         return matchRecordRepository.findHeadToHead(team1, team2).stream()
                 .filter(m -> isValidMatch(m))
@@ -47,7 +57,7 @@ public class MatchRecordService {
     }
 
     /** 查询所有比赛记录 */
-    @Cacheable(value = "matchRecords", key = "'all'")
+    @Cacheable(value = "matchRecords", key = "@matchCacheGeneration.key('all')", sync = true)
     public List<MatchRecordDto> getAll() {
         return matchRecordRepository.findAllByOrderByMatchDateDesc().stream()
                 .map(MatchRecordDto::from)

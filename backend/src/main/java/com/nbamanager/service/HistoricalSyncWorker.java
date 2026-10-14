@@ -20,9 +20,10 @@ public class HistoricalSyncWorker extends ModuleSyncWorker {
         if (isCancelled(jobId)) return SyncResult.cancelled("HISTORICAL");
         try {
             String season = seasonManagementService.getCurrentSeason();
-            historicalDataSyncService.syncSeasonDataSync(season, jobId);
+            int count = historicalDataSyncService.syncSeasonDataSync(season, jobId);
+            if (isCancelled(jobId)) return SyncResult.cancelled("HISTORICAL");
             updateProgress(jobId, 90);
-            return SyncResult.success("HISTORICAL", 0, 0, 0, 0, LocalDateTime.now(), "nba_api");
+            return SyncResult.success("HISTORICAL", count, 0, count, 0, LocalDateTime.now(), "nba_api");
         } catch (IllegalStateException e) {
             log.warn("历史赛季同步跳过: {}", e.getMessage());
             return SyncResult.partialFailed("HISTORICAL", 0, 0, 0, 0, LocalDateTime.now(), "nba_api",

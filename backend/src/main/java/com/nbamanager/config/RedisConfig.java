@@ -16,6 +16,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
+import org.springframework.data.redis.cache.RedisCacheWriter;
+import org.springframework.data.redis.cache.BatchStrategies;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
@@ -84,12 +86,14 @@ public class RedisConfig implements CachingConfigurer {
 
     @Bean
     public CacheManager cacheManager(RedisConnectionFactory factory,
-                                      GenericJackson2JsonRedisSerializer jacksonRedisSerializer) {
+                                      GenericJackson2JsonRedisSerializer jacksonRedisSerializer,
+                                      @org.springframework.beans.factory.annotation.Value("${app.cache.max-concurrent-loads:128}") int maxLoads,
+                                      @org.springframework.beans.factory.annotation.Value("${app.cache.load-wait-millis:10000}") long waitMillis) {
         RedisCacheConfiguration defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(Duration.ofSeconds(defaultTtlSeconds))
                 .computePrefixWith(name -> (
-                        java.util.Set.of("matchRecords", "matchRecordsByTeam", "headToHead", "boxScore", "quarterScores").contains(name)
-                                ? "match-status-v2::"
+                        java.util.Set.of("matchRecord", "matchRecords", "matchRecordsByTeam", "headToHead", "boxScore", "quarterScores").contains(name)
+                                ? "match-status-v3::"
                                 : java.util.Set.of("players", "playerList", "playerDetail", "playerCareer", "leagueAverages", "teams", "rankings", "dashboard", "shotChart").contains(name)
                                         ? "data-contract-v3::" : "") + name + "::")
                 .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
@@ -111,11 +115,29 @@ public class RedisConfig implements CachingConfigurer {
         RedisCacheConfiguration shotChartConfig = defaultConfig
                 .entryTtl(Duration.ofSeconds(600));
 
-        return RedisCacheManager.builder(factory)
+        RedisCacheConfiguration matchConfig = defaultConfig.entryTtl(new MatchCacheTtl());
+
+        RedisCacheManager redis = RedisCacheManager.builder(RedisCacheWriter.nonLockingRedisCacheWriter(factory, BatchStrategies.scan(256)))
                 .cacheDefaults(defaultConfig)
                 .withCacheConfiguration("playerList", playerListConfig)
                 .withCacheConfiguration("posts", postListConfig)
                 .withCacheConfiguration("shotChart", shotChartConfig)
+                .withCacheConfiguration("matchRecord", matchConfig)
+                .withCacheConfiguration("matchRecords", matchConfig)
+                .withCacheConfiguration("matchRecordsByTeam", matchConfig)
+                .withCacheConfiguration("headToHead", matchConfig)
+                // These DTOs carry no match status, so keep the conservative live lifetime.
+                .withCacheConfiguration("boxScore", defaultConfig.entryTtl(Duration.ofSeconds(5)))
+                .withCacheConfiguration("quarterScores", defaultConfig.entryTtl(Duration.ofSeconds(5)))
+                .withCacheConfiguration("todayGames", defaultConfig.entryTtl(Duration.ofSeconds(5)))
+                .withCacheConfiguration("dashboard", defaultConfig.entryTtl(Duration.ofSeconds(60)))
+                .withCacheConfiguration("rankings", defaultConfig.entryTtl(Duration.ofMinutes(5)))
+                .transactionAware()
                 .build();
+        // The inner manager is not a Spring bean; initialize its named TTL configurations here.
+        redis.afterPropertiesSet();
+        return new CoalescingCacheManager(redis,
+                java.util.Set.of("matchRecord", "matchRecords", "matchRecordsByTeam", "headToHead", "playerList"),
+                Math.min(1024, maxLoads), Duration.ofMillis(Math.min(30000, waitMillis)), errorHandler());
     }
 }

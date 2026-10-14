@@ -147,6 +147,9 @@ app:
     expiration-ms: 86400000
   cache:
     ttl-seconds: 1800
+    # 每个热点 DTO 缓存的同时回源 key 数；同 key 合并，等待有上限。
+    max-concurrent-loads: ${CACHE_MAX_CONCURRENT_LOADS:128}
+    load-wait-millis: ${CACHE_LOAD_WAIT_MILLIS:10000}
     # 球员列表短 TTL（压测报告 §十 10.3 建议 3：无缓存的列表读在高并发下成为排队点）
     player-list-ttl-seconds: ${PLAYER_LIST_TTL_SECONDS:60}
     # 帖子列表短 TTL（同上）：缓存的是"用户无关基座"，likedByMe 由调用方按当前用户覆盖。
@@ -165,6 +168,9 @@ app:
     cleanup-cron: ${CHAT_CLEANUP_CRON:0 0 3 * * ?}
     cleanup-max-batches: ${CHAT_CLEANUP_MAX_BATCHES:500}
   sync:
+    executor-core-size: ${SYNC_EXECUTOR_CORE_SIZE:2}
+    executor-max-size: ${SYNC_EXECUTOR_MAX_SIZE:4}
+    executor-queue-capacity: ${SYNC_EXECUTOR_QUEUE_CAPACITY:16}
     cron:
       full-sync: ${SYNC_CRON_FULL:0 0 3 * * ?}
     zone: ${SYNC_ZONE:Asia/Shanghai}

@@ -31,6 +31,8 @@
     "@vue/test-utils": "2.4.6",
     "happy-dom": "14.12.3",
     "typescript": "~5.4.0",
+    "unplugin-element-plus": "^0.10.0",
+    "unplugin-vue-components": "^0.27.5",
     "vite": "^5.2.8",
     "vitest": "1.6.1",
     "vue-tsc": "2.0.29"

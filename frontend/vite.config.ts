@@ -1,8 +1,20 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
+import ElementPlus from 'unplugin-element-plus/vite'
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    Components({ dirs: [], dts: false, resolvers: [ElementPlusResolver()] }),
+    // Include styles for explicitly imported services such as ElMessage and ElMessageBox.
+    ElementPlus(),
+  ],
+  optimizeDeps: {
+    // Prepare export dependencies before lazy route navigation can trigger a new scan.
+    include: ['xlsx', 'file-saver'],
+  },
   resolve: {
     alias: {
       '@': '/src',
@@ -39,7 +51,7 @@ export default defineConfig({
           proxy.on('proxyRes', (proxyRes, req) => {
             // 对 SSE 响应禁用缓冲
             if (req.url?.includes('/stream')) {
-              proxyRes.headers['cache-control'] = 'no-cache';
+              proxyRes.headers['cache-control'] = proxyRes.headers['cache-control'] || 'no-cache, no-transform';
               proxyRes.headers['x-accel-buffering'] = 'no';
               // 强制刷新
               proxyRes.headers['connection'] = 'keep-alive';
@@ -59,10 +71,14 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'echarts': ['echarts', 'vue-echarts'],
-          'element-plus': ['element-plus'],
-        }
+        manualChunks(id) {
+          // Assign chart internals only. Including vue-echarts also pulls shared Vue
+          // runtime into this chunk and makes the entry preload charts unnecessarily.
+          const normalized = id.replace(/\\/g, '/')
+          if (normalized.includes('/node_modules/echarts/') || normalized.includes('/node_modules/zrender/')) {
+            return 'echarts'
+          }
+        },
       }
     }
   }

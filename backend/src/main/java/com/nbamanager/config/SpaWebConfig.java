@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.resource.PathResourceResolver;
 
@@ -27,6 +28,11 @@ import org.springframework.web.servlet.resource.PathResourceResolver;
  */
 @Configuration
 public class SpaWebConfig implements WebMvcConfigurer {
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(new StaticAssetCacheInterceptor());
+    }
 
     /** 这些前缀下的未匹配路径不应回退到 index.html，而应返回真实状态码。 */
     private static final String[] NON_SPA_PREFIXES = { "api/", "uploads/", "actuator/", "assets/" };

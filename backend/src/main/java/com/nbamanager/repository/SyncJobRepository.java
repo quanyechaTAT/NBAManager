@@ -34,13 +34,25 @@ public interface SyncJobRepository extends JpaRepository<SyncJob, Long> {
             + "ON ranked.id = j.id AND ranked.row_rank = 1", nativeQuery = true)
     List<SyncJob> findLatestSuccessfulPerModule();
 
+    // Select candidates without locking the status index, then lock by primary key.
+    // A range UPDATE deadlocked with workers updating a job already locked by ID.
+    @Query("SELECT j.id FROM SyncJob j WHERE j.status IN ('QUEUED','RUNNING','CANCELLING') "
+            + "AND COALESCE(j.heartbeatAt, j.startedAt, j.createdAt) < :cutoff ORDER BY j.id")
+    List<Long> findStaleJobIds(@Param("cutoff") java.time.LocalDateTime cutoff);
+
+    default int markStaleRunningAsInterrupted(java.time.LocalDateTime cutoff) {
+        int interrupted = 0;
+        for (Long id : findStaleJobIds(cutoff)) interrupted += markStaleJobAsInterrupted(id, cutoff);
+        return interrupted;
+    }
+
     @Modifying
     @Transactional
     @Query("UPDATE SyncJob j SET j.status = 'INTERRUPTED', j.finishedAt = CURRENT_TIMESTAMP, "
-           + "j.errorCode = 'INTERRUPTED', j.errorMessage = 'Task heartbeat expired' "
-           + "WHERE j.status IN ('QUEUED','RUNNING','CANCELLING') "
+           + "j.errorCode = 'INTERRUPTED', j.errorMessage = 'Task heartbeat expired', j.version = j.version + 1 "
+           + "WHERE j.id = :id AND j.status IN ('QUEUED','RUNNING','CANCELLING') "
            + "AND COALESCE(j.heartbeatAt, j.startedAt, j.createdAt) < :cutoff")
-    int markStaleRunningAsInterrupted(@Param("cutoff") java.time.LocalDateTime cutoff);
+    int markStaleJobAsInterrupted(@Param("id") Long id, @Param("cutoff") java.time.LocalDateTime cutoff);
 
     @Query("SELECT j FROM SyncJob j WHERE j.module = :module AND j.status IN ('QUEUED','RUNNING','CANCELLING') ORDER BY j.createdAt DESC")
     Optional<SyncJob> findActiveByModule(@Param("module") String module);

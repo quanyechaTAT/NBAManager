@@ -21,9 +21,16 @@ public class TranslationSyncWorker extends ModuleSyncWorker {
             translationRetryService.retryTranslations(jobId);
             if (isCancelled(jobId)) return SyncResult.cancelled("TRANSLATION");
             updateProgress(jobId, 90);
-            return SyncResult.success("TRANSLATION", 0, 0, 0, 0, LocalDateTime.now(), "deepseek_api");
+            int translated = translationRetryService.getTranslatedCount();
+            return SyncResult.success("TRANSLATION", translated, 0, translated, 0, LocalDateTime.now(), "deepseek_api");
         } catch (Exception e) {
+            if (isCancelled(jobId)) return SyncResult.cancelled("TRANSLATION");
             log.error("翻译重试失败", e);
+            int translated = translationRetryService.getTranslatedCount();
+            if (translated > 0) return SyncResult.partialFailed("TRANSLATION",
+                    translated + translationRetryService.getFailedCount(), 0, translated,
+                    translationRetryService.getFailedCount(), LocalDateTime.now(), "deepseek_api",
+                    "PARTIAL_DATA", e.getMessage());
             return SyncResult.failed("TRANSLATION", "SYNC_ERROR", e.getMessage());
         }
     }

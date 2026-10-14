@@ -10,39 +10,41 @@ export function useCommentRealtime(destination: () => string | null, onUpdate: (
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
   function disconnect() {
-    if (client) {
-      void client.deactivate()
-      client = null
-    }
+    const previous = client
+    client = null
+    if (refreshTimer) clearTimeout(refreshTimer)
+    refreshTimer = null
+    if (previous) void previous.deactivate()
   }
 
   function connect() {
+    disconnect()
     const target = destination()
     if (!target || !auth.token) return
-    disconnect()
 
     const wsUrl = import.meta.env.VITE_WS_URL || window.location.origin
-    client = new Client({
+    const connection = new Client({
       webSocketFactory: () => new SockJS(`${wsUrl}/ws`),
       connectHeaders: { Authorization: `Bearer ${auth.token}` },
       reconnectDelay: 5000,
       onConnect: () => {
-        client?.subscribe(target, () => {
+        if (client !== connection) return
+        connection.subscribe(target, () => {
+          if (client !== connection) return
           if (refreshTimer) clearTimeout(refreshTimer)
-          refreshTimer = setTimeout(onUpdate, 50)
+          refreshTimer = setTimeout(() => {
+            refreshTimer = null
+            if (client === connection) onUpdate()
+          }, 50)
         })
       },
     })
+    client = connection
     client.activate()
   }
 
-  watch(destination, (next, previous) => {
-    if (next !== previous) connect()
-  })
+  watch([destination, () => auth.token], connect)
 
   onMounted(connect)
-  onUnmounted(() => {
-    disconnect()
-    if (refreshTimer) clearTimeout(refreshTimer)
-  })
+  onUnmounted(disconnect)
 }

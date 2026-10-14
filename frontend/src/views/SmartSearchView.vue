@@ -12,7 +12,7 @@
       <div class="sidebar-brand">
         <div class="sidebar-brand-badge">
           <span class="badge-dot"></span>
-          <span>COURTSIDE AI</span>
+          <span>NBA ANALYTICS AI</span>
         </div>
         <div class="sidebar-brand-header">
           <div class="brand-logo-icon">
@@ -329,7 +329,7 @@
               <div class="hero-badges-row">
                 <span class="hero-badge">
                   <span class="spark-dot"></span>
-                  COURTSIDE INTELLIGENCE
+                  NBA ANALYTICS INTELLIGENCE
                 </span>
                 <span class="hero-micro-tag">RAG HYBRID RETRIEVAL</span>
               </div>
@@ -755,12 +755,12 @@
         </div>
 
         <!-- 胶囊工作台 -->
-        <div class="composer-wrap" :class="{ focus: composerFocused, 'has-text': canSend }">
+        <div class="composer-wrap" :class="{ focus: composerFocused, 'has-text': canSend }" @click="focusInput">
           <textarea
             ref="inputEl"
             v-model="question"
             placeholder="询问球员、球队、赛程或战术问题 (例如: 掘金第四节关键时刻攻防表现如何？)..."
-            rows="2"
+            rows="1"
             maxlength="500"
             :disabled="loading"
             aria-label="输入篮球问题或战术分析指令"
@@ -771,11 +771,13 @@
           ></textarea>
           <div class="composer-footer">
             <div class="composer-hints-left">
-              <span class="hint-pill">
+              <span class="hint-pill" title="已集成 NBA 知识库检索与实时赛况增强">
                 <span class="hint-dot"></span>
                 <span>NBA 知识库增强</span>
               </span>
-              <span class="hint-key">Enter 发送 · Ctrl+Enter 换行</span>
+              <span class="hint-key">
+                <kbd class="kbd-shortcut">Enter</kbd> 发送 <span class="hint-sep">·</span> <kbd class="kbd-shortcut">Ctrl+Enter</kbd> 换行
+              </span>
             </div>
             <div class="composer-actions-right">
               <span class="char-count" :class="{ warn: question.length > 450, error: question.length === 500 }">
@@ -783,7 +785,7 @@
               </span>
               <button
                 class="send-btn"
-                :class="{ active: canSend, loading }"
+                :class="{ active: canSend, loading, 'is-stop': loading }"
                 type="button"
                 :disabled="!canSend && !loading"
                 :aria-label="loading ? '停止生成' : '发送问题'"
@@ -791,12 +793,12 @@
                 @click="handleComposerBtnClick"
               >
                 <template v-if="!loading">
-                  <svg viewBox="0 0 24 24" fill="none" width="17" height="17">
-                    <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                  <svg viewBox="0 0 24 24" fill="none" width="16" height="16" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 19V5M5 12l7-7 7 7" />
                   </svg>
                 </template>
                 <template v-else>
-                  <svg class="stop-icon" viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                  <svg class="stop-icon" viewBox="0 0 24 24" fill="currentColor" width="13" height="13">
                     <rect x="4" y="4" width="16" height="16" rx="3" />
                   </svg>
                 </template>
@@ -810,10 +812,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import request from '@/utils/request'
 import { getToken, clearAuthStorage } from '@/utils/authStorage'
+import { createTextBatcher } from '@/utils/textBatcher'
 import RelatedEntityCard from '@/components/domain/RelatedEntityCard.vue'
 import { useMatchFeed } from '@/composables/useMatchFeed'
 import type { RelatedEntity } from '@/api/types'
@@ -856,6 +859,7 @@ const statusText = ref('正在思考...')
 const elapsed = ref(0)
 const copiedMsgIndex = ref<number | null>(null)
 let currentAbort: AbortController | null = null
+let currentTextBatch: ReturnType<typeof createTextBatcher> | null = null
 const activeAssistantIndex = ref<number | null>(null)
 let statusTimer: ReturnType<typeof setTimeout> | null = null
 let elapsedTimer: ReturnType<typeof setInterval> | null = null
@@ -969,9 +973,33 @@ async function copyMessage(text: string, index: number): Promise<void> {
 
 function autoGrow(): void {
   const e = inputEl.value
-  if (e) {
-    e.style.height = 'auto'
-    e.style.height = Math.min(e.scrollHeight, 180) + 'px'
+  if (!e) return
+  e.style.height = 'auto'
+  if (!question.value) {
+    e.style.height = ''
+    return
+  }
+  const nextHeight = Math.min(Math.max(e.scrollHeight, 40), 180)
+  e.style.height = `${nextHeight}px`
+}
+
+watch(question, (val) => {
+  if (!val) {
+    if (inputEl.value) inputEl.value.style.height = ''
+  } else {
+    nextTick(autoGrow)
+  }
+})
+
+function focusInput(e: MouseEvent): void {
+  if (loading.value) return
+  const target = e.target as HTMLElement
+  if (target.closest('button, a')) return
+  if (target === inputEl.value) return
+  if (inputEl.value) {
+    inputEl.value.focus()
+    const len = inputEl.value.value.length
+    inputEl.value.setSelectionRange(len, len)
   }
 }
 
@@ -1000,12 +1028,28 @@ function scrollToBottom(force = false): void {
 }
 
 function handleKeydown(e: KeyboardEvent): void {
-  if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey) {
-    e.preventDefault()
-    if (canSend.value) send()
-  } else if (e.key === 'Enter' && e.ctrlKey) {
-    question.value += '\n'
-    autoGrow()
+  if (e.isComposing || e.keyCode === 229) return
+  if (e.key === 'Enter') {
+    if (!e.ctrlKey && !e.shiftKey && !e.metaKey) {
+      e.preventDefault()
+      if (canSend.value) send()
+    } else if (e.ctrlKey || e.metaKey) {
+      e.preventDefault()
+      const target = (e.target as HTMLTextAreaElement) || inputEl.value
+      if (target) {
+        const start = target.selectionStart ?? question.value.length
+        const end = target.selectionEnd ?? question.value.length
+        const prev = question.value
+        question.value = prev.slice(0, start) + '\n' + prev.slice(end)
+        nextTick(() => {
+          target.selectionStart = target.selectionEnd = start + 1
+          autoGrow()
+        })
+      } else {
+        question.value += '\n'
+        nextTick(autoGrow)
+      }
+    }
   }
 }
 
@@ -1037,6 +1081,9 @@ function clearTimers(): void {
 }
 
 function cancelQuery(): void {
+  currentTextBatch?.flush()
+  currentTextBatch?.dispose()
+  currentTextBatch = null
   const index = activeAssistantIndex.value
   if (index !== null && msgs.value[index]?.role === 'assistant') {
     if (!msgs.value[index].content.trim()) {
@@ -1196,7 +1243,7 @@ async function send(text?: string): Promise<void> {
   question.value = ''
   nextTick(() => {
     if (inputEl.value) {
-      inputEl.value.style.height = 'auto'
+      inputEl.value.style.height = ''
     }
   })
   const ai = msgs.value.length
@@ -1212,6 +1259,12 @@ async function send(text?: string): Promise<void> {
 
   const abortController = new AbortController()
   currentAbort = abortController
+  const textBatch = createTextBatcher(text => {
+    if (currentAbort !== abortController) return
+    msgs.value[ai].content += text
+    scrollToBottom()
+  })
+  currentTextBatch = textBatch
   let idleTimedOut = false
   let timeoutId: ReturnType<typeof setTimeout> | null = null
   const clearIdleTimeout = () => {
@@ -1252,7 +1305,12 @@ async function send(text?: string): Promise<void> {
       }
     }
 
-    if (response.status === 401 || response.status === 403) {
+    if (currentAbort !== abortController) return
+    if (abortController.signal.aborted) {
+      if (idleTimedOut) throw new Error('Stream idle timeout')
+      return
+    }
+    if (response.status === 401) {
       msgs.value[ai].error = '登录已过期，请重新登录'
       msgs.value[ai].content = ''
       loading.value = false
@@ -1265,7 +1323,7 @@ async function send(text?: string): Promise<void> {
       return
     }
     if (!response.ok) {
-      msgs.value[ai].error = `服务异常 (${response.status})`
+      msgs.value[ai].error = response.status === 403 ? '没有权限使用 AI 助手，请联系管理员' : `服务异常 (${response.status})`
       msgs.value[ai].content = ''
       loading.value = false
       currentAbort = null
@@ -1282,6 +1340,11 @@ async function send(text?: string): Promise<void> {
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
+      if (abortController.signal.aborted || currentAbort !== abortController) {
+        await reader.cancel()
+        if (idleTimedOut && currentAbort === abortController) throw new Error('Stream idle timeout')
+        return
+      }
       resetIdleTimeout()
       buffer += decoder.decode(value, { stream: true })
       const lines = buffer.split('\n')
@@ -1300,11 +1363,11 @@ async function send(text?: string): Promise<void> {
               }
               statusText.value = '正在生成回答...'
             } else if (d.type === 'chunk') {
-              msgs.value[ai].content += d.content
-              scrollToBottom()
+              if (typeof d.content === 'string') textBatch.push(d.content)
             } else if (d.type === 'entities') {
               msgs.value[ai].relatedEntities = d.entities || []
             } else if (d.type === 'done') {
+              textBatch.flush()
               receivedDone = true
               msgs.value[ai].responseTime = d.response_time
               msgs.value[ai].followUps = Array.isArray(d.follow_ups)
@@ -1318,7 +1381,9 @@ async function send(text?: string): Promise<void> {
               clearTimers()
               saveConv()
               saveActiveSession()
+              break
             } else if (d.type === 'error') {
+              textBatch.flush()
               msgs.value[ai].error = d.error || '服务暂时不可用'
               msgs.value[ai].followUps = []
               loading.value = false
@@ -1327,10 +1392,18 @@ async function send(text?: string): Promise<void> {
               clearIdleTimeout()
               clearTimers()
               saveActiveSession()
+              break
             }
           } catch { /* ignore */ }
         }
       }
+      if (receivedDone || currentAbort !== abortController) { await reader.cancel(); break }
+    }
+    textBatch.flush()
+    if (currentAbort !== null && currentAbort !== abortController) return
+    if (abortController.signal.aborted) {
+      if (idleTimedOut && currentAbort === abortController) throw new Error('Stream idle timeout')
+      return
     }
     if (loading.value) {
       if (!receivedDone) {
@@ -1344,6 +1417,9 @@ async function send(text?: string): Promise<void> {
       clearTimers()
     }
   } catch (err: any) {
+    if (abortController.signal.aborted && !idleTimedOut) return
+    if (currentAbort !== abortController) return
+    textBatch.flush()
     if (idleTimedOut) {
       msgs.value[ai].error = 'AI 长时间未返回新数据，请稍后重试'
       msgs.value[ai].followUps = []
@@ -1356,6 +1432,10 @@ async function send(text?: string): Promise<void> {
     activeAssistantIndex.value = null
     clearIdleTimeout()
     clearTimers()
+  } finally {
+    clearIdleTimeout()
+    textBatch.dispose()
+    if (currentTextBatch === textBatch) currentTextBatch = null
   }
 }
 

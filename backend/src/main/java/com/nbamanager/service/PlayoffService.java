@@ -23,11 +23,10 @@ public class PlayoffService {
     /** 获取季后赛对阵图 */
     @Transactional(readOnly = true)
     public Map<String, Object> getPlayoffBracket(String season) {
-        if (playoffReferenceData.supports(season)) {
+        List<PlayoffMatchup> matchups = matchupRepository.findBySeasonOrderByRoundAsc(season);
+        if (matchups.isEmpty() && playoffReferenceData.supports(season)) {
             return referenceMatchupsToBracket(season, playoffReferenceData.getMatchups(season));
         }
-
-        List<PlayoffMatchup> matchups = matchupRepository.findBySeasonOrderByRoundAsc(season);
 
         Map<String, Object> result = new HashMap<>();
         result.put("season", season);

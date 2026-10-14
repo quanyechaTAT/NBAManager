@@ -40,15 +40,65 @@ function deferred<T>() {
 }
 let wrapper: ReturnType<typeof mount> | undefined
 beforeEach(() => {
+  vi.restoreAllMocks()
+  vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
   vi.useFakeTimers()
   vi.resetAllMocks()
   vi.mocked(api.getSyncOverview).mockResolvedValue({ data: snapshot() } as any)
   vi.mocked(api.getRecentJobs).mockResolvedValue({ data: emptyPage } as any)
   vi.mocked(api.getJobHistory).mockResolvedValue({ data: emptyPage } as any)
 })
-afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.useRealTimers() })
+afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('DataSyncView task lifecycle', () => {
+  it('pauses polling while hidden and refreshes immediately on return', async () => {
+    wrapper = mount(DataSyncView)
+    await flushPromises()
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(60000)
+    expect(api.getSyncOverview).toHaveBeenCalledTimes(1)
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(api.getSyncOverview).toHaveBeenCalledTimes(2)
+    expect(api.getJobHistory).toHaveBeenCalledTimes(2)
+    wrapper.unmount(); wrapper = undefined
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(60000)
+    expect(api.getSyncOverview).toHaveBeenCalledTimes(2)
+  })
+
+  it('aborts a hidden overview read and ignores its late result after resuming', async () => {
+    const pending = deferred<any>()
+    vi.mocked(api.getSyncOverview).mockReturnValueOnce(pending.promise)
+    wrapper = mount(DataSyncView)
+    const options = vi.mocked(api.getSyncOverview).mock.calls[0][0]!
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(options.signal?.aborted).toBe(true)
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    document.dispatchEvent(new Event('visibilitychange'))
+    pending.resolve({ data: snapshot([job('TEAMS', 'RUNNING', 999)]) })
+    await flushPromises()
+    expect(api.getSyncOverview).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('.global-progress').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('状态刷新失败')
+  })
+
+  it('defers initial reads until a hidden page becomes visible', async () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    wrapper = mount(DataSyncView)
+    await flushPromises()
+    expect(api.getSyncOverview).not.toHaveBeenCalled()
+    expect(api.getJobHistory).not.toHaveBeenCalled()
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(api.getSyncOverview).toHaveBeenCalledTimes(1)
+    expect(api.getJobHistory).toHaveBeenCalledTimes(1)
+  })
+
   it('prevents duplicate full sync submissions while the server is accepting the first one', async () => {
     vi.mocked(api.syncAllModules).mockReturnValue(new Promise(() => {}))
     wrapper = mount(DataSyncView)
@@ -123,6 +173,19 @@ describe('DataSyncView task lifecycle', () => {
     await flushPromises()
     expect(vi.mocked(api.syncModule).mock.calls.map(args => args[0])).toEqual(['TEAMS', 'PLAYERS'])
     expect(api.syncAllModules).not.toHaveBeenCalled()
+  })
+
+  it('does not carry a previous module failure into a successful full-sync step', async () => {
+    const oldFailure = { ...job('TEAMS', 'FAILED', 1), errorMessage: 'old proxy failure' }
+    const state = snapshot([oldFailure])
+    state.activeFullJob = job('FULL_SYNC', 'RUNNING', 90)
+    state.modules[0].activeFullStep = step('TEAMS', 'SUCCESS', 1)
+    vi.mocked(api.getSyncOverview).mockResolvedValue({ data: state } as any)
+    wrapper = mount(DataSyncView)
+    await flushPromises()
+    const modules = (wrapper.vm as unknown as { modules: Array<{ key: string; errorMessage: string }> }).modules
+    expect(modules.find(module => module.key === 'TEAMS')?.errorMessage).toBe('')
+    expect(wrapper.find('.failure-alert').exists()).toBe(false)
   })
 
   it('publishes refresh signals for successful steps when a full sync finishes', async () => {

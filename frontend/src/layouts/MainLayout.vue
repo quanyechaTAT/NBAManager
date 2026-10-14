@@ -3,10 +3,13 @@
     <!-- 顶部导航栏 -->
     <header class="top-nav">
       <div class="top-nav-left">
-        <router-link to="/dashboard" class="brand-link">
+        <router-link to="/dashboard" class="brand-link" aria-label="NBA Manager 赛事数据中心">
           <img src="/images/nba-logo.png" alt="NBA" class="brand-logo" />
-          <span class="brand-text">Courtside</span>
-          <span class="brand-badge">{{ currentSeason }}</span>
+          <div class="brand-title-wrap">
+            <span class="brand-text">NBA Manager</span>
+            <span class="brand-tagline">赛事数据中心</span>
+          </div>
+          <span class="brand-badge font-tabular">{{ currentSeason }}</span>
           <span v-if="hasLiveGame" class="brand-live-tag" title="当前有比赛正在进行">
             <span class="live-indicator-dot"></span>
             <span>LIVE</span>
@@ -49,8 +52,8 @@
         <el-dropdown trigger="click" popper-class="user-dropdown-popper">
           <div class="user-menu" role="button" tabindex="0" :aria-label="`账户菜单：${auth.username}`">
             <div class="user-avatar">
-              <img v-if="userAvatar" :src="userAvatar" />
-              <span v-else>{{ auth.username?.charAt(0)?.toUpperCase() }}</span>
+              <img v-if="hasValidUserAvatar" :src="userAvatar!" alt="" @error="onUserAvatarError" />
+              <span v-else class="avatar-fallback">{{ userInitial }}</span>
             </div>
             <span class="user-name">{{ auth.username }}</span>
           </div>
@@ -159,7 +162,6 @@ let identityClient: Client | null = null
 
 /* -------- 全站赛况条 -------- */
 const { tickerMatches, live, refresh: refreshMatchFeed } = useMatchFeed()
-let tickerTimer: number | undefined
 const hasLiveGame = computed(() => live.value.length > 0)
 
 
@@ -217,19 +219,17 @@ onMounted(() => {
     void auth.syncLegacyAvatar()
     connectIdentity()
     void refreshMatchFeed()
-    tickerTimer = window.setInterval(() => { void refreshMatchFeed() }, 120000)
   }
 })
 onUnmounted(() => {
   compactNavQuery?.removeEventListener('change', onCompactNavChange)
   notificationStore.stopPolling()
   disconnectIdentity()
-  if (tickerTimer) window.clearInterval(tickerTimer)
 })
 
 // 导航项
 const navItems = [
-  { path: '/dashboard', label: '总览', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>' },
+  { path: '/dashboard', label: '赛事总览', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>' },
   { path: '/news', label: '赛事中心', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/></svg>' },
   { path: '/teams', label: '球队榜', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>' },
   { path: '/players', label: '球员', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>' },
@@ -264,10 +264,10 @@ const isMoreActive = computed(() => secondaryNavItems.value.some((item) => isAct
 const moreIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>'
 
 const mobileNavItems = [
-  { path: '/dashboard', label: '总览', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>' },
-  { path: '/news', label: '赛事', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>' },
+  { path: '/dashboard', label: '赛事总览', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>' },
+  { path: '/news', label: '赛事中心', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>' },
   { path: '/players', label: '球员', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>' },
-  { path: '/community', label: '社区', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
+  { path: '/community', label: '球迷社区', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
   { path: '/profile', label: '我的', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' },
 ]
 
@@ -276,7 +276,27 @@ function isActive(path: string) {
   return route.path.startsWith(path)
 }
 
-const userAvatar = computed(() => auth.avatarUrl)
+const userAvatarError = ref(false)
+const userAvatar = computed(() => {
+  const url = auth.avatarUrl
+  if (!url || typeof url !== 'string') return null
+  const trimmed = url.trim()
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return null
+  return trimmed
+})
+watch(userAvatar, () => {
+  userAvatarError.value = false
+})
+const hasValidUserAvatar = computed(() => !!userAvatar.value && !userAvatarError.value)
+const userInitial = computed(() => {
+  const name = (auth.username || '?').trim()
+  return (name.charAt(0) || '?').toUpperCase()
+})
+
+function onUserAvatarError() {
+  userAvatarError.value = true
+  auth.clearBrokenAvatar?.()
+}
 
 function onLogout() {
   auth.logout()
@@ -413,6 +433,7 @@ async function submitUsername() {
   font-size: 18px;
   letter-spacing: -0.4px;
   transition: transform var(--duration-nav, 0.18s) var(--ease-out-quart, ease);
+  flex-shrink: 0;
 }
 
 .brand-link:hover {
@@ -424,14 +445,34 @@ async function submitUsername() {
   height: 32px;
   object-fit: contain;
   filter: drop-shadow(0 2px 8px rgba(34, 211, 238, 0.25));
+  flex-shrink: 0;
+}
+
+.brand-title-wrap {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  gap: 1px;
 }
 
 .brand-text {
   font-family: var(--font-heading);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   background: linear-gradient(120deg, var(--text-primary) 0%, var(--text-primary) 55%, var(--accent) 140%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  white-space: nowrap;
+}
+
+.brand-tagline {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  white-space: nowrap;
 }
 
 .brand-badge {
@@ -445,6 +486,8 @@ async function submitUsername() {
   border: 1px solid rgba(var(--accent-rgb), 0.32);
   box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.18);
   line-height: 1;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .brand-live-tag {
@@ -620,6 +663,15 @@ async function submitUsername() {
   object-fit: cover;
 }
 
+.user-avatar .avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+}
+
 .user-name {
   font-size: 13px;
   font-weight: 600;
@@ -709,6 +761,12 @@ async function submitUsername() {
   }
 }
 
+@media (max-width: 1080px) {
+  .brand-tagline {
+    display: none;
+  }
+}
+
 @media (max-width: 768px) {
   .nav-links {
     display: none;
@@ -734,7 +792,7 @@ async function submitUsername() {
     padding-bottom: calc(var(--mobile-nav-height, 64px) + env(safe-area-inset-bottom, 0px));
   }
 
-  .brand-text {
+  .brand-title-wrap {
     display: none;
   }
 

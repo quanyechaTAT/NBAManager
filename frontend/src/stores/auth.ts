@@ -10,30 +10,65 @@ import {
 } from '@/utils/authStorage'
 import { uploadAvatarApi } from '@/api/auth'
 
-function getAvatarForUser(username?: string): string | null {
-  if (!username) return null
-  return localStorage.getItem(`avatarUrl_${username}`)
+export function sanitizeAvatarUrl(url?: string | null): string | null {
+  if (!url || typeof url !== 'string') return null
+  const trimmed = url.trim()
+  const lower = trimmed.toLowerCase()
+  if (
+    !trimmed ||
+    lower === 'null' ||
+    lower === 'undefined' ||
+    lower === '[object object]' ||
+    lower === 'false' ||
+    lower === 'none' ||
+    lower.endsWith('/null') ||
+    lower.endsWith('/undefined')
+  ) {
+    return null
+  }
+  return trimmed
 }
 
-function setAvatarForUser(username: string, url: string) {
-  localStorage.setItem(`avatarUrl_${username}`, url)
+function getAvatarForUser(username?: string): string | null {
+  if (!username) return null
+  return sanitizeAvatarUrl(localStorage.getItem(`avatarUrl_${username}`))
+}
+
+function setAvatarForUser(username: string, url: string | null) {
+  const sanitized = sanitizeAvatarUrl(url)
+  if (sanitized) {
+    localStorage.setItem(`avatarUrl_${username}`, sanitized)
+  } else {
+    localStorage.removeItem(`avatarUrl_${username}`)
+  }
 }
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(getToken())
   const profile = ref<StoredProfile | null>(getProfile())
-  const avatarUrl = ref<string | null>(getAvatarForUser(profile.value?.username))
+  const initialAvatar = profile.value
+    ? (profile.value.avatarUrl !== undefined
+        ? sanitizeAvatarUrl(profile.value.avatarUrl)
+        : getAvatarForUser(profile.value.username))
+    : null
+  const avatarUrl = ref<string | null>(initialAvatar)
 
   const isAuthenticated = computed(() => !!token.value)
   const isAdmin = computed(() => profile.value?.role === 'ADMIN')
   const username = computed(() => profile.value?.username ?? '')
 
   function login(jwt: string, p: StoredProfile) {
+    // 若后端明确返回了 avatarUrl（含 null），以此为准，杜绝从 localStorage 复活过期脏数据
+    const cleanAvatar = p.avatarUrl !== undefined
+      ? sanitizeAvatarUrl(p.avatarUrl)
+      : (sanitizeAvatarUrl(p.avatarUrl) || getAvatarForUser(p.username))
+    const cleanProfile: StoredProfile = { ...p, avatarUrl: cleanAvatar }
     saveToken(jwt)
-    setProfile(p)
+    setProfile(cleanProfile)
     token.value = jwt
-    profile.value = p
-    avatarUrl.value = p.avatarUrl || getAvatarForUser(p.username)
+    profile.value = cleanProfile
+    avatarUrl.value = cleanAvatar
+    setAvatarForUser(p.username, cleanAvatar)
   }
 
   function logout() {
@@ -45,16 +80,37 @@ export const useAuthStore = defineStore('auth', () => {
 
   function hydrate() {
     token.value = getToken()
-    profile.value = getProfile()
-    avatarUrl.value = profile.value?.avatarUrl || getAvatarForUser(profile.value?.username)
+    const p = getProfile()
+    if (p) {
+      const cleanAvatar = p.avatarUrl !== undefined
+        ? sanitizeAvatarUrl(p.avatarUrl)
+        : getAvatarForUser(p.username)
+      profile.value = { ...p, avatarUrl: cleanAvatar }
+      avatarUrl.value = cleanAvatar
+    } else {
+      profile.value = null
+      avatarUrl.value = null
+    }
   }
 
-  function setAvatar(url: string) {
-    avatarUrl.value = url
+  function setAvatar(url: string | null) {
+    const cleanUrl = sanitizeAvatarUrl(url)
+    avatarUrl.value = cleanUrl
     if (profile.value) {
-      profile.value = { ...profile.value, avatarUrl: url }
+      profile.value = { ...profile.value, avatarUrl: cleanUrl }
       setProfile(profile.value)
-      setAvatarForUser(profile.value.username, url)
+      setAvatarForUser(profile.value.username, cleanUrl)
+    }
+  }
+
+  function clearBrokenAvatar() {
+    avatarUrl.value = null
+    if (profile.value) {
+      profile.value = { ...profile.value, avatarUrl: null }
+      setProfile(profile.value)
+      if (profile.value.username) {
+        setAvatarForUser(profile.value.username, null)
+      }
     }
   }
 
@@ -91,5 +147,5 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { token, profile, avatarUrl, isAuthenticated, isAdmin, username, login, logout, hydrate, setAvatar, syncLegacyAvatar, updateToken, setUsername }
+  return { token, profile, avatarUrl, isAuthenticated, isAdmin, username, login, logout, hydrate, setAvatar, clearBrokenAvatar, syncLegacyAvatar, updateToken, setUsername }
 })

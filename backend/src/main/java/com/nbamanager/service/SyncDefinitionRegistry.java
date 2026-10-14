@@ -51,7 +51,7 @@ public class SyncDefinitionRegistry {
 
         // PLAYOFF: April-June every 2 hours
         definitions.put("PLAYOFF", new SyncDefinition("PLAYOFF", playoffSyncWorker, 7,
-                List.of(SyncSchedulePolicy.cron("0 0 */2 4-6 * ?", ZONE))));
+                List.of(SyncSchedulePolicy.cron("0 0 */2 * 4-6 ?", ZONE))));
 
         // HISTORICAL: daily at 4:00
         definitions.put("HISTORICAL", new SyncDefinition("HISTORICAL", historicalSyncWorker, 8,

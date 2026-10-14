@@ -5,13 +5,9 @@ import com.nbamanager.domain.Player;
 import com.nbamanager.repository.PlayerRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -31,9 +27,6 @@ public class TranslationRetryService {
     private final PythonScriptRunner pythonScriptRunner;
     private final PythonTimeoutProperties pythonTimeoutProperties;
 
-    // 翻译缓存，避免重复调用API
-    private final Map<String, String> translationCache = new ConcurrentHashMap<>();
-
     // 翻译状态跟踪 - 使用AtomicBoolean保证原子性
     private final AtomicBoolean translating = new AtomicBoolean(false);
     private volatile int translatedCount = 0;
@@ -42,17 +35,15 @@ public class TranslationRetryService {
     /**
      * 每小时执行一次翻译重试（在整点后10分钟执行，避免与其他任务冲突）
      */
-    @Transactional
     public void retryTranslations() {
         retryTranslations(null);
     }
 
-    @Transactional
     public void retryTranslations(Long jobId) {
         // 使用compareAndSet保证原子性，防止重复执行
         if (!translating.compareAndSet(false, true)) {
             log.info("翻译任务正在进行中，跳过本次执行");
-            return;
+            throw new IllegalStateException("翻译任务正在进行中");
         }
         translatedCount = 0;
         failedCount = 0;
@@ -60,7 +51,7 @@ public class TranslationRetryService {
         try {
             // 查找所有未翻译的球员
             List<Player> untranslatedPlayers = playerRepository.findAll().stream()
-                    .filter(p -> "UNTRANSLATED".equals(p.getTranslationStatus()))
+                    .filter(p -> "UNTRANSLATED".equals(p.getTranslationStatus()) || "FAILED".equals(p.getTranslationStatus()))
                     .filter(p -> p.getNameEn() != null && !p.getNameEn().isEmpty())
                     .toList();
 
@@ -85,8 +76,8 @@ public class TranslationRetryService {
                             playerRepository.save(player);
                             translatedCount++;
                         } else {
-                            // 翻译失败，标记为需要人工处理
-                            player.setTranslationStatus("FAILED");
+                            // 保持待翻译状态，后续手动/定时重试可以再次处理
+                            player.setTranslationStatus("UNTRANSLATED");
                             playerRepository.save(player);
                             failedCount++;
                         }
@@ -99,9 +90,11 @@ public class TranslationRetryService {
             // 新闻补翻兜底：抓取时翻译失败的新闻（title 仍为英文原文）由脚本直连库补翻，
             // 避免上游 LLM 故障导致新闻永久停留在英文（历史上 8/19 批次曾整批漏翻）
             retryPendingNewsTranslation(jobId);
+            if (failedCount > 0) throw new PartialSyncException("翻译完成 " + translatedCount + " 条，失败 " + failedCount + " 条，可重试");
 
         } catch (Exception e) {
             log.error("翻译重试任务执行失败", e);
+            throw e instanceof RuntimeException runtime ? runtime : new IllegalStateException("翻译重试失败", e);
         } finally {
             translating.set(false);
         }
@@ -111,24 +104,21 @@ public class TranslationRetryService {
      * 新闻补翻：调用 translate_pending_news.py（脚本自行判断是否有待翻条目，无则秒退）
      */
     private void retryPendingNewsTranslation(Long jobId) {
-        try {
-            PythonScriptRunner.PythonResult result = jobId == null
-                    ? pythonScriptRunner.run(
-                            "translate_pending_news.py", new String[]{},
-                            pythonTimeoutProperties.getTranslationSeconds())
-                    : pythonScriptRunner.runForJob(
-                            "translate_pending_news.py", new String[]{},
-                            pythonTimeoutProperties.getTranslationSeconds(), jobId);
-            if (result.success()) {
-                String tail = result.stdout().trim();
-                if (!tail.isEmpty()) {
-                    log.info("新闻补翻完成: {}", tail.lines().filter(l -> l.startsWith("完成") || l.startsWith("待补翻")).findFirst().orElse(tail));
-                }
-            } else if (result.exitCode() != -2) {
-                log.warn("新闻补翻脚本执行失败: {}", result.stderr().trim());
-            }
-        } catch (Exception e) {
-            log.warn("新闻补翻异常: {}", e.getMessage());
+        PythonScriptRunner.PythonResult result = jobId == null
+                ? pythonScriptRunner.run(
+                        "translate_pending_news.py", new String[]{},
+                        pythonTimeoutProperties.getTranslationSeconds())
+                : pythonScriptRunner.runForJob(
+                        "translate_pending_news.py", new String[]{},
+                        pythonTimeoutProperties.getTranslationSeconds(), jobId);
+        if (result.success()) {
+            String summary = result.stdout().lines().filter(l -> l.startsWith("{\"fetched\":")).reduce((a, b) -> b)
+                    .orElseThrow(() -> new IllegalStateException("新闻翻译脚本未返回执行结果"));
+            org.json.JSONObject counts = new org.json.JSONObject(summary);
+            translatedCount += counts.getInt("translated");
+            failedCount += counts.getInt("failed");
+        } else if (result.exitCode() != -2) {
+            throw new IllegalStateException(result.failure("TRANSLATION").errorMessage());
         }
     }
 
@@ -137,11 +127,11 @@ public class TranslationRetryService {
      */
     private Map<String, String> callTranslationScript(List<String> englishNames, Long jobId) {
         Map<String, String> result = new ConcurrentHashMap<>();
+        File tempFile = null;
 
         try {
             // 将英文名写入临时文件
-            File tempFile = File.createTempFile("translate_input_", ".json");
-            tempFile.deleteOnExit();
+            tempFile = File.createTempFile("translate_input_", ".json");
 
             StringBuilder sb = new StringBuilder("[");
             for (int i = 0; i < englishNames.size(); i++) {
@@ -162,7 +152,7 @@ public class TranslationRetryService {
             if (!pythonResult.success()) {
                 log.warn("翻译脚本执行失败: {}", pythonResult.stderr().trim());
                 if (pythonResult.exitCode() == -2) return null;
-                return result;
+                throw new IllegalStateException(pythonResult.failure("TRANSLATION").errorMessage());
             }
 
             // 解析JSON输出
@@ -178,11 +168,10 @@ public class TranslationRetryService {
                 }
             }
 
-            // 清理临时文件
-            tempFile.delete();
-
         } catch (Exception e) {
-            log.warn("调用翻译脚本失败: {}", e.getMessage());
+            throw new IllegalStateException("调用翻译脚本失败: " + e.getMessage(), e);
+        } finally {
+            if (tempFile != null) tempFile.delete();
         }
 
         return result;

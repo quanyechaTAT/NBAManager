@@ -54,4 +54,18 @@ class SyncDefinitionRegistryTest {
                 .extracting(SyncDefinition::module)
                 .doesNotContain("FULL_SYNC");
     }
+
+    @Test
+    void playoffScheduleRunsInAprilThroughJuneNotTheFourthThroughSixthDay() throws Exception {
+        var registry = new SyncDefinitionRegistry(teamSyncWorker, playerSyncWorker, matchSyncWorker,
+                todayGamesSyncWorker, newsSyncWorker, draftSyncWorker, playoffSyncWorker, historicalSyncWorker, translationSyncWorker);
+        var schedule = registry.require("PLAYOFF").schedules().get(0);
+        var april = java.time.ZonedDateTime.parse("2026-04-18T00:00:00+08:00[Asia/Shanghai]");
+        var october = java.time.ZonedDateTime.parse("2026-10-04T00:00:00+08:00[Asia/Shanghai]");
+        assertThat(schedule.isDue(april, april.plusHours(2))).isTrue();
+        assertThat(schedule.isDue(october, october.plusDays(2))).isFalse();
+        var annotation = DataSyncScheduler.class.getMethod("syncPlayoff")
+                .getAnnotation(org.springframework.scheduling.annotation.Scheduled.class);
+        assertThat(org.springframework.scheduling.support.CronExpression.parse(annotation.cron()).next(october).getMonthValue()).isEqualTo(4);
+    }
 }

@@ -314,17 +314,51 @@ public class MatchDetailService {
         String nbaGameId = gameIdMappingService.getNbaGameId(gameId);
         log.info("获取逐节比分: 原始gameId={}, 转换后gameId={}", gameId, nbaGameId);
 
-        if (findMatchRecord(gameId, nbaGameId)
-                .map(match -> "SCHEDULED".equalsIgnoreCase(match.getStatus())).orElse(false)) {
+        Optional<MatchRecord> match = findMatchRecord(gameId, nbaGameId);
+        if (match.map(record -> "SCHEDULED".equalsIgnoreCase(record.getStatus())).orElse(false)) {
             return List.of();
         }
 
-        // Public GET endpoints must be pure reads. Replay preparation is the only path
-        // allowed to call providers/Python and persist fresh facts.
+        List<QuarterScoreDto> scoreboardScores = match.map(this::readQuarterScoreSnapshot).orElse(List.of());
+        if (!scoreboardScores.isEmpty()) {
+            QuarterScoreDto latest = scoreboardScores.get(scoreboardScores.size() - 1);
+            boolean currentSnapshot = match.map(record -> "LIVE".equalsIgnoreCase(record.getStatus())
+                    || ("FINISHED".equalsIgnoreCase(record.getStatus())
+                        && java.util.Objects.equals(record.getHomeScore(), latest.homeScore())
+                        && java.util.Objects.equals(record.getAwayScore(), latest.awayScore()))).orElse(false);
+            if (currentSnapshot) return scoreboardScores;
+        }
+
+        // Public GET endpoints only read persisted facts. Live scoreboard snapshots are
+        // written by today-game sync, independently of replay preparation.
         List<PlayByPlay> allEvents = playByPlayRepository.findByGameIdOrderByEventOrderAsc(nbaGameId);
         List<QuarterScoreDto> result = computeQuarterScoresFromPlayByPlay(allEvents);
 
-        return isQuarterScoresAllZero(result) ? List.of() : result;
+        return result.isEmpty() || isQuarterScoresAllZero(result) ? scoreboardScores : result;
+    }
+
+    private List<QuarterScoreDto> readQuarterScoreSnapshot(MatchRecord match) {
+        if (match.getQuarterScoresJson() == null || match.getQuarterScoresJson().isBlank()) return List.of();
+        try {
+            JSONArray periods = new JSONArray(match.getQuarterScoresJson());
+            List<QuarterScoreDto> result = new ArrayList<>();
+            int previousHome = 0;
+            int previousAway = 0;
+            for (int i = 0; i < periods.length(); i++) {
+                JSONObject score = periods.getJSONObject(i);
+                int period = score.getInt("period");
+                int home = score.getInt("homeScore");
+                int away = score.getInt("awayScore");
+                if (period != i + 1 || home < previousHome || away < previousAway) return List.of();
+                result.add(new QuarterScoreDto(period, home, away));
+                previousHome = home;
+                previousAway = away;
+            }
+            return result;
+        } catch (RuntimeException ex) {
+            log.warn("Invalid quarter score snapshot for game {}", match.getNbaGameId());
+            return List.of();
+        }
     }
 
     /**

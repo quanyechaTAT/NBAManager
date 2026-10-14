@@ -2,8 +2,9 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { reactive, ref } from 'vue'
 import MatchDetailView from './MatchDetailView.vue'
-import { fetchMatchRecords } from '@/api/matchRecord'
+import { fetchMatchRecord, fetchMatchRecords } from '@/api/matchRecord'
 import { fetchBoxScore } from '@/api/matchDetail'
+import { fetchGameComments } from '@/api/community'
 
 const routerPush = vi.fn()
 const mockRoute = reactive({
@@ -45,10 +46,9 @@ vi.mock('@/api/matchDetail', () => ({
 }))
 
 vi.mock('@/api/matchRecord', () => ({
-  fetchMatchRecords: vi.fn(() =>
+  fetchMatchRecord: vi.fn(() =>
     Promise.resolve({
-      data: [
-        {
+      data: {
           id: 101,
           nbaGameId: '0012600009',
           homeTeam: '猛龙',
@@ -56,10 +56,10 @@ vi.mock('@/api/matchRecord', () => ({
           homeScore: 105,
           awayScore: 129,
           status: 'FINISHED',
-        },
-      ],
+      },
     }),
   ),
+  fetchMatchRecords: vi.fn(() => Promise.resolve({ data: [] })),
   fetchHeadToHead: vi.fn(() => Promise.resolve({ data: [] })),
 }))
 
@@ -107,10 +107,45 @@ describe('MatchDetailView team navigation', () => {
     vi.clearAllMocks()
   })
 
+  it('reads one game and defers the chat connection and comments until their tabs open', async () => {
+    const wrapper = mount(MatchDetailView, { global: { stubs: {
+      GameIntelligenceCenter: true, ReplayAvailabilityPanel: true, GameShotChartPanel: true, LiveChat: true,
+      ElTag: true, ElButton: true, ElTable: true, ElTableColumn: true, ElDialog: true,
+      EmojiPicker: true, ElCard: true, ElInput: true,
+    } } })
+    try {
+      await flushPromises()
+      expect(fetchMatchRecord).toHaveBeenCalledWith('0012600009', expect.any(AbortSignal))
+      expect(fetchMatchRecords).not.toHaveBeenCalled()
+      expect(fetchGameComments).not.toHaveBeenCalled()
+      expect(wrapper.find('live-chat-stub').exists()).toBe(false)
+      await wrapper.findAll('[role="tab"]').find(tab => tab.text().includes('观赛聊天室'))!.trigger('click')
+      await flushPromises()
+      expect(wrapper.find('live-chat-stub').exists()).toBe(true)
+      await wrapper.findAll('[role="tab"]').find(tab => tab.text().includes('赛后热评'))!.trigger('click')
+      await flushPromises()
+      expect(fetchGameComments).toHaveBeenCalledTimes(1)
+    } finally { wrapper.unmount() }
+  })
+
+  it('cancels the detail lookup on leaving and does not start late statistics requests', async () => {
+    let resolve!: (value: any) => void
+    vi.mocked(fetchMatchRecord).mockReturnValueOnce(new Promise(yes => { resolve = yes }))
+    const wrapper = mount(MatchDetailView, { global: { stubs: {
+      ElTabs: true, ElTag: true, ElButton: true, ElDialog: true, EmojiPicker: true,
+    } } })
+    const signal = vi.mocked(fetchMatchRecord).mock.calls[0][1]!
+    wrapper.unmount()
+    expect(signal.aborted).toBe(true)
+    resolve({ data: { nbaGameId: '0012600009', status: 'FINISHED' } })
+    await flushPromises()
+    expect(fetchBoxScore).not.toHaveBeenCalled()
+  })
+
   it('suppresses stale scores for a scheduled game', async () => {
     const original = { ...mockRoute.query }
     mockRoute.query = { ...original, homeScore: '114', awayScore: '144', status: 'SCHEDULED' }
-    vi.mocked(fetchMatchRecords).mockResolvedValueOnce({ data: [{ id: 101, nbaGameId: '0012600009', homeTeam: '76人', awayTeam: '尼克斯', homeScore: 114, awayScore: 144, status: 'SCHEDULED' }] } as any)
+    vi.mocked(fetchMatchRecord).mockResolvedValueOnce({ data: { id: 101, nbaGameId: '0012600009', homeTeam: '76人', awayTeam: '尼克斯', homeScore: 114, awayScore: 144, status: 'SCHEDULED' } } as any)
     const wrapper = mount(MatchDetailView, { global: { directives: { loading: () => {} }, stubs: {
       GameIntelligenceCenter: true, ReplayAvailabilityPanel: true, GameShotChartPanel: true, LiveChat: true,
       ElTag: { template: '<span><slot /></span>' }, ElButton: true, ElTabs: true, ElTabPane: true,
@@ -132,9 +167,9 @@ describe('MatchDetailView team navigation', () => {
     { status: 'LIVE', homeScore: 0, awayScore: 9, expected: ['0', '9'] },
     { status: 'FINISHED', homeScore: null, awayScore: null, expected: ['--', '--'] },
   ])('preserves zero and unknown scores in $status games', async (record) => {
-    vi.mocked(fetchMatchRecords).mockResolvedValueOnce({ data: [{
+    vi.mocked(fetchMatchRecord).mockResolvedValueOnce({ data: {
       id: 101, nbaGameId: '0012600009', homeTeam: '猛龙', awayTeam: '热火', ...record,
-    }] } as any)
+    } } as any)
     const wrapper = mount(MatchDetailView, { global: { directives: { loading: () => {} }, stubs: {
       GameIntelligenceCenter: true, ReplayAvailabilityPanel: true, GameShotChartPanel: true, LiveChat: true,
       ElTag: { template: '<span><slot /></span>' }, ElButton: true, ElTabs: true, ElTabPane: true,

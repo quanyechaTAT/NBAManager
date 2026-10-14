@@ -67,6 +67,7 @@ export function useSyncCenter() {
   let historySequence = 0
   let detailSequence = 0
   const reads = new Set<AbortController>()
+  let overviewRead: AbortController | undefined
   let previousJobs: Map<number, SyncJobResponse> | undefined
 
   const currentSeason = computed(() => overview.value?.currentSeason || '加载中')
@@ -84,7 +85,7 @@ export function useSyncCenter() {
       status: fullPending ? 'QUEUED' : step?.status || job?.status || 'idle',
       progress: Math.min(100, Math.max(0, step?.progress ?? (fullPending ? 0 : job?.progress ?? 0))),
       lastSyncTime: item?.lastSuccessfulAt || '',
-      errorMessage: safeErrorMessage(step?.errorMessage || (!fullPending ? job?.errorMessage : '')),
+      errorMessage: safeErrorMessage(step ? step.errorMessage : (!fullPending ? job?.errorMessage : '')),
       jobId: step || fullPending ? fullSyncJobId.value || overview.value?.latestFullJob?.jobId || null : job?.jobId ?? null,
       triggerType: step || fullPending ? 'FULL_SYNC' : job?.triggerType || '',
       activeFullStep: fullJob.value ? step ?? null : null,
@@ -122,15 +123,14 @@ export function useSyncCenter() {
     logs.value.push({ time: new Date().toLocaleTimeString('zh-CN'), module, message, type })
     if (logs.value.length > 100) logs.value.shift()
   }
-  async function read<T>(fn: (options: { signal: AbortSignal; timeout: number }) => Promise<{ data: T }>) {
-    const controller = new AbortController()
+  async function read<T>(fn: (options: { signal: AbortSignal; timeout: number }) => Promise<{ data: T }>, controller = new AbortController()) {
     reads.add(controller)
     try { return (await fn({ signal: controller.signal, timeout: 15000 })).data }
     finally { reads.delete(controller) }
   }
   function schedule() {
     clearTimeout(timer)
-    if (!disposed) timer = setTimeout(() => { void loadOverview() }, isAnySyncing.value || refreshError.value ? 3000 : 15000)
+    if (!disposed && !document.hidden) timer = setTimeout(() => { void loadOverview() }, isAnySyncing.value || refreshError.value ? 3000 : 15000)
   }
   function observeJobs(snapshot: SyncOverviewResponse) {
     const jobs = new Map<number, SyncJobResponse>()
@@ -153,15 +153,17 @@ export function useSyncCenter() {
     if (changed) void loadHistory()
   }
   function loadOverview(): Promise<void> {
-    if (disposed) return Promise.resolve()
+    if (disposed || document.hidden) return Promise.resolve()
     if (refreshInFlight) { refreshAgain = true; return refreshInFlight }
     refreshInFlight = (async () => {
       do {
         refreshAgain = false
         const version = commandVersion
+        const controller = new AbortController()
+        overviewRead = controller
         try {
-          const snapshot = await read(getSyncOverview)
-          if (disposed) return
+          const snapshot = await read(getSyncOverview, controller)
+          if (disposed || controller.signal.aborted) continue
           if (version !== commandVersion) { refreshAgain = true; continue }
           observeJobs(snapshot)
           overview.value = snapshot
@@ -169,9 +171,12 @@ export function useSyncCenter() {
           refreshError.value = ''
           if (selectedJob.value && !detailLoading.value && ACTIVE_STATUSES.has(selectedJob.value.status)) void showJobDetail(selectedJob.value.jobId)
         } catch (error) {
-          if (!disposed) refreshError.value = `状态刷新失败：${errorMessage(error)}。正在重试，当前显示最后一次成功状态。`
-        } finally { if (!disposed) initialLoading.value = false }
-      } while (refreshAgain && !disposed)
+          if (!disposed && !controller.signal.aborted) refreshError.value = `状态刷新失败：${errorMessage(error)}。正在重试，当前显示最后一次成功状态。`
+        } finally {
+          if (overviewRead === controller) overviewRead = undefined
+          if (!disposed && !controller.signal.aborted) initialLoading.value = false
+        }
+      } while (refreshAgain && !disposed && !document.hidden)
     })().finally(() => { refreshInFlight = undefined; schedule() })
     return refreshInFlight
   }
@@ -238,8 +243,20 @@ export function useSyncCenter() {
     finally { if (!disposed && sequence === detailSequence) detailLoading.value = false }
   }
   function closeDetail() { detailSequence++; selectedJob.value = null; detailError.value = ''; detailLoading.value = false }
-  onMounted(() => { void loadOverview(); void loadHistory(0) })
-  onUnmounted(() => { disposed = true; clearTimeout(timer); reads.forEach(controller => controller.abort()); reads.clear() })
+  function onVisibilityChange() {
+    if (document.hidden) { clearTimeout(timer); overviewRead?.abort(); return }
+    void loadOverview()
+    void loadHistory()
+  }
+  onMounted(() => {
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    if (!document.hidden) { void loadOverview(); void loadHistory(0) }
+  })
+  onUnmounted(() => {
+    disposed = true
+    document.removeEventListener('visibilitychange', onVisibilityChange)
+    clearTimeout(timer); reads.forEach(controller => controller.abort()); reads.clear()
+  })
   return { currentSeason, modules, logs, initialLoading, refreshError, loadOverview,
     fullSyncJobId, isAnySyncing, isSubmitting, submittingAll, pendingModules, isCancelling, cancellingIds,
     canSyncAll, canSyncModule, totalCount, syncingCount, successCount, failedModules, recentSuccess,

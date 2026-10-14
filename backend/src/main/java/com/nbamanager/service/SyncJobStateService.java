@@ -25,6 +25,7 @@ public class SyncJobStateService {
     public void markRunning(Long jobId) {
         SyncJob job = syncJobRepository.findByIdForUpdate(jobId).orElse(null);
         if (job == null) return;
+        if (TERMINAL_STATUSES.contains(job.getStatus())) return;
         // 已请求取消的 QUEUED 任务不能变为 RUNNING
         if (job.isCancelRequested()) {
             job.setStatus("CANCELLED");

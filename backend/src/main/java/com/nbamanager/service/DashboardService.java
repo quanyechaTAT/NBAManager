@@ -17,6 +17,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import com.nbamanager.web.support.PageRequestSanitizer;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,7 +33,7 @@ public class DashboardService {
     @Transactional(readOnly = true)
     public DashboardStatsDto buildStats() {
         List<Team> teams = teamRepository.findAll();
-        List<Player> players = playerRepository.findAll();
+        Page<Player> leaders = publishedScorers(PageRequest.of(0, 9));
 
         List<TeamWinRow> teamRows =
                 teams.stream()
@@ -42,32 +44,27 @@ public class DashboardService {
                         .collect(Collectors.toList());
 
         List<TopScorerRow> top =
-                players.stream()
-                        .filter(p -> p.getPointsPerGame() != null)
-                        .sorted(Comparator.comparing(Player::getPointsPerGame).reversed())
-                        .limit(9)
+                leaders.getContent().stream()
                         .map(p -> new TopScorerRow(p.getId(), p.getName(), p.getPointsPerGame(), p.getTeam().getName(), p.getNbaPlayerId()))
                         .collect(Collectors.toList());
 
-        return new DashboardStatsDto(teams.size(), players.size(), teamRows, top);
+        return new DashboardStatsDto(teams.size(), Math.toIntExact(playerRepository.count()), teamRows, top);
     }
 
     @Transactional(readOnly = true)
     public Page<PlayerDto> getTopScorers(int page, int size) {
-        List<Player> all = playerRepository.findAllWithTeamSortedByPpg().stream()
-                .filter(player -> player.getPointsPerGame() != null).toList();
-        // 用 long 计算 offset，避免 page/size 较大时 int 溢出成负数
-        long offset = (long) page * size;
-        if (offset > Integer.MAX_VALUE) {
-            return new org.springframework.data.domain.PageImpl<>(
-                    List.of(), PageRequest.of(0, size), all.size());
-        }
-        int start = (int) offset;
-        int end = Math.min(start + size, all.size());
-        List<PlayerDto> content = start < all.size()
-                ? all.subList(start, end).stream().map(this::toDto).collect(Collectors.toList())
-                : List.of();
-        return new org.springframework.data.domain.PageImpl<>(content, PageRequest.of(page, size), all.size());
+        int safePage = Math.max(0, Math.min(page, PageRequestSanitizer.MAX_PAGE_NUMBER));
+        int safeSize = Math.max(1, Math.min(size, PageRequestSanitizer.MAX_PAGE_SIZE));
+        return publishedScorers(PageRequest.of(safePage, safeSize)).map(this::toDto);
+    }
+
+    private Page<Player> publishedScorers(Pageable page) {
+        // Apply the same publication rule as Player getters before LIMIT/count.
+        // Filtering after pagination would create short pages and incorrect totals.
+        Specification<Player> published = (root, query, builder) -> DataPublication.available(root, builder, "pointsPerGame");
+        var ordered = PageRequest.of(page.getPageNumber(), page.getPageSize(),
+                Sort.by(Sort.Order.desc("pointsPerGame"), Sort.Order.asc("id")));
+        return playerRepository.findAll(published, ordered);
     }
 
     private PlayerDto toDto(Player p) {

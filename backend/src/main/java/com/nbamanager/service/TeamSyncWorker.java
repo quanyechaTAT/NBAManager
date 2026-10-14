@@ -42,8 +42,7 @@ public class TeamSyncWorker extends ModuleSyncWorker {
                 timeoutProperties.getBulkSeconds(),
                 jobId);
         if (!pyResult.success()) {
-            return SyncResult.failed("TEAMS", "PYTHON_FAILED",
-                    "exitCode=" + pyResult.exitCode() + " stderr=" + pyResult.stderr().substring(0, Math.min(200, pyResult.stderr().length())));
+            return pyResult.failure("TEAMS");
         }
 
         updateProgress(jobId, 40);

@@ -3,12 +3,13 @@
     <ProfileHero
       :username="auth.username ?? ''"
       :avatar-url="avatarUrl"
-      :initial="auth.username?.charAt(0)?.toUpperCase() ?? '?'"
+      :initial="userInitial"
       :is-admin="auth.isAdmin"
       :uploading="avatarUploading"
       @avatar-click="showAvatarPreview = true"
       @upload-click="triggerAvatarUpload"
       @reset-avatar="resetAvatar"
+      @avatar-error="onProfileAvatarError"
     />
     <input ref="avatarInput" type="file" accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif" style="display:none" @change="onAvatarChange" />
 
@@ -24,9 +25,9 @@
               </button>
             </div>
             <div class="headshot-dialog-body">
-              <img v-if="avatarUrl" :src="avatarUrl" class="headshot-preview-img" />
+              <img v-if="hasValidPreviewAvatar" :src="avatarUrl!" class="headshot-preview-img" alt="" @error="onPreviewAvatarError" />
               <div v-else class="avatar-placeholder-large">
-                {{ auth.username?.charAt(0)?.toUpperCase() }}
+                {{ userInitial }}
               </div>
             </div>
           </div>
@@ -246,7 +247,32 @@ const newsLoading = ref(false)
 const historyLoading = ref(false)
 const avatarInput = ref<HTMLInputElement>()
 const avatarUploading = ref(false)
-const avatarUrl = computed(() => auth.avatarUrl)
+const previewAvatarError = ref(false)
+const avatarUrl = computed(() => {
+  const url = auth.avatarUrl
+  if (!url || typeof url !== 'string') return null
+  const trimmed = url.trim()
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return null
+  return trimmed
+})
+watch(avatarUrl, () => {
+  previewAvatarError.value = false
+})
+const hasValidPreviewAvatar = computed(() => !!avatarUrl.value && !previewAvatarError.value)
+const userInitial = computed(() => {
+  const name = (auth.username || '?').trim()
+  return (name.charAt(0) || '?').toUpperCase()
+})
+
+function onProfileAvatarError() {
+  previewAvatarError.value = true
+  auth.clearBrokenAvatar?.()
+}
+
+function onPreviewAvatarError() {
+  previewAvatarError.value = true
+  auth.clearBrokenAvatar?.()
+}
 
 const pwdForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
 const pwdRules: FormRules = {

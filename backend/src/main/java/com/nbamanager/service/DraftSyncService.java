@@ -55,15 +55,22 @@ public class DraftSyncService {
 
             JSONArray draftPicks = result.optJSONArray("draftPicks");
             List<DraftPickDto> picks = toDraftPickDtos(draftPicks);
+            if (picks.isEmpty()) {
+                throw new IllegalStateException("选秀来源未返回数据: " + result.optJSONArray("draftErrors"));
+            }
             int upserted = draftService.importDraftPicks(picks);
             String quality = qualityStatus(picks.size());
+            String sourceStatus = result.optString("draftSourceStatus", "ok");
+            boolean complete = "COMPLETE".equals(quality) && "ok".equals(sourceStatus);
 
             Map<String, Object> syncResult = new HashMap<>();
-            syncResult.put("status", "success");
+            syncResult.put("status", complete ? "success" : "partial");
             syncResult.put("year", year);
             syncResult.put("upserted", upserted);
             syncResult.put("pickCount", picks.size());
             syncResult.put("quality", quality);
+            if (!complete) syncResult.put("error", "选秀数据未完整刷新: " + picks.size()
+                    + " 条, source=" + sourceStatus + "; " + result.optJSONArray("draftErrors"));
             syncResult.put("timestamp", LocalDateTime.now().toString());
             if (result.has("draftErrors")) {
                 syncResult.put("errors", result.getJSONArray("draftErrors").toList());

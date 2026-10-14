@@ -718,6 +718,7 @@ public class NbaLiveSyncService {
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
+    @CacheEvict(value = {"boxScore", "quarterScores"}, allEntries = true)
     public TodayGamesPersistResult persistTodayGames(JSONArray games) {
         int updated = 0;
         for (int i = 0; i < games.length(); i++) {
@@ -734,7 +735,8 @@ public class NbaLiveSyncService {
             LocalDateTime startTime = smartDataService.parseGameStartTimePublic(game);
             updated += smartDataService.upsertGameNews(homeTeam, awayTeam, homeScore, awayScore,
                     status, gameId, category, source, startTime);
-            updateMatchRecord(homeTeam, awayTeam, homeScore, awayScore, status, gameId);
+            updateMatchRecord(homeTeam, awayTeam, homeScore, awayScore, status, gameId,
+                    game.optJSONArray("quarterScores"));
         }
 
         int backfilled = backfillNbaGameId();
@@ -921,7 +923,8 @@ public class NbaLiveSyncService {
      * 更新MatchRecord
      */
     private void updateMatchRecord(String homeTeam, String awayTeam,
-                                    int homeScore, int awayScore, String status, String gameId) {
+                                    int homeScore, int awayScore, String status, String gameId,
+                                    JSONArray quarterScores) {
         LocalDate today = LocalDate.now();
         LocalDate yesterday = today.minusDays(1);
 
@@ -950,6 +953,7 @@ public class NbaLiveSyncService {
                 LocalDate matchDate = record.getMatchDate() == null ? today : record.getMatchDate();
                 record.setGameType(MatchGameTypeResolver.resolve(null, gameId, matchDate));
             }
+            updateQuarterScoreSnapshot(record, status, quarterScores);
             record.markData("MULTI_PROVIDER", record.getSeason(), record.getGameType(), "homeScore", "awayScore", "status");
             matchRecordRepository.save(record);
 
@@ -970,6 +974,7 @@ public class NbaLiveSyncService {
                         LocalDate matchDate = byGameId.getMatchDate() == null ? today : byGameId.getMatchDate();
                         byGameId.setGameType(MatchGameTypeResolver.resolve(null, gameId, matchDate));
                     }
+                    updateQuarterScoreSnapshot(byGameId, status, quarterScores);
                     byGameId.markData("MULTI_PROVIDER", byGameId.getSeason(), byGameId.getGameType(), "homeScore", "awayScore", "status");
                     matchRecordRepository.save(byGameId);
                     return;
@@ -985,8 +990,18 @@ public class NbaLiveSyncService {
             newRecord.setStatus(status);
             newRecord.setNbaGameId(gameId);
             newRecord.setGameType(MatchGameTypeResolver.resolve(null, gameId, today));
+            updateQuarterScoreSnapshot(newRecord, status, quarterScores);
             newRecord.markData("MULTI_PROVIDER", newRecord.getSeason(), newRecord.getGameType(), "homeScore", "awayScore", "status");
             matchRecordRepository.save(newRecord);
+        }
+    }
+
+    private void updateQuarterScoreSnapshot(MatchRecord record, String status, JSONArray quarterScores) {
+        if ("SCHEDULED".equals(status)) {
+            record.setQuarterScoresJson(null);
+        } else if (quarterScores != null && !quarterScores.isEmpty()) {
+            // A provider that temporarily omits period data must not erase the last observed snapshot.
+            record.setQuarterScoresJson(quarterScores.toString());
         }
     }
 }

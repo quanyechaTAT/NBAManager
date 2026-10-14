@@ -39,6 +39,14 @@ public class PythonScriptRunner {
 
     public record PythonResult(int exitCode, String stdout, String stderr, boolean timedOut, long elapsedMs) {
         public boolean success() { return exitCode == 0 && !timedOut; }
+        public com.nbamanager.web.dto.SyncResult failure(String module) {
+            if (exitCode == -2) return com.nbamanager.web.dto.SyncResult.cancelled(module);
+            String detail = stderr == null ? "" : stderr.strip();
+            detail = detail.substring(Math.max(0, detail.length() - 1500));
+            return com.nbamanager.web.dto.SyncResult.failed(module, timedOut ? "PYTHON_TIMEOUT" : "PYTHON_FAILED",
+                    (timedOut ? "采集超时 (" + elapsedMs / 1000 + "s)" : "采集进程退出: " + exitCode)
+                            + (detail.isBlank() ? "" : ": " + detail));
+        }
     }
 
     public PythonResult run(String scriptName, String[] args, int timeoutSeconds) {

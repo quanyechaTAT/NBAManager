@@ -47,6 +47,11 @@ class RAGSettings:
     embedding_model: str = "richinfoai/ritrieve_zh_v1"
     embedding_device: str = ""
     embedding_fp16: bool = True
+    embedding_revision: str = "default"  # Cache epoch; does not pin/download a model revision.
+    embedding_cache_max_entries: int = 512
+    embedding_cache_ttl_seconds: int = 3600
+    retrieval_cache_max_entries: int = 256
+    retrieval_cache_ttl_seconds: int = 60
     model_cache_dir: str = ""
 
     chroma_path: str = ""
@@ -58,6 +63,7 @@ class RAGSettings:
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
     reranker_device: str = ""
     reranker_enabled: bool = True
+    reranker_revision: str = "default"
 
     llm_base_url: str = "https://api.deepseek.com"
     llm_api_key: str = ""
@@ -114,6 +120,11 @@ class RAGSettings:
             embedding_model=os.environ.get("RAG_EMBEDDING_MODEL", cls.embedding_model),
             embedding_device=os.environ.get("RAG_EMBEDDING_DEVICE", ""),
             embedding_fp16=_bool_env("RAG_EMBEDDING_FP16", True),
+            embedding_revision=os.environ.get('RAG_EMBEDDING_REVISION', cls.embedding_revision),
+            embedding_cache_max_entries=int(os.environ.get('RAG_EMBEDDING_CACHE_MAX_ENTRIES', cls.embedding_cache_max_entries)),
+            embedding_cache_ttl_seconds=int(os.environ.get('RAG_EMBEDDING_CACHE_TTL_SECONDS', cls.embedding_cache_ttl_seconds)),
+            retrieval_cache_max_entries=int(os.environ.get('RAG_RETRIEVAL_CACHE_MAX_ENTRIES', cls.retrieval_cache_max_entries)),
+            retrieval_cache_ttl_seconds=int(os.environ.get('RAG_RETRIEVAL_CACHE_TTL_SECONDS', cls.retrieval_cache_ttl_seconds)),
             model_cache_dir=os.environ.get("RAG_MODEL_CACHE_DIR", _default_model_cache()),
             chroma_path=os.environ.get("RAG_CHROMA_PATH", _default_chroma_path()),
             collection_name=os.environ.get("RAG_COLLECTION_NAME", cls.collection_name),
@@ -123,6 +134,7 @@ class RAGSettings:
             reranker_model=os.environ.get("RAG_RERANKER_MODEL", cls.reranker_model),
             reranker_device=os.environ.get("RAG_RERANKER_DEVICE", ""),
             reranker_enabled=_bool_env("RAG_RERANKER_ENABLED", True),
+            reranker_revision=os.environ.get('RAG_RERANKER_REVISION', cls.reranker_revision),
             llm_base_url=os.environ.get("DEEPSEEK_API_BASE", cls.llm_base_url),
             llm_api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
             llm_model=os.environ.get("RAG_LLM_MODEL", cls.llm_model),

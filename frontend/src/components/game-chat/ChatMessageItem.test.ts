@@ -57,4 +57,47 @@ describe('ChatMessageItem.vue', () => {
 
     wrapper.unmount()
   })
+
+  it('renders initial letter when avatarUrl is null', () => {
+    const wrapper = mount(ChatMessageItem, {
+      props: {
+        message: baseMessage,
+        isSelf: false,
+      },
+    })
+
+    const avatarText = wrapper.find('.avatar-text')
+    expect(avatarText.exists()).toBe(true)
+    expect(avatarText.text()).toBe('L')
+    expect(wrapper.find('.avatar-img').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('falls back to initial letter when avatar image encounters error', async () => {
+    const msgWithAvatar: LocalChatMessage = {
+      ...baseMessage,
+      avatarUrl: 'https://example.com/broken-avatar.png',
+    }
+
+    const wrapper = mount(ChatMessageItem, {
+      props: {
+        message: msgWithAvatar,
+        isSelf: false,
+      },
+    })
+
+    const img = wrapper.find('.avatar-img')
+    expect(img.exists()).toBe(true)
+
+    // Trigger error event on img
+    await img.trigger('error')
+
+    expect(wrapper.find('.avatar-img').exists()).toBe(false)
+    const avatarText = wrapper.find('.avatar-text')
+    expect(avatarText.exists()).toBe(true)
+    expect(avatarText.text()).toBe('L')
+
+    wrapper.unmount()
+  })
 })

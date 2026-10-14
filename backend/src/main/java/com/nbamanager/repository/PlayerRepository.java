@@ -61,6 +61,4 @@ public interface PlayerRepository extends JpaRepository<Player, Long>, org.sprin
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = "team")
     Page<Player> findByNameOrNameEnContainingIgnoreCaseAndTeamIdAndPositionIgnoreCase(@Param("q") String q, @Param("teamId") Long teamId, @Param("position") String position, Pageable pageable);
 
-    @Query("SELECT p FROM Player p JOIN FETCH p.team WHERE p.pointsPerGame IS NOT NULL ORDER BY p.pointsPerGame DESC")
-    java.util.List<Player> findAllWithTeamSortedByPpg();
 }

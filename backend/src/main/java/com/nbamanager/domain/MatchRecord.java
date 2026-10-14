@@ -68,5 +68,8 @@ public class MatchRecord extends DataTracked {
     @Column(name = "game_type", length = 24)
     private String gameType;
 
+    /** Official scoreboard snapshots contain cumulative scores through each played period. */
+    @Column(name = "quarter_scores_json", columnDefinition = "TEXT")
+    private String quarterScoresJson;
 
 }

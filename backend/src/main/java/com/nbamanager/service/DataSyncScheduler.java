@@ -27,7 +27,7 @@ public class DataSyncScheduler {
         submitQuietly(() -> coordinator.submit(SyncCommand.scheduled("NEWS")), "NEWS");
     }
 
-    @Scheduled(cron = "0 0 */2 4-6 * ?", zone = "${app.sync.zone:Asia/Shanghai}")
+    @Scheduled(cron = "0 0 */2 * 4-6 ?", zone = "${app.sync.zone:Asia/Shanghai}")
     public void syncPlayoff() {
         submitQuietly(() -> coordinator.submit(SyncCommand.scheduled("PLAYOFF")), "PLAYOFF");
     }

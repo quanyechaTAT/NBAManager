@@ -32,7 +32,10 @@
           </div>
           <!-- 作者信息 -->
           <div class="post-author-bar" v-if="post.username">
-              <div class="author-avatar"><img v-if="post.avatarUrl" :src="post.avatarUrl" alt="" @error="onPostAvatarError" /><template v-else>{{ post.username?.charAt(0)?.toUpperCase() }}</template></div>
+            <div class="author-avatar">
+              <img v-if="hasPostAvatar" :src="post.avatarUrl!" alt="" @error="postAvatarError = true" />
+              <span v-else class="avatar-fallback">{{ formatUserInitial(post.username) }}</span>
+            </div>
             <div class="author-info">
               <span class="author-name">{{ post.username }}</span>
               <span class="author-time">发布于 {{ formatTime(post.createTime) }}</span>
@@ -100,9 +103,9 @@
               <div class="comment-body">
                 <div class="comment-meta">
                   <span v-if="comment.pinned" class="pin-badge">置顶</span>
-                  <span class="comment-avatar comment-avatar--lg" :class="{ 'has-img': !!comment.avatarUrl }">
-                    <span class="comment-avatar-fallback">{{ comment.username?.charAt(0)?.toUpperCase() }}</span>
-                    <img v-if="comment.avatarUrl" :src="comment.avatarUrl" alt="" @error="onCommentAvatarError" />
+                  <span class="comment-avatar comment-avatar--lg" :class="{ 'has-img': hasCommentAvatar(comment) }">
+                    <img v-if="hasCommentAvatar(comment)" :src="comment.avatarUrl!" alt="" @error="onCommentAvatarError(comment.id)" />
+                    <span v-else class="comment-avatar-fallback">{{ formatUserInitial(comment.username) }}</span>
                   </span>
                   <span class="comment-user">{{ comment.username }}</span>
                   <span class="comment-time">{{ formatTime(comment.createTime) }}</span>
@@ -137,9 +140,9 @@
             <div v-if="comment.replies && comment.replies.length > 0" class="comment-replies">
               <div v-for="reply in comment.replies" :key="reply.id" class="comment-reply">
                 <div class="comment-meta">
-                  <span class="comment-avatar comment-avatar--sm" :class="{ 'has-img': !!reply.avatarUrl }">
-                    <span class="comment-avatar-fallback">{{ reply.username?.charAt(0)?.toUpperCase() }}</span>
-                    <img v-if="reply.avatarUrl" :src="reply.avatarUrl" alt="" @error="onCommentAvatarError" />
+                  <span class="comment-avatar comment-avatar--sm" :class="{ 'has-img': hasReplyAvatar(reply) }">
+                    <img v-if="hasReplyAvatar(reply)" :src="reply.avatarUrl!" alt="" @error="onReplyAvatarError(reply.id)" />
+                    <span v-else class="comment-avatar-fallback">{{ formatUserInitial(reply.username) }}</span>
                   </span>
                   <span class="comment-user">{{ reply.username }}</span>
                   <span class="comment-time">{{ formatTime(reply.createTime) }}</span>
@@ -317,10 +320,21 @@ function formatTime(t: string) {
   return d.toLocaleDateString('zh-CN')
 }
 
-function onPostAvatarError(e: Event) {
-  const img = e.target as HTMLImageElement
-  img.style.display = 'none'
-  img.parentElement!.textContent = post.value?.username?.charAt(0)?.toUpperCase() ?? ''
+const postAvatarError = ref(false)
+watch(() => post.value?.avatarUrl, () => {
+  postAvatarError.value = false
+})
+const hasPostAvatar = computed(() => {
+  const url = post.value?.avatarUrl
+  if (!url || typeof url !== 'string') return false
+  const trimmed = url.trim()
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false
+  return !postAvatarError.value
+})
+
+function formatUserInitial(username?: string): string {
+  const name = (username || '?').trim()
+  return (name.charAt(0) || '?').toUpperCase()
 }
 
 async function loadPost() {
@@ -509,9 +523,29 @@ watch(() => identityStore.revision, () => {
   comments.value = comments.value.map(c => applyIdentityToComment(c))
 })
 
-function onCommentAvatarError(e: Event) {
-  const img = e.target as HTMLImageElement
-  img.style.display = 'none'
+const failedCommentAvatars = ref<Set<number>>(new Set())
+const failedReplyAvatars = ref<Set<number>>(new Set())
+
+function hasCommentAvatar(c: { id: number; avatarUrl?: string | null }): boolean {
+  if (!c.avatarUrl || typeof c.avatarUrl !== 'string') return false
+  const trimmed = c.avatarUrl.trim()
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false
+  return !failedCommentAvatars.value.has(c.id)
+}
+
+function onCommentAvatarError(commentId: number) {
+  failedCommentAvatars.value = new Set([...failedCommentAvatars.value, commentId])
+}
+
+function hasReplyAvatar(r: { id: number; avatarUrl?: string | null }): boolean {
+  if (!r.avatarUrl || typeof r.avatarUrl !== 'string') return false
+  const trimmed = r.avatarUrl.trim()
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false
+  return !failedReplyAvatars.value.has(r.id)
+}
+
+function onReplyAvatarError(replyId: number) {
+  failedReplyAvatars.value = new Set([...failedReplyAvatars.value, replyId])
 }
 
 function applyIdentityToComment(c: Comment): Comment {
@@ -642,6 +676,14 @@ onMounted(() => { loadPost(); loadComments(); checkFavoriteStatus() })
   height: 100%;
   object-fit: cover;
 }
+.author-avatar .avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+}
 .author-info { display: flex; flex-direction: column; gap: 2px; }
 .author-name { font-size: 14px; font-weight: 600; color: var(--text-primary); }
 .author-time { font-size: 12px; color: var(--text-dim); }
@@ -760,7 +802,6 @@ onMounted(() => { loadPost(); loadComments(); checkFavoriteStatus() })
 .comment-avatar--sm .comment-avatar-fallback { font-size: 11px; }
 .comment-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
 .comment-avatar.has-img .comment-avatar-fallback { display: none; }
-.comment-avatar img[style*="display: none"] ~ .comment-avatar-fallback { display: flex; }
 .comment-text { margin: 0 0 8px; font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
 .comment-actions { display: flex; gap: 8px; align-items: center; }
 

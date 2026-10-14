@@ -76,4 +76,21 @@ class SyncSnapshotRepositoryTest {
         assertThat(steps.findLatestSuccessfulSteps()).extracting(SyncJobStep::getId)
                 .containsExactlyInAnyOrder(latest.getId(), players.getId());
     }
+
+    @Test void staleRecoveryRechecksHeartbeatAndTerminalStatusForEachCandidate() {
+        SyncJob expired = job("TEAMS", "RUNNING", 0);
+        SyncJob heartbeatResumed = job("PLAYERS", "RUNNING", 0);
+        SyncJob completed = job("NEWS", "RUNNING", 0);
+        var cutoff = time.plusMinutes(10);
+        assertThat(jobs.findStaleJobIds(cutoff)).containsExactly(expired.getId(), heartbeatResumed.getId(), completed.getId());
+        heartbeatResumed.setHeartbeatAt(cutoff.plusSeconds(1));
+        completed.setStatus("SUCCESS");
+        entityManager.flush();
+        assertThat(jobs.markStaleJobAsInterrupted(heartbeatResumed.getId(), cutoff)).isZero();
+        assertThat(jobs.markStaleJobAsInterrupted(completed.getId(), cutoff)).isZero();
+        assertThat(jobs.markStaleRunningAsInterrupted(cutoff)).isEqualTo(1);
+        entityManager.clear();
+        assertThat(jobs.findById(expired.getId()).orElseThrow().getStatus()).isEqualTo("INTERRUPTED");
+        assertThat(jobs.findById(heartbeatResumed.getId()).orElseThrow().getStatus()).isEqualTo("RUNNING");
+    }
 }

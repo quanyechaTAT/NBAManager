@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/match-records")
@@ -22,6 +24,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class MatchRecordController {
 
     private final MatchRecordService matchRecordService;
+
+    @GetMapping("/game/{gameId}")
+    public MatchRecordDto game(@PathVariable String gameId) {
+        if (!gameId.matches("[0-9]{1,16}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "无效的比赛 ID");
+        }
+        var match = matchRecordService.getByGameId(gameId);
+        if (match == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "未找到该比赛");
+        }
+        return match;
+    }
 
     /** 查询某支球队的所有比赛记录 */
     @GetMapping

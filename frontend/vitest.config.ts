@@ -9,6 +9,7 @@ export default mergeConfig(
     root: realpathSync(process.cwd()),
     test: {
       environment: 'happy-dom',
+      server: { deps: { inline: ['element-plus'] } },
       include: ['src/**/*.test.ts'],
       clearMocks: true,
       restoreMocks: true,

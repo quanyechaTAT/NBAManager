@@ -25,7 +25,10 @@
         </div>
 
         <!-- 比分 -->
-        <div class="broadcast__score">
+        <div
+          class="broadcast__score"
+          :aria-label="showScore ? `${headlineMatch.awayTeam} ${headlineMatch.awayScore} 比 ${headlineMatch.homeScore} ${headlineMatch.homeTeam}` : kickoffText"
+        >
           <template v-if="showScore">
             <span class="broadcast__pts" :class="{ 'is-winner': awayWinning }">{{ headlineMatch.awayScore }}</span>
             <span class="broadcast__dash" aria-hidden="true">–</span>
@@ -54,9 +57,9 @@
 
     <!-- 无比赛：明确说明而不是留空 -->
     <template v-else>
-      <p class="broadcast__eyebrow">COURTSIDE · ARENA CENTRAL</p>
+      <p class="broadcast__eyebrow">NBA DATA CENTER · 赛事数据中心</p>
       <h1 class="broadcast__empty-title">今日暂无进行中的赛事</h1>
-      <p class="broadcast__empty-desc">实时比分、四节技术统计与战术复盘将在开赛后在此呈现。</p>
+      <p class="broadcast__empty-desc">全联盟实时比分、四节高阶技术统计与战术复盘将在比赛开赛后即时呈现。</p>
       <footer class="broadcast__foot">
         <button type="button" class="broadcast__btn" @click="$emit('open-feed')">浏览赛季赛程</button>
         <button type="button" class="broadcast__btn is-ghost" @click="$router.push('/teams')">球队战绩榜</button>
@@ -278,11 +281,11 @@ function goDetail() {
 .broadcast__score {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
-  padding: 4px 14px;
-  background: rgba(0, 0, 0, 0.12);
-  border-radius: 14px;
-  border: 1px solid var(--border-subtle);
+  background: none;
+  border: none;
+  box-shadow: none;
   font-variant-numeric: tabular-nums;
 }
 .broadcast__pts {
@@ -297,10 +300,14 @@ function goDetail() {
   color: var(--text-primary);
   text-shadow: 0 0 20px rgba(34, 211, 238, 0.35);
 }
+[data-theme="light"] .broadcast__pts.is-winner {
+  text-shadow: none;
+}
 .broadcast__dash {
   font-size: 24px;
   color: var(--text-tertiary);
   font-weight: 300;
+  user-select: none;
 }
 .broadcast__time {
   font-family: var(--font-heading);

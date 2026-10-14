@@ -14,20 +14,20 @@
     </div>
 
     <div class="hero reveal-rise">
-      <p class="eyebrow">COURTSIDE INTELLIGENCE</p>
-      <h1>加入<span class="accent-word">场边数据中枢</span></h1>
-      <p class="desc">创建账号后即可追踪今日赛事、深入球员数据，并用 AI 助手快速读懂比赛。</p>
+      <p class="eyebrow">NBA ANALYTICS PLATFORM</p>
+      <h1>加入<span class="accent-word">NBA 赛事数据中心</span></h1>
+      <p class="desc">注册账号即可掌握全联盟实时赛况、深入球员高阶技术统计，并利用 AI 智能助手进行战术深度复盘。</p>
       <div class="features">
-        <span>今日赛事</span>
-        <span>球员洞察</span>
-        <span>AI 助手</span>
+        <span>实时赛况</span>
+        <span>高阶数据</span>
+        <span>AI 战术分析</span>
       </div>
     </div>
 
     <el-card class="card reveal-scale" shadow="always" style="animation-delay: 0.08s;">
       <div class="card-head">
-        <h2>创建 Courtside 账号</h2>
-        <p>几步完成注册，立即开始使用</p>
+        <h2>注册 NBA 数据中心账号</h2>
+        <p>几步完成注册，开启专业数据分析体验</p>
       </div>
       <el-form :model="form" :rules="rules" ref="formRef" label-position="top" @submit.prevent>
         <el-form-item label="用户名" prop="username">

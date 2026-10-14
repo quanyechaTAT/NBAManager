@@ -207,7 +207,7 @@ class NbaLiveSyncServiceRegressionTest {
                 .thenReturn(Optional.of(existing));
 
         ReflectionTestUtils.invokeMethod(service, "updateMatchRecord",
-                "Lakers", "Grizzlies", 94, 90, "FINISHED", "401881845");
+                "Lakers", "Grizzlies", 94, 90, "FINISHED", "401881845", (JSONArray) null);
 
         assertThat(existing.getGameType()).isEqualTo(MatchGameTypeResolver.SUMMER_LEAGUE);
         verify(matchRecordRepository).save(same(existing));

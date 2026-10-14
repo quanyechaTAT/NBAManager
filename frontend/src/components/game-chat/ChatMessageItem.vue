@@ -8,8 +8,8 @@
     }"
   >
     <div class="msg-avatar" :class="{ 'is-admin': message.role === 'ADMIN', 'is-self-avatar': isSelf }">
-      <img v-if="message.avatarUrl" :src="message.avatarUrl" class="avatar-img" @error="avatarFailed = true" />
-      <span v-if="!message.avatarUrl || avatarFailed" class="avatar-text">{{ avatarLetter }}</span>
+      <img v-if="hasValidAvatar" :src="message.avatarUrl!" class="avatar-img" alt="" @error="avatarFailed = true" />
+      <span v-else class="avatar-text">{{ avatarLetter }}</span>
     </div>
 
     <div class="msg-content">
@@ -50,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { LocalChatMessage } from '@/composables/useGameChat'
 
 const props = defineProps<{
@@ -63,10 +63,21 @@ const props = defineProps<{
 defineEmits<{ retry: [] }>()
 
 const avatarFailed = ref(false)
+watch(() => props.message.avatarUrl, () => {
+  avatarFailed.value = false
+})
+
+const hasValidAvatar = computed(() => {
+  const url = props.message.avatarUrl
+  if (!url || typeof url !== 'string') return false
+  const trimmed = url.trim()
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false
+  return !avatarFailed.value
+})
 
 const avatarLetter = computed(() => {
-  const name = props.message.username || '?'
-  return name.charAt(0).toUpperCase()
+  const name = (props.message.username || '').trim()
+  return (name.charAt(0) || '?').toUpperCase()
 })
 
 const formattedTime = computed(() => {

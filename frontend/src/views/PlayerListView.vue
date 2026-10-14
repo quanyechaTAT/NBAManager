@@ -197,8 +197,6 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import * as XLSX from 'xlsx'
-import { saveAs } from 'file-saver'
 import { useAuthStore } from '@/stores/auth'
 import { createPlayer, deletePlayer, fetchPlayers, updatePlayer } from '@/api/player'
 import { fetchTeams } from '@/api/team'
@@ -324,6 +322,7 @@ async function onDelete(row: Player) {
 async function exportExcel() {
   ElMessage.info('正在导出…')
   try {
+    const [XLSX, { default: saveAs }] = await Promise.all([import('xlsx'), import('file-saver')])
     // 后端分页上限为 100，导出改为逐页拉取，避免 size 超限被 400 拒绝
     const EXPORT_PAGE_SIZE = 100
     const allPlayers: Player[] = []

@@ -44,25 +44,11 @@ if os.path.exists(env_path):
                 key, value = line.split('=', 1)
                 os.environ.setdefault(key.strip(), value.strip())
 
-# 导入翻译模块
-direct_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-
-
-def _open_news_url(request, timeout=15):
-    """Open a news source through the configured proxy, then retry directly."""
-    if not PROXY_URL:
-        return proxy_opener.open(request, timeout=timeout)
-    try:
-        return proxy_opener.open(request, timeout=timeout)
-    except Exception as proxy_error:
-        print(f"新闻代理请求失败，尝试直连: {proxy_error}", file=sys.stderr)
-        try:
-            return direct_opener.open(request, timeout=timeout)
-        except Exception as direct_error:
-            raise RuntimeError(
-                f"proxy request failed: {proxy_error}; direct request failed: {direct_error}"
-            ) from direct_error
-
+# All provider clients share one explicit proxy policy and bounded direct fallback.
+from sync_network import SyncNetwork, build_proxy_url as _build_proxy_url
+network = SyncNetwork()
+PROXY_URL = network.proxy_url
+_open_news_url = network.urlopen
 
 try:
     from translator import translate_text, translate_news_article, translate_trade_details
@@ -70,75 +56,6 @@ try:
 except ImportError:
     HAS_TRANSLATOR = False
     print("警告: translator模块未找到，将使用本地映射翻译", file=sys.stderr)
-
-# 代理配置（可选，代理不可用时直连）
-PROXY_HOST = os.environ.get('NBA_PROXY_HOST', '')
-PROXY_PORT = os.environ.get('NBA_PROXY_PORT', '')
-PROXY_URL = ''
-
-def _build_proxy_url(host, port):
-    """从 host/port 构建代理 URL，兼容 host 已包含 scheme 和引号的情况"""
-    if not host or not port:
-        return ''
-    # 去除引号
-    host = host.strip('"').strip("'")
-    port = port.strip('"').strip("'")
-    # 如果 host 已经是完整 URL（如 http://127.0.0.1:7890），直接使用
-    if host.startswith('http://') or host.startswith('https://'):
-        return host
-    return f'http://{host}:{port}'
-
-
-def _apply_proxy_environment(proxy_url):
-    for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']:
-        os.environ[key] = proxy_url
-
-def _proxy_reachable(proxy_url):
-    """探测代理端口是否可连：代理软件没开时改走直连，
-    否则 stats.nba.com 等全部抓取会被'拒绝连接'打死（历史同步曾因此整批为空）"""
-    try:
-        from urllib.parse import urlparse
-        parsed = urlparse(proxy_url)
-        host = parsed.hostname or '127.0.0.1'
-        port = parsed.port or 80
-        sock = socket.create_connection((host, port), timeout=1.5)
-        sock.close()
-        return True
-    except Exception:
-        return False
-
-
-if PROXY_HOST and PROXY_PORT:
-    PROXY_URL = _build_proxy_url(PROXY_HOST, PROXY_PORT)
-    if PROXY_URL and not _proxy_reachable(PROXY_URL):
-        print(f"警告: 代理 {PROXY_URL} 不可达，改用直连", file=sys.stderr)
-        PROXY_HOST = ''
-        PROXY_PORT = ''
-    if PROXY_HOST and PROXY_PORT:
-        proxy_handler = urllib.request.ProxyHandler({
-            'https': PROXY_URL,
-            'http': PROXY_URL,
-        })
-        proxy_opener = urllib.request.build_opener(proxy_handler)
-        urllib.request.install_opener(proxy_opener)
-        _apply_proxy_environment(PROXY_URL)
-        print(f"已配置代理: {PROXY_URL}", file=sys.stderr)
-    else:
-        # 显式清除所有代理环境变量，防止系统代理干扰
-        for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']:
-            os.environ.pop(key, None)
-        proxy_handler = urllib.request.ProxyHandler({})
-        proxy_opener = urllib.request.build_opener(proxy_handler)
-        urllib.request.install_opener(proxy_opener)
-        print("未配置代理，使用直连", file=sys.stderr)
-else:
-    # 显式清除所有代理环境变量，防止系统代理干扰
-    for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']:
-        os.environ.pop(key, None)
-    proxy_handler = urllib.request.ProxyHandler({})
-    proxy_opener = urllib.request.build_opener(proxy_handler)
-    urllib.request.install_opener(proxy_opener)
-    print("未配置代理，使用直连", file=sys.stderr)
 
 try:
     from nba_api.stats.endpoints import (
@@ -164,16 +81,11 @@ try:
 except ImportError:
     HAS_DRAFT_API = False
 
-# 禁用nba_api的代理（nba_api使用requests库，需要单独配置）
-if not PROXY_URL:
-    try:
-        import requests
-        # 设置requests不使用代理
-        session = requests.Session()
-        session.trust_env = False
-        session.proxies = {'http': None, 'https': None}
-    except ImportError:
-        pass
+if HAS_NBA_API:
+    from nba_api.stats.library.http import NBAStatsHTTP
+    from nba_api.live.nba.library.http import NBALiveHTTP
+    NBAStatsHTTP.set_session(network)
+    NBALiveHTTP.set_session(network)
 
 # 球队英文名/缩写到中文名映射
 TEAM_NAME_MAP = {
@@ -715,7 +627,7 @@ def save_dynamic_map():
     except Exception as e:
         print(f"保存动态映射失败: {e}", file=sys.stderr)
 
-def translate_player_name(en_name):
+def translate_player_name(en_name, allow_api=True):
     """翻译球员名：先查本地映射，再调用DeepSeek API，最后保存映射"""
     # 1. 先查静态映射
     if en_name in PLAYER_CN_MAP:
@@ -726,7 +638,7 @@ def translate_player_name(en_name):
         return _dynamic_cn_map[en_name], 'MAPPED'
 
     # 3. 调用DeepSeek API翻译
-    if HAS_TRANSLATOR:
+    if HAS_TRANSLATOR and allow_api:
         try:
             prompt = f"请将以下NBA球员名字翻译为中文，只输出中文名字，不要添加其他内容：\n{en_name}"
             cn_name = translate_text(prompt, max_retries=1)
@@ -1053,7 +965,7 @@ def _get_current_season():
             host=os.environ.get('DB_HOST', 'localhost'),
             port=int(os.environ.get('DB_PORT', 3306)),
             user=os.environ.get('DB_USERNAME', 'root'),
-            password=os.environ.get('DB_PASSWORD', 'dl041280'),
+            password=os.environ.get('DB_PASSWORD', ''),
             database=os.environ.get('DB_NAME', 'nba_manager'),
             charset='utf8mb4',
             connect_timeout=2
@@ -1133,7 +1045,8 @@ def fetch_team_standings():
     print("正在从nba_api获取球队战绩数据...", file=sys.stderr)
 
     try:
-        standings = LeagueStandingsV3(season=_get_current_season(), timeout=30)
+        season = _get_current_season()
+        standings = LeagueStandingsV3(season=season, timeout=30)
         df = standings.get_dict()
         time.sleep(1.0)
     except Exception as e:
@@ -1157,7 +1070,7 @@ def fetch_team_standings():
 
         result.append({
             'name': cn_name,
-            'season': _get_current_season(),
+            'season': season,
             'nameEn': en_name,
             'abbreviation': abbreviation,
             'city': city,
@@ -1232,7 +1145,7 @@ def fetch_player_stats():
 
         # 球员名翻译（先查映射，再调用DeepSeek API）
         en_name = data.get('PLAYER_NAME', '')
-        cn_name, translation_status = translate_player_name(en_name)
+        cn_name, translation_status = translate_player_name(en_name, allow_api=False)
 
         result.append({
             'nbaPlayerId': player_id,
@@ -1249,43 +1162,27 @@ def fetch_player_stats():
             'country': data.get('COUNTRY') or None,
         })
 
-    # 批量获取球员详细信息（包括球衣号码和位置）
-    # 从CommonPlayerInfo获取真实数据
-    print(f"正在从CommonPlayerInfo获取{len(result)}名球员的详细信息...", file=sys.stderr)
+    # PlayerIndex returns all biographies in one request; individual CommonPlayerInfo
+    # calls used to take thousands of seconds and prevented every player sync completing.
     try:
-        from nba_api.stats.endpoints import CommonPlayerInfo
-        updated_count = 0
+        from nba_api.stats.endpoints import PlayerIndex
+        index = PlayerIndex(season=season, timeout=30).get_dict()
+        biographies = {}
+        for dataset in index.get('resultSets', []):
+            for row in dataset.get('rowSet', []):
+                info = dict(zip(dataset.get('headers', []), row))
+                biographies[_safe_int(info.get('PERSON_ID'))] = info
         for player in result:
-            try:
-                info = CommonPlayerInfo(player_id=player['nbaPlayerId'], timeout=15)
-                info_data = info.get_dict()
-                if info_data.get('resultSets'):
-                    rows = info_data['resultSets'][0].get('rowSet', [])
-                    if rows:
-                        headers = info_data['resultSets'][0]['headers']
-                        row_data = dict(zip(headers, rows[0]))
-                        # 更新球衣号码
-                        jersey_num = str(row_data.get('JERSEY') or '').strip()
-                        if jersey_num:
-                            player['jersey'] = jersey_num
-                        # 更新位置信息 - 从API获取真实位置
-                        pos_raw = row_data.get('POSITION', '')
-                        if pos_raw and pos_raw.strip():
-                            player['position'] = POSITION_MAP.get(pos_raw.strip(), player['position'])
-                        # 更新身高体重
-                        if row_data.get('HEIGHT'):
-                            player['height'] = row_data['HEIGHT']
-                        if row_data.get('WEIGHT'):
-                            player['weight'] = optional_number(row_data['WEIGHT'])
-                        if row_data.get('COUNTRY'):
-                            player['country'] = row_data['COUNTRY']
-                        updated_count += 1
-                time.sleep(0.3)
-            except Exception as e:
-                pass  # 忽略单个球员的错误
-        print(f"成功更新{updated_count}名球员的详细信息", file=sys.stderr)
-    except Exception as e:
-        print(f"获取球员详细信息失败: {e}", file=sys.stderr)
+            info = biographies.get(player['nbaPlayerId'], {})
+            player['jersey'] = str(info.get('JERSEY_NUMBER') or player['jersey'])
+            position = str(info.get('POSITION') or '').strip()
+            player['position'] = POSITION_MAP.get(position, position or player['position'])
+            player['height'] = info.get('HEIGHT') or player['height']
+            player['weight'] = optional_number(info.get('WEIGHT')) or player['weight']
+            player['country'] = info.get('COUNTRY') or player['country']
+        print(f"批量获取到 {len(biographies)} 名球员资料", file=sys.stderr)
+    except Exception as error:
+        print(f"批量球员资料暂不可用: {error}", file=sys.stderr)
 
     # 注意：不再将空球衣号设置为默认值，保持为空字符串
 
@@ -1302,6 +1199,32 @@ def fetch_player_stats():
     result.sort(key=lambda x: (x['ppg'] is None, -(x['ppg'] or 0)))
 
     print(f"获取到 {len(result)} 名球员数据", file=sys.stderr)
+    return result
+
+
+def _cumulative_period_scores(home_periods, away_periods, last_period=None, score_field='score'):
+    """Convert provider period points to the detail API's cumulative score contract."""
+    def by_period(entries):
+        scores = {}
+        for index, entry in enumerate(entries or []):
+            period = _safe_int(entry.get('period', index + 1), 0)
+            score = _safe_int(entry.get(score_field, entry.get('displayValue')), -1)
+            if period > 0 and score >= 0:
+                scores[period] = score
+        return scores
+
+    home = by_period(home_periods)
+    away = by_period(away_periods)
+    limit = _safe_int(last_period, 0) if last_period is not None else None
+    result = []
+    home_total = away_total = 0
+    for period in sorted(home.keys() & away.keys()):
+        # Missing boundaries cannot be replaced with zero; future periods are not played yet.
+        if period != len(result) + 1 or (limit is not None and period > limit):
+            break
+        home_total += home[period]
+        away_total += away[period]
+        result.append({'period': period, 'homeScore': home_total, 'awayScore': away_total})
     return result
 
 
@@ -1361,6 +1284,8 @@ def fetch_today_games():
                 'startTime': game.get('gameEt', ''),
                 'period': game.get('period', 0),
                 'gameClock': game.get('gameClock', ''),
+                'quarterScores': [] if status == 'SCHEDULED' else _cumulative_period_scores(
+                    home.get('periods'), away.get('periods'), game.get('period') or None),
                 'source': 'NBA_LIVE',
                 'category': 'game',
                 'league': 'NBA',
@@ -1411,6 +1336,8 @@ def fetch_today_games():
                     'startTime': game.get('gameEt', ''),
                     'period': game.get('period', 0),
                     'gameClock': game.get('gameClock', ''),
+                    'quarterScores': [] if status == 'SCHEDULED' else _cumulative_period_scores(
+                        home.get('periods'), away.get('periods'), game.get('period') or None),
                     'source': 'NBA_SCOREBOARD_V3',
                     'category': 'game',
                     'league': 'NBA',
@@ -1516,7 +1443,7 @@ def fetch_espn_summer_today_games():
                 'User-Agent': 'Mozilla/5.0',
                 'Accept': 'application/json',
             })
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with network.urlopen(request, timeout=30) as response:
                 data = json.loads(response.read().decode('utf-8'))
             last_error = None
             break
@@ -1552,6 +1479,7 @@ def fetch_espn_summer_today_games():
 
         status_type = (event.get('status') or {}).get('type') or {}
         status = _espn_status_to_game_status(status_type)
+        period = _safe_int((event.get('status') or {}).get('period'))
         seen.add(game_id)
         games.append({
             'gameId': game_id,
@@ -1561,8 +1489,10 @@ def fetch_espn_summer_today_games():
             'awayScore': _safe_int(away.get('score')),
             'status': status,
             'startTime': event.get('date', ''),
-            'period': 0,
+            'period': period,
             'gameClock': status_type.get('shortDetail') or status_type.get('detail') or '',
+            'quarterScores': [] if status == 'SCHEDULED' else _cumulative_period_scores(
+                home.get('linescores'), away.get('linescores'), period or None, score_field='value'),
             'source': 'ESPN_NBA_SUMMER',
             'category': 'summer_game',
             'league': 'NBA Summer League',
@@ -1582,7 +1512,7 @@ def _espn_json(url, timeout=25):
         'User-Agent': 'Mozilla/5.0',
         'Accept': 'application/json',
     })
-    with urllib.request.urlopen(req, timeout=timeout) as response:
+    with network.urlopen(req, timeout=timeout) as response:
         return json.loads(response.read().decode('utf-8'))
 
 
@@ -1838,12 +1768,21 @@ def _resolve_game_type(game):
     return 'REGULAR_SEASON'
 
 
+class PartialFetchError(RuntimeError):
+    def __init__(self, items, errors):
+        super().__init__('; '.join(errors))
+        self.items = items
+        self.errors = errors
+
+
 def fetch_recent_games():
     """从nba_api获取最近比赛记录（最近30天）"""
     _init_team_map()
     print("正在获取最近比赛记录...", file=sys.stderr)
 
     games = []
+    errors = []
+    successful_days = 0
     today = datetime.now()
 
     for days_ago in range(30):
@@ -1853,9 +1792,13 @@ def fetch_recent_games():
         try:
             sb = ScoreboardV3(game_date=date_str, timeout=30)
             data = sb.get_dict()
-            time.sleep(1.0)
+            successful_days += 1
+            time.sleep(0.2)
         except Exception as e:
             print(f"获取{date_str}比赛数据失败: {e}", file=sys.stderr)
+            errors.append(f"{date_str}: {e}")
+            if len(errors) >= 3 and successful_days == 0:
+                raise RuntimeError("最近比赛来源连续失败: " + "; ".join(errors)) from e
             continue
 
         # 解析比赛数据 (ScoreboardV3 格式)
@@ -1890,6 +1833,8 @@ def fetch_recent_games():
             })
 
     print(f"获取到 {len(games)} 场比赛记录", file=sys.stderr)
+    if errors:
+        raise PartialFetchError(games, errors)
     return games
 
 
@@ -1911,8 +1856,16 @@ def fetch_playoff_bracket(season=None):
     start_year = int(season.split('-')[0])
     playoff_start = f"{start_year+1}0415"
     playoff_end = f"{start_year+1}0630"
-    games_data = fetch_espn_playoff_games(playoff_start, playoff_end)
-    print(f"从ESPN API获取到 {len(games_data)} 场比赛", file=sys.stderr)
+    try:
+        games_data = fetch_nba_playoff_games(season)
+    except Exception as error:
+        print(f"NBA季后赛比分失败，尝试ESPN按日数据: {error}", file=sys.stderr)
+        try:
+            games_data = fetch_espn_playoff_games(playoff_start, playoff_end)
+        except Exception as fallback_error:
+            return {'matchups': [], 'games': [], 'sourceStatus': 'failed',
+                    'errors': [str(error), str(fallback_error)]}
+    print(f"获取到 {len(games_data)} 场季后赛比分", file=sys.stderr)
 
     # 第三步：结合系列赛结构和比赛数据构建对阵图
     if series_data:
@@ -1922,7 +1875,37 @@ def fetch_playoff_bracket(season=None):
         matchups = build_bracket_from_games(games_data)
 
     print(f"最终构建 {len(matchups)} 组系列赛", file=sys.stderr)
-    return {'matchups': matchups, 'games': games_data}
+    # Never invent rounds or overwrite a completed bracket with structure-only 0-0 rows.
+    complete = bool(series_data and games_data and matchups)
+    return {'matchups': matchups, 'games': games_data, 'sourceStatus': 'ok' if complete else 'partial',
+            'errors': [] if complete else ['季后赛结构或比分未完整返回']}
+
+
+def fetch_nba_playoff_games(season):
+    """One official batch query replaces dozens of ESPN date requests."""
+    from nba_api.stats.endpoints import LeagueGameFinder
+    data = LeagueGameFinder(league_id_nullable='00', season_nullable=season,
+                           season_type_nullable='Playoffs', timeout=30).get_dict()
+    grouped = {}
+    for dataset in data.get('resultSets', []):
+        for row in dataset.get('rowSet', []):
+            game = dict(zip(dataset.get('headers', []), row))
+            if game.get('WL') not in ('W', 'L'):
+                continue
+            game_id = str(game.get('GAME_ID', ''))
+            side = 'home' if ' vs. ' in game.get('MATCHUP', '') else 'away'
+            grouped.setdefault(game_id, {})[side] = game
+    result = []
+    for game_id, sides in grouped.items():
+        if not all(side in sides for side in ('home', 'away')):
+            raise RuntimeError(f'季后赛比赛缺少一方记录: {game_id}')
+        home, away = sides['home'], sides['away']
+        result.append({'gameId': game_id, 'homeTeam': TEAM_ID_TO_CN.get(_safe_int(home['TEAM_ID']), home.get('TEAM_NAME', '')),
+                       'awayTeam': TEAM_ID_TO_CN.get(_safe_int(away['TEAM_ID']), away.get('TEAM_NAME', '')),
+                       'homeTeamEn': home.get('TEAM_NAME', ''), 'awayTeamEn': away.get('TEAM_NAME', ''),
+                       'homeScore': _safe_int(home['PTS']), 'awayScore': _safe_int(away['PTS']),
+                       'date': home['GAME_DATE'], 'status': 'FINISHED'})
+    return sorted(result, key=lambda game: (game['date'], game['gameId']))
 
 
 def build_bracket_from_games(games_data):
@@ -2001,8 +1984,7 @@ def fetch_playoff_series(season):
     """从NBA API获取季后赛对阵结构"""
     try:
         from nba_api.stats.endpoints import CommonPlayoffSeries
-        # 明确指定不使用代理
-        series = CommonPlayoffSeries(season=season, timeout=60, proxy='')
+        series = CommonPlayoffSeries(season=season, timeout=60)
         data = series.get_dict()
         time.sleep(1.0)
 
@@ -2050,25 +2032,28 @@ def fetch_espn_playoff_games(start_date, end_date):
     """从ESPN API获取季后赛比赛（分段请求避免超时）"""
     all_games = []
 
-    # 将日期范围分成更小的段（每30天一段）
+    # The scoreboard endpoint rejects date ranges; request individual dates.
     from datetime import datetime, timedelta
     start = datetime.strptime(start_date, '%Y%m%d')
     end = datetime.strptime(end_date, '%Y%m%d')
 
     current = start
-    while current < end:
-        chunk_end = min(current + timedelta(days=30), end)
+    errors = []
+    while current <= min(end, datetime.now()):
+        chunk_end = current
         chunk_start_str = current.strftime('%Y%m%d')
         chunk_end_str = chunk_end.strftime('%Y%m%d')
 
-        url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?seasontype=3&dates={chunk_start_str}-{chunk_end_str}&limit=100"
+        url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?seasontype=3&dates={chunk_start_str}&limit=100"
         try:
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'})
-            response = urllib.request.urlopen(req, timeout=30)
-            data = json.loads(response.read().decode('utf-8'))
+            with network.urlopen(req, timeout=15) as response:
+                data = json.loads(response.read().decode('utf-8'))
 
             events = data.get('events', [])
             for event in events:
+                if event.get('season', {}).get('type') != 3:
+                    continue
                 comp = event.get('competitions', [{}])[0]
                 competitors = comp.get('competitors', [])
                 if len(competitors) < 2:
@@ -2121,10 +2106,15 @@ def fetch_espn_playoff_games(start_date, end_date):
             time.sleep(0.5)  # 避免请求过快
         except Exception as e:
             print(f"获取{chunk_start_str}-{chunk_end_str}数据失败: {e}", file=sys.stderr)
+            errors.append(f'{chunk_start_str}: {e}')
+            if len(errors) >= 3 and not all_games:
+                raise RuntimeError('; '.join(errors)) from e
 
-        current = chunk_end
+        current += timedelta(days=1)
 
     print(f"获取到 {len(all_games)} 场季后赛比赛", file=sys.stderr)
+    if errors:
+        raise PartialFetchError(all_games, errors)
     return all_games
 
 
@@ -2264,16 +2254,7 @@ def fetch_boxscore(game_id):
     print(f"正在获取比赛 {game_id} 的Box Score...", file=sys.stderr)
 
     try:
-        saved_proxy = {}
-        proxy_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-        for k in proxy_keys:
-            saved_proxy[k] = os.environ.pop(k, None)
-        try:
-            box = BoxScoreTraditionalV3(game_id=game_id, timeout=30, proxy='')
-        finally:
-            for k, v in saved_proxy.items():
-                if v is not None:
-                    os.environ[k] = v
+        box = BoxScoreTraditionalV3(game_id=game_id, timeout=30)
         data = box.get_dict()
         time.sleep(0.5)
     except Exception as e:
@@ -2372,16 +2353,7 @@ def fetch_playbyplay(game_id, start_period=0, end_period=10):
 
     try:
         # NBA API 通过代理可能被阻断，临时跳过代理
-        saved_proxy = {}
-        proxy_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-        for k in proxy_keys:
-            saved_proxy[k] = os.environ.pop(k, None)
-        try:
-            pbp = PlayByPlayV3(game_id=game_id, start_period=start_period, end_period=end_period, timeout=30, proxy='')
-        finally:
-            for k, v in saved_proxy.items():
-                if v is not None:
-                    os.environ[k] = v
+        pbp = PlayByPlayV3(game_id=game_id, start_period=start_period, end_period=end_period, timeout=30)
         data = pbp.get_dict()
         time.sleep(0.5)
     except Exception as e:
@@ -2450,7 +2422,7 @@ def fetch_espn_playbyplay(game_id):
     try:
         url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event={game_id}"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with network.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except Exception as e:
         print(f"ESPN API 请求失败: {e}", file=sys.stderr)
@@ -2989,7 +2961,7 @@ def _fetch_draft_from_nba_stats(year, retries=3, timeout=30):
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with network.urlopen(req, timeout=timeout) as resp:
                 content_type = resp.headers.get('Content-Type', '')
                 body = resp.read()
 
@@ -3069,7 +3041,7 @@ def _fetch_draft_from_nba_com_tracker(year, retries=3, timeout=30):
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with network.urlopen(req, timeout=timeout) as resp:
                 content_type = resp.headers.get('Content-Type', '')
                 if 'html' not in content_type and 'text' not in content_type:
                     return None, f"NBA.com 返回非HTML (Content-Type: {content_type})"
@@ -3127,7 +3099,7 @@ def _fetch_draft_from_nba_news_order(year, retries=3, timeout=30):
         for attempt in range(retries):
             try:
                 req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                with network.urlopen(req, timeout=timeout) as resp:
                     content_type = resp.headers.get('Content-Type', '')
                     if 'html' not in content_type and 'text' not in content_type:
                         last_error = f"NBA.com news returned non-HTML content: {content_type}"
@@ -3389,6 +3361,8 @@ def fetch_draft_history(year=None):
 
     all_result = []
     errors = []
+    failed_years = []
+    snapshot_years = []
 
     for yr in years_to_fetch:
         print(f"正在获取{yr}年选秀数据...", file=sys.stderr)
@@ -3464,10 +3438,12 @@ def fetch_draft_history(year=None):
             snapshot = _load_draft_snapshot(yr)
             if snapshot:
                 all_result.extend(snapshot)
+                snapshot_years.append(yr)
                 got_data = True
                 print(f"  [snapshot] restored {len(snapshot)} records", file=sys.stderr)
 
         if not got_data:
+            failed_years.append(yr)
             errors.append(f"{yr}: NBA official draft data for {yr} is not available yet")
             print(f"  所有 NBA 官方渠道均未获取到 {yr} 年选秀数据", file=sys.stderr)
 
@@ -3475,18 +3451,14 @@ def fetch_draft_history(year=None):
 
     print(f"共获取到 {len(all_result)} 条选秀记录", file=sys.stderr)
 
-    if not all_result and errors:
-        return {
-            'draftPicks': [],
-            'errors': errors,
-            'sourceStatus': 'failed',
-            'failedYears': years_to_fetch,
-        }
-
-    if errors and all_result:
-        print(f"警告: 部分年份获取失败: {errors}", file=sys.stderr)
-
-    return all_result
+    return {
+        'draftPicks': all_result,
+        'errors': errors if failed_years or snapshot_years else [],
+        'sourceStatus': ('failed' if not all_result else 'stale' if snapshot_years
+                         else 'partial' if failed_years else 'ok'),
+        'failedYears': failed_years,
+        'snapshotYears': snapshot_years,
+    }
 
 
 def fetch_transactions():
@@ -3507,7 +3479,7 @@ def fetch_transactions():
                 'Accept': 'application/json',
             })
 
-            response = urllib.request.urlopen(req, timeout=15)
+            response = network.urlopen(req, timeout=15)
             data = json.loads(response.read().decode('utf-8'))
         except Exception as e:
             print(f"获取ESPN交易数据失败 (page {page}): {e}", file=sys.stderr)
@@ -3683,7 +3655,17 @@ def main():
         result['players'] = fetch_player_stats()
 
     if action in ('all', 'games'):
-        result['games'] = fetch_recent_games()
+        try:
+            result['games'] = fetch_recent_games()
+            result['gamesSourceStatus'] = 'ok'
+        except PartialFetchError as error:
+            result['games'] = error.items
+            result['gamesSourceStatus'] = 'partial'
+            result['gamesErrors'] = error.errors
+        except Exception as error:
+            result['games'] = []
+            result['gamesSourceStatus'] = 'failed'
+            result['gamesErrors'] = [str(error)]
 
     if action in ('all', 'trades'):
         result['trades'] = fetch_transactions()
@@ -3692,6 +3674,7 @@ def main():
         draft_result = fetch_draft_history()
         if isinstance(draft_result, dict):
             result['draftPicks'] = draft_result.get('draftPicks', [])
+            result['draftSourceStatus'] = draft_result.get('sourceStatus', 'ok')
             if draft_result.get('errors'):
                 result['draftErrors'] = draft_result['errors']
                 result['draftSourceStatus'] = draft_result.get('sourceStatus', 'partial')
@@ -3801,6 +3784,7 @@ def main():
 
         if isinstance(draft_result, dict):
             result['draftPicks'] = draft_result.get('draftPicks', [])
+            result['draftSourceStatus'] = draft_result.get('sourceStatus', 'ok')
             if draft_result.get('errors'):
                 result['draftErrors'] = draft_result['errors']
                 result['draftSourceStatus'] = draft_result.get('sourceStatus', 'partial')
@@ -4050,19 +4034,9 @@ def fetch_shot_chart(player_id, season=None, with_status=False):
 
 
 def _call_shotchartdetail_noproxy(**kwargs):
-    """调用 ShotChartDetail，临时跳过代理"""
+    """Compatibility helper; use the same resilient transport as every NBA endpoint."""
     from nba_api.stats.endpoints import ShotChartDetail
-    saved_proxy = {}
-    proxy_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-    for k in proxy_keys:
-        saved_proxy[k] = os.environ.pop(k, None)
-    try:
-        result = ShotChartDetail(**kwargs, proxy='')
-    finally:
-        for k, v in saved_proxy.items():
-            if v is not None:
-                os.environ[k] = v
-    return result
+    return ShotChartDetail(**kwargs)
 
 
 def _parse_shotchart_rows(data):
@@ -4135,16 +4109,7 @@ def _get_game_team_ids(game_id):
         from nba_api.stats.endpoints import BoxScoreTraditionalV3
         bs = _call_shotchartdetail_noproxy.__wrapped__(game_id) if hasattr(_call_shotchartdetail_noproxy, '__wrapped__') else None
         # 直接用 nba_api 获取
-        saved_proxy = {}
-        proxy_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-        for k in proxy_keys:
-            saved_proxy[k] = os.environ.pop(k, None)
-        try:
-            box = BoxScoreTraditionalV3(game_id=game_id, timeout=30, proxy='')
-        finally:
-            for k, v in saved_proxy.items():
-                if v is not None:
-                    os.environ[k] = v
+        box = BoxScoreTraditionalV3(game_id=game_id, timeout=30)
         data = box.get_dict()
         team_ids = []
         for rs in data.get('boxScoreTraditional', {}).get('homeTeam', {}).get('teamId', []):
@@ -4162,16 +4127,7 @@ def _get_game_player_ids(game_id):
     """从 BoxScore 获取本场出场球员 ID"""
     try:
         from nba_api.stats.endpoints import BoxScoreTraditionalV3
-        saved_proxy = {}
-        proxy_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-        for k in proxy_keys:
-            saved_proxy[k] = os.environ.pop(k, None)
-        try:
-            box = BoxScoreTraditionalV3(game_id=game_id, timeout=30, proxy='')
-        finally:
-            for k, v in saved_proxy.items():
-                if v is not None:
-                    os.environ[k] = v
+        box = BoxScoreTraditionalV3(game_id=game_id, timeout=30)
         data = box.get_dict()
         player_ids = []
         for team_key in ['homeTeam', 'awayTeam']:

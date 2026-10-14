@@ -10,15 +10,19 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 public class SchedulingConfig {
 
     /**
-     * 独立线程池：仅用于管理员手动同步，不影响 @Scheduled 自动任务。
-     * @Scheduled 继续使用 Spring 默认单线程调度器。
+     * 同步作业共用有界预算，覆盖手动、定时和登录补偿来源。
+     * 调度线程仅提交作业；队列满时由 SyncCoordinator 返回 SYNC_QUEUE_FULL。
      */
     @Bean("manualSyncExecutor")
-    public ThreadPoolTaskExecutor manualSyncExecutor() {
+    public ThreadPoolTaskExecutor manualSyncExecutor(
+            @org.springframework.beans.factory.annotation.Value("${app.sync.executor-core-size:2}") int core,
+            @org.springframework.beans.factory.annotation.Value("${app.sync.executor-max-size:4}") int max,
+            @org.springframework.beans.factory.annotation.Value("${app.sync.executor-queue-capacity:16}") int queue) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(2);
-        executor.setMaxPoolSize(4);
-        executor.setQueueCapacity(16);
+        int boundedMax = Math.max(1, Math.min(8, max));
+        executor.setCorePoolSize(Math.max(1, Math.min(boundedMax, core)));
+        executor.setMaxPoolSize(boundedMax);
+        executor.setQueueCapacity(Math.max(0, Math.min(128, queue)));
         executor.setThreadNamePrefix("manual-sync-");
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(60);

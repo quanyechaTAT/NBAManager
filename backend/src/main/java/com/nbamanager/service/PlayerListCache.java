@@ -45,7 +45,7 @@ public class PlayerListCache {
      */
     @Cacheable(value = "playerList",
             key = "#keyword + '|' + #teamId + '|' + #position + '|' + #pageable",
-            condition = "#pageable.pageNumber < 20")
+            condition = "#pageable.pageNumber < 20", sync = true)
     public PagePayload load(String keyword, Long teamId, String position, Pageable pageable) {
         return playerService.getObject().queryPage(keyword, teamId, position, pageable);
     }

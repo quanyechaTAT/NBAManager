@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, type ComponentPublicInstance } from 'vue'
+import { ref, shallowRef, computed, watch, nextTick, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
 import type { TimelineEvent } from '@/api/types'
 import { getTimelineDescription } from '@/utils/replayText'
 
@@ -18,6 +18,69 @@ const typeFilter = ref<string>('all')
 const searchQuery = ref('')
 const rowRefs = new Map<number, HTMLElement>()
 const timelineScrollRef = ref<HTMLElement | null>(null)
+const scrollTop = ref(0)
+const viewportHeight = ref(600)
+const rowHeights = shallowRef(new Map<number, number>())
+const rowIds = new WeakMap<HTMLElement, number>()
+let resizeObserver: ResizeObserver | null = null
+const ESTIMATED_ROW_HEIGHT = 128
+const OVERSCAN = 6
+const virtual = computed(() => filteredEvents.value.length > 100)
+const offsets = computed(() => {
+  const result = [0]
+  for (const event of filteredEvents.value) {
+    result.push(result[result.length - 1] + (rowHeights.value.get(event.id) ?? ESTIMATED_ROW_HEIGHT))
+  }
+  return result
+})
+function rowAt(position: number): number {
+  let low = 0, high = filteredEvents.value.length
+  while (low < high) {
+    const middle = (low + high) >>> 1
+    if (offsets.value[middle + 1] <= position) low = middle + 1
+    else high = middle
+  }
+  return low
+}
+const windowRange = computed(() => {
+  if (!virtual.value) return { start: 0, end: filteredEvents.value.length }
+  return {
+    start: Math.max(0, rowAt(scrollTop.value) - OVERSCAN),
+    end: Math.min(filteredEvents.value.length, rowAt(scrollTop.value + viewportHeight.value) + OVERSCAN + 1),
+  }
+})
+const visibleEvents = computed(() => filteredEvents.value.slice(windowRange.value.start, windowRange.value.end))
+const beforeHeight = computed(() => offsets.value[windowRange.value.start])
+const afterHeight = computed(() => offsets.value[offsets.value.length - 1] - offsets.value[windowRange.value.end])
+
+function onTimelineScroll() {
+  const scroller = timelineScrollRef.value
+  if (scroller) {
+    scrollTop.value = scroller.scrollTop
+    viewportHeight.value = scroller.clientHeight || 600
+  }
+}
+
+onMounted(() => {
+  if (typeof ResizeObserver === 'undefined') return
+  resizeObserver = new ResizeObserver(entries => {
+    const updated = new Map(rowHeights.value)
+    let changed = false
+    for (const entry of entries) {
+      if (entry.target === timelineScrollRef.value) { onTimelineScroll(); continue }
+      const id = rowIds.get(entry.target as HTMLElement)
+      const height = Math.ceil(entry.target.getBoundingClientRect().height)
+      if (id != null && height > 0 && updated.get(id) !== height) {
+        updated.set(id, height); changed = true
+      }
+    }
+    if (changed) rowHeights.value = updated
+  })
+  if (timelineScrollRef.value) resizeObserver.observe(timelineScrollRef.value)
+  for (const row of rowRefs.values()) resizeObserver.observe(row)
+  onTimelineScroll()
+})
+onUnmounted(() => resizeObserver?.disconnect())
 
 const periods = [
   { label: '全部', value: 'all' as const },
@@ -125,6 +188,12 @@ function onSelect(event: TimelineEvent) {
   emit('select', event)
 }
 
+function selectAdjacent(event: TimelineEvent, direction: number) {
+  const index = filteredEvents.value.findIndex(item => item.id === event.id)
+  const target = filteredEvents.value[Math.max(0, Math.min(filteredEvents.value.length - 1, index + direction))]
+  if (target) onSelect(target)
+}
+
 function hasScore(event: TimelineEvent): boolean {
   return event.homeScore !== null && event.homeScore !== undefined
     && event.awayScore !== null && event.awayScore !== undefined
@@ -136,8 +205,12 @@ function setRowRef(event: TimelineEvent, el: Element | ComponentPublicInstance |
     : el && !(el instanceof Element) && el.$el instanceof HTMLElement
       ? el.$el
       : null
+  const previous = rowRefs.get(event.id)
+  if (previous && previous !== target) resizeObserver?.unobserve(previous)
   if (target) {
     rowRefs.set(event.id, target)
+    rowIds.set(target, event.id)
+    resizeObserver?.observe(target)
   } else {
     rowRefs.delete(event.id)
   }
@@ -155,12 +228,23 @@ function centerRowInScroller(id: number) {
     - (scroller.clientHeight - rowRect.height) / 2
   const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
   scroller.scrollTop = Math.min(maxTop, Math.max(0, targetTop))
+  onTimelineScroll()
 }
+
+watch(filteredEvents, events => {
+  const retained = new Set(events.map(event => event.id))
+  rowHeights.value = new Map([...rowHeights.value].filter(([id]) => retained.has(id)))
+  if (timelineScrollRef.value) timelineScrollRef.value.scrollTop = 0
+  scrollTop.value = 0
+})
 
 watch(
   () => [props.selectedEvent?.id, props.events] as const,
   async ([id]) => {
     if (id == null) return
+    // A distant selection removes the focused row while replacing the render window.
+    const moveFocus = !!timelineScrollRef.value?.contains(document.activeElement)
+      && document.activeElement?.classList.contains('timeline-row')
     const visible = filteredEvents.value.some(event => event.id === id)
     if (!visible) {
       periodFilter.value = 'all'
@@ -169,7 +253,19 @@ watch(
     }
     await nextTick()
     if (props.selectedEvent?.id !== id) return
+    if (virtual.value) {
+      const index = filteredEvents.value.findIndex(event => event.id === id)
+      const scroller = timelineScrollRef.value
+      if (index < 0 || !scroller) return
+      // Render an offscreen selection first, then refine with the real row rectangle.
+      scroller.scrollTop = Math.max(0, offsets.value[index] - scroller.clientHeight / 2
+        + (rowHeights.value.get(id) ?? ESTIMATED_ROW_HEIGHT) / 2)
+      onTimelineScroll()
+      await nextTick()
+      if (props.selectedEvent?.id !== id) return
+    }
     centerRowInScroller(id)
+    if (moveFocus) rowRefs.get(id)?.focus({ preventScroll: true })
   },
   { immediate: true, flush: 'post' }
 )
@@ -217,7 +313,7 @@ watch(
     </div>
 
     <!-- Timeline -->
-    <div ref="timelineScrollRef" class="timeline-scroll">
+    <div ref="timelineScrollRef" class="timeline-scroll" @scroll.passive="onTimelineScroll">
       <div
         v-if="filteredEvents.length === 0"
         class="empty-state"
@@ -226,8 +322,9 @@ watch(
         <span>没有匹配的事件</span>
       </div>
 
+      <div v-if="beforeHeight" aria-hidden="true" :style="{ height: `${beforeHeight}px` }" />
       <div
-        v-for="event in filteredEvents"
+        v-for="event in visibleEvents"
         :key="event.id"
         :ref="(el) => setRowRef(event, el)"
         class="timeline-row"
@@ -235,10 +332,15 @@ watch(
         role="button"
         tabindex="0"
         :aria-pressed="isSelected(event)"
+        :data-event-id="event.id"
         :aria-label="`${periodLabel(event.period)} ${event.gameClock} ${event.playerName || '事件'} ${getTimelineDescription(event)}`"
         @click="onSelect(event)"
         @keydown.enter.prevent="onSelect(event)"
         @keydown.space.prevent="onSelect(event)"
+        @keydown.down.prevent="selectAdjacent(event, 1)"
+        @keydown.up.prevent="selectAdjacent(event, -1)"
+        @keydown.home.prevent="selectAdjacent(event, -filteredEvents.length)"
+        @keydown.end.prevent="selectAdjacent(event, filteredEvents.length)"
       >
         <!-- Timeline line + dot -->
         <div class="timeline-track">
@@ -271,6 +373,7 @@ watch(
           <div class="card-desc">{{ getTimelineDescription(event) }}</div>
         </div>
       </div>
+      <div v-if="afterHeight" aria-hidden="true" :style="{ height: `${afterHeight}px` }" />
     </div>
   </div>
 </template>
@@ -362,6 +465,7 @@ watch(
 .timeline-scroll {
   max-height: 600px;
   overflow-y: auto;
+  overflow-anchor: none;
   padding: 4px 0;
   scrollbar-width: thin;
   scrollbar-color: rgba(255,255,255,0.1) transparent;

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
+from datetime import date
+import hashlib
+import json
 
 from rag_app.config import RAGSettings
 from rag_app.pipeline.query_classifier import QueryClassification
@@ -8,6 +11,7 @@ from rag_app.retrieval.dedupe import dedupe_texts, text_hash
 from rag_app.retrieval.embeddings import SentenceTransformerEmbeddings
 from rag_app.retrieval.reranker import CrossEncoderReranker
 from rag_app.retrieval.vector_store import ChromaVectorStore
+from rag_app.retrieval.cache import LoadingCache
 
 
 @dataclass
@@ -41,8 +45,32 @@ class HybridRetriever:
         self.store = ChromaVectorStore(settings, self.embeddings)
         self.reranker = CrossEncoderReranker(settings)
         self._index_status = 'unchecked'
+        self.query_cache = LoadingCache(settings.retrieval_cache_max_entries, settings.retrieval_cache_ttl_seconds)
 
     def retrieve_plan(self, plan, extra_queries=()) -> RetrievalResult:
+        version = self.store.cache_version() if callable(getattr(type(self.store), 'cache_version', None)) else None
+        if version is None or not hasattr(self, 'query_cache'):
+            return self._retrieve_plan(plan, extra_queries)
+        # No session/answer cache: resolved scope and public evidence completely determine this stage.
+        key = hashlib.sha256(json.dumps({
+            'version': version, 'contract': 2, 'algorithm': 'fusion-v1',
+            'as_of': date.today().isoformat(),
+            'collection': (self.settings.chroma_path, self.settings.collection_name),
+            'question': plan.resolved_question, 'queries': plan.retrieval_queries,
+            'extra': tuple(extra_queries), 'intent': plan.intent, 'scope': plan.game_scope,
+            'classification': asdict(plan.classification), 'top_k': plan.top_k,
+            'vector_k': self.settings.vector_k, 'max_distance': self.settings.max_vector_distance,
+            'min_rerank': self.settings.min_rerank_score,
+            'embedding': (self.embeddings._resolve_model_path(), self.settings.embedding_revision,
+                          self.settings.model_cache_dir, self.settings.embedding_device, self.settings.embedding_fp16),
+            'reranker': (self.reranker._resolve_model_path() if hasattr(self.reranker, '_resolve_model_path') else self.settings.reranker_model,
+                         self.settings.reranker_revision,
+                         self.settings.reranker_enabled, self.settings.reranker_device, self.reranker._available),
+        }, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+        return self.query_cache.get_or_load(key, lambda: self._retrieve_plan(plan, extra_queries),
+            cacheable=lambda result: bool(result.documents) and self.store.cache_version() == version)
+
+    def _retrieve_plan(self, plan, extra_queries=()) -> RetrievalResult:
         queries = list(dict.fromkeys((plan.retrieval_queries or (plan.resolved_question,)) + tuple(extra_queries)))[:5]
         request_k = min(60, max(plan.top_k * 3, self.settings.vector_k))
         where = self._build_filter(plan.classification)
@@ -188,10 +216,13 @@ class HybridRetriever:
             "embedding_model": self.settings.embedding_model,
             "reranker_model": self.settings.reranker_model,
             'index_status': getattr(self, '_index_status', 'unchecked'),
+            'query_cache': self.query_cache.stats(),
+            'embedding_cache': self.embeddings.query_cache.stats(),
         }
 
     def clear(self) -> None:
         self.store.clear()
+        self.query_cache.clear()
 
     def preload(self):
         self.embeddings.load()

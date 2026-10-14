@@ -38,15 +38,6 @@ public class NbaDataService {
         Map<String, Object> result = new HashMap<>();
 
         try {
-            if (playoffReferenceData.supports(season)) {
-                List<Map<String, Object>> matchups = playoffReferenceData.getMatchups(season);
-                int imported = playoffService.clearAndImportPlayoffData(matchups, season);
-                result.put("matchups", matchups);
-                result.put("imported", imported);
-                result.put("source", "reference");
-                return result;
-            }
-
             PythonScriptRunner.PythonResult pythonResult = jobId == null
                     ? pythonScriptRunner.run("nba_data_fetcher.py", new String[]{"playoff", season},
                             pythonTimeoutProperties.getPlayoffSeconds())
@@ -54,11 +45,7 @@ public class NbaDataService {
                             "nba_data_fetcher.py", new String[]{"playoff", season},
                             pythonTimeoutProperties.getPlayoffSeconds(), jobId);
             if (!pythonResult.success()) {
-                log.warn("季后赛脚本执行失败: exitCode={}, error={}",
-                        pythonResult.exitCode(), pythonResult.stderr());
-                result.put("matchups", new ArrayList<>());
-                result.put("games", new ArrayList<>());
-                return result;
+                throw new IllegalStateException(pythonResult.failure("PLAYOFF").errorMessage());
             }
 
             String jsonStr = pythonResult.stdout().trim();
@@ -67,6 +54,9 @@ public class NbaDataService {
                     JSONObject playoff = data.optJSONObject("playoff");
 
                     if (playoff != null) {
+                        if (!"ok".equals(playoff.optString("sourceStatus", "failed"))) {
+                            throw new IllegalStateException("季后赛来源未完整返回，保留已有数据: " + playoff.opt("errors"));
+                        }
                         JSONArray matchupsArray = playoff.optJSONArray("matchups");
                         JSONArray gamesArray = playoff.optJSONArray("games");
 
@@ -92,17 +82,21 @@ public class NbaDataService {
                             }
                         }
 
-                        // 使用原子操作：清除旧数据并导入新数据（在同一事务中）
+                        if (matchups.isEmpty()) throw new IllegalStateException("暂无季后赛数据，保留已有记录");
+                        // Replace only a verified snapshot; provider failures never erase data.
                         int imported = playoffService.clearAndImportPlayoffData(matchups, season);
                         result.put("matchups", matchups);
                         result.put("imported", imported);
+                        result.put("source", "nba_api+espn");
                     }
             }
 
         } catch (Exception e) {
             log.error("获取季后赛数据失败", e);
+            throw e instanceof IllegalStateException state ? state : new IllegalStateException("季后赛同步失败", e);
         }
 
+        if (!result.containsKey("imported")) throw new IllegalStateException("季后赛返回格式无效");
         return result;
     }
 

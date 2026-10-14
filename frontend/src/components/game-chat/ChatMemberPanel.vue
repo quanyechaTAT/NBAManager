@@ -11,8 +11,14 @@
         class="member-item"
       >
         <div class="member-avatar">
-          <img v-if="member.avatarUrl" :src="member.avatarUrl" class="member-avatar-img" @error="onImgError($event)" />
-          <span v-else class="member-avatar-text">{{ member.username.charAt(0).toUpperCase() }}</span>
+          <img
+            v-if="hasMemberAvatar(member)"
+            :src="member.avatarUrl!"
+            class="member-avatar-img"
+            alt=""
+            @error="onMemberAvatarError(member.userId)"
+          />
+          <span v-else class="member-avatar-text">{{ formatMemberInitial(member.username) }}</span>
         </div>
         <span class="member-name">{{ member.username }}</span>
         <span v-if="member.role === 'ADMIN'" class="member-admin-badge">管理员</span>
@@ -63,9 +69,22 @@ const displayedMembers = computed(() => {
   return list.slice(0, maxDisplay)
 })
 
-function onImgError(e: Event) {
-  const img = e.target as HTMLImageElement
-  img.style.display = 'none'
+const failedMemberAvatars = ref(new Set<number>())
+
+function hasMemberAvatar(member: Member) {
+  if (!member.avatarUrl || typeof member.avatarUrl !== 'string') return false
+  const trimmed = member.avatarUrl.trim()
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false
+  return !failedMemberAvatars.value.has(member.userId)
+}
+
+function onMemberAvatarError(userId: number) {
+  failedMemberAvatars.value = new Set([...failedMemberAvatars.value, userId])
+}
+
+function formatMemberInitial(username?: string): string {
+  const name = (username || '').trim()
+  return (name.charAt(0) || '?').toUpperCase()
 }
 </script>
 

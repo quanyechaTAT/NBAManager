@@ -40,7 +40,15 @@ class NbaDataControllerSecurityTest {
     @Test
     void anonymousCannotTriggerPlayoffSync() throws Exception {
         mockMvc.perform(post("/api/nba/playoff/sync"))
-                .andExpect(status().is4xxClientError());
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void invalidTokenOnSyncCenterReturns401SoClientCanReauthenticate() throws Exception {
+        when(jwtService.extractUsername("expired-token")).thenThrow(new IllegalArgumentException("expired"));
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/admin/overview")
+                        .header("Authorization", "Bearer expired-token"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

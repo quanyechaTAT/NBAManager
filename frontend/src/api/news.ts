@@ -31,8 +31,8 @@ export function fetchNewsDetail(id: number) {
 }
 
 /** 获取今日赛事 */
-export function fetchTodayNews() {
-  return request.get<GameNews[]>('/news/today')
+export function fetchTodayNews(signal?: AbortSignal) {
+  return request.get<GameNews[]>('/news/today', { signal })
 }
 
 /** 新增赛事资讯（管理员） */

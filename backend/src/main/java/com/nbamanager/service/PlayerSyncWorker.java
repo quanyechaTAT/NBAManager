@@ -1,5 +1,6 @@
 package com.nbamanager.service;
 
+import com.nbamanager.config.PythonTimeoutProperties;
 import com.nbamanager.repository.SyncJobRepository;
 import com.nbamanager.service.SyncJobStateService;
 import com.nbamanager.web.dto.SyncResult;
@@ -16,22 +17,25 @@ public class PlayerSyncWorker extends ModuleSyncWorker {
     private final PythonScriptRunner runner;
     private final com.nbamanager.repository.PlayerRepository playerRepository;
     private final com.nbamanager.repository.TeamRepository teamRepository;
+    private final PythonTimeoutProperties timeoutProperties;
 
     public PlayerSyncWorker(SyncJobRepository repo, SyncJobStateService jobStateService, PythonScriptRunner runner,
                             com.nbamanager.repository.PlayerRepository playerRepository,
-                            com.nbamanager.repository.TeamRepository teamRepository) {
+                            com.nbamanager.repository.TeamRepository teamRepository,
+                            PythonTimeoutProperties timeoutProperties) {
         super(repo, jobStateService);
         this.runner = runner;
         this.playerRepository = playerRepository;
         this.teamRepository = teamRepository;
+        this.timeoutProperties = timeoutProperties;
     }
 
     @Override
     protected SyncResult doSync(Long jobId) {
         updateProgress(jobId, 10);
-        PythonScriptRunner.PythonResult pyResult = runner.runForJob("nba_data_fetcher.py", new String[]{"all"}, 120, jobId);
+        PythonScriptRunner.PythonResult pyResult = runner.runForJob("nba_data_fetcher.py", new String[]{"players"}, timeoutProperties.getBulkSeconds(), jobId);
         if (!pyResult.success()) {
-            return SyncResult.failed("PLAYERS", "PYTHON_FAILED", pyResult.stderr().substring(0, Math.min(200, pyResult.stderr().length())));
+            return pyResult.failure("PLAYERS");
         }
 
         updateProgress(jobId, 40);
@@ -67,10 +71,20 @@ public class PlayerSyncWorker extends ModuleSyncWorker {
                 if (existing == null && nbaPlayerId <= 0) existing = playerRepository.findByName(name);
 
                 var player = existing != null ? existing : new com.nbamanager.domain.Player();
+                String previousName = player.getName();
+                String previousTranslationStatus = player.getTranslationStatus();
+                boolean keepTranslation = "UNTRANSLATED".equals(p.optString("translationStatus"))
+                        && previousName != null && !previousName.isBlank()
+                        && !previousName.equals(p.optString("nameEn"))
+                        && ("API_TRANSLATED".equals(previousTranslationStatus) || "MAPPED".equals(previousTranslationStatus));
                 player.setNbaPlayerId(nbaPlayerId > 0 ? nbaPlayerId : player.getNbaPlayerId());
                 player.setName(name); player.setTeam(team);
                 String season = p.optString("season", data.optString("season", null));
                 PlayerSnapshotMapper.apply(player, p, season);
+                if (keepTranslation) {
+                    player.setName(previousName);
+                    player.setTranslationStatus(previousTranslationStatus);
+                }
                 playerRepository.save(player);
                 if (existing == null) inserted++; else updated++;
 

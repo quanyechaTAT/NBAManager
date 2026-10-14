@@ -1,5 +1,6 @@
 package com.nbamanager.service;
 
+import com.nbamanager.config.PythonTimeoutProperties;
 import com.nbamanager.domain.MatchRecord;
 import com.nbamanager.repository.MatchRecordRepository;
 import com.nbamanager.repository.SyncJobRepository;
@@ -18,19 +19,21 @@ public class MatchSyncWorker extends ModuleSyncWorker {
 
     private final PythonScriptRunner runner;
     private final MatchRecordRepository matchRecordRepository;
+    private final PythonTimeoutProperties timeoutProperties;
 
-    public MatchSyncWorker(SyncJobRepository repo, SyncJobStateService jobStateService, PythonScriptRunner runner, MatchRecordRepository matchRecordRepository) {
+    public MatchSyncWorker(SyncJobRepository repo, SyncJobStateService jobStateService, PythonScriptRunner runner, MatchRecordRepository matchRecordRepository, PythonTimeoutProperties timeoutProperties) {
         super(repo, jobStateService);
         this.runner = runner;
         this.matchRecordRepository = matchRecordRepository;
+        this.timeoutProperties = timeoutProperties;
     }
 
     @Override
     protected SyncResult doSync(Long jobId) {
         updateProgress(jobId, 10);
-        PythonScriptRunner.PythonResult pyResult = runner.runForJob("nba_data_fetcher.py", new String[]{"all"}, 120, jobId);
+        PythonScriptRunner.PythonResult pyResult = runner.runForJob("nba_data_fetcher.py", new String[]{"games"}, timeoutProperties.getBulkSeconds(), jobId);
         if (!pyResult.success()) {
-            return SyncResult.failed("MATCHES", "PYTHON_FAILED", pyResult.stderr().substring(0, Math.min(200, pyResult.stderr().length())));
+            return pyResult.failure("MATCHES");
         }
 
         updateProgress(jobId, 40);
@@ -38,6 +41,11 @@ public class MatchSyncWorker extends ModuleSyncWorker {
 
         try {
             JSONObject data = new JSONObject(pyResult.stdout());
+            String sourceStatus = data.optString("gamesSourceStatus", "failed");
+            if ("failed".equals(sourceStatus)) {
+                return SyncResult.failed("MATCHES", "PROVIDER_FAILED", data.opt("gamesErrors") == null
+                        ? "比赛来源未确认成功" : data.get("gamesErrors").toString());
+            }
             if (!data.has("games")) {
                 return SyncResult.failed("MATCHES", "NO_DATA", "Python返回无比赛数据");
             }
@@ -101,6 +109,10 @@ public class MatchSyncWorker extends ModuleSyncWorker {
 
             updateProgress(jobId, 90);
             log.info("比赛同步完成: 新增{}, 更新{}, 跳过{}", inserted, updated, skipped);
+            if ("partial".equals(sourceStatus)) {
+                return SyncResult.partialFailed("MATCHES", games.length(), inserted, updated, skipped,
+                        LocalDateTime.now(), "nba_api", "PROVIDER_PARTIAL", String.valueOf(data.opt("gamesErrors")));
+            }
             return SyncResult.success("MATCHES", games.length(), inserted, updated, skipped,
                     LocalDateTime.now(), "nba_api");
         } catch (Exception e) {

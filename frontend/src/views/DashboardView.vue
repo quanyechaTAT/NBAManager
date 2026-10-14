@@ -1,5 +1,9 @@
 <template>
   <div class="dashboard">
+    <div v-if="dashboardFailed" class="refresh-notice" role="status">
+      <span>{{ stats ? '数据更新失败，当前显示上次加载的内容。' : '数据暂时无法加载，请稍后重试。' }}</span>
+      <button type="button" :disabled="loading" @click="refreshDashboard">重新加载</button>
+    </div>
     <!-- Hero — 转播面板：以比分与比赛状态为主角 -->
     <section class="hero-section">
       <div class="hero-grid">
@@ -275,7 +279,8 @@ import { hasScore, toLocalDateKey } from '@/utils/matchFeed'
 import type { MatchRecord } from '@/api/types'
 
 const router = useRouter()
-const { stats, todayGames, westStandings, eastStandings, topScorers, hotPosts, docCount, loading } = useDashboardCache()
+const { stats, todayGames, westStandings, eastStandings, topScorers, hotPosts, docCount, loading,
+  failed: dashboardFailed, refresh: refreshDashboard } = useDashboardCache()
 const { tickerMatches, groups, headline, headlineLabel, refresh: refreshFeed } = useMatchFeed()
 
 const INVALID_TEAMS = new Set(['待定', 'TBD', 'tbd', ''])
@@ -441,6 +446,9 @@ function goPlayerDetail(playerId: number) {
 </script>
 
 <style scoped>
+.refresh-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; margin-bottom: 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-secondary); background: var(--bg-card); }
+.refresh-notice button { flex-shrink: 0; border: 0; background: transparent; color: var(--accent); cursor: pointer; }
+.refresh-notice button:disabled { opacity: 0.5; cursor: wait; }
 /* ===== 页面 ===== */
 .dashboard {
   max-width: 1440px;

@@ -168,7 +168,9 @@ class SyncCoordinatorTest {
             j.setId(1L);
             return j;
         });
-        when(syncJobRepository.findById(1L)).thenReturn(Optional.of(new SyncJob()));
+        SyncJob running = new SyncJob();
+        running.setStatus("RUNNING");
+        when(syncJobRepository.findById(1L)).thenReturn(Optional.of(running));
 
         AtomicReference<Runnable> captured = new AtomicReference<>();
         doAnswer(inv -> { captured.set(inv.getArgument(0)); return null; })
@@ -200,7 +202,9 @@ class SyncCoordinatorTest {
             }
             return j;
         });
-        when(syncJobRepository.findById(1L)).thenReturn(Optional.of(new SyncJob()));
+        SyncJob running = new SyncJob();
+        running.setStatus("RUNNING");
+        when(syncJobRepository.findById(1L)).thenReturn(Optional.of(running));
 
         AtomicReference<Runnable> captured = new AtomicReference<>();
         doAnswer(inv -> { captured.set(inv.getArgument(0)); return null; })

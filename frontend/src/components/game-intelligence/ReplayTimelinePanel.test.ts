@@ -27,6 +27,36 @@ function event(overrides: Partial<TimelineEvent> = {}): TimelineEvent {
 }
 
 describe('ReplayTimelinePanel', () => {
+  it('bounds rendered rows for a 5,000-event replay and reveals an offscreen selection', async () => {
+    const events = Array.from({ length: 5000 }, (_, index) => event({ id: index + 1, eventOrder: index + 1 }))
+    const wrapper = mount(ReplayTimelinePanel, { attachTo: document.body, props: { events, selectedEvent: null } })
+    const scroller = wrapper.get('.timeline-scroll').element as HTMLElement
+    Object.defineProperties(scroller, { clientHeight: { value: 600 }, scrollHeight: { value: 5000 * 128 } })
+    expect(wrapper.findAll('.timeline-row').length).toBeLessThan(25)
+    ;(wrapper.get('[data-event-id="1"]').element as HTMLElement).focus()
+    await wrapper.setProps({ selectedEvent: events[4999] })
+    await flushPromises()
+    expect(wrapper.get('[data-event-id="5000"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.findAll('.timeline-row').length).toBeLessThan(25)
+    expect(scroller.scrollTop).toBeGreaterThan(4900 * 128)
+    expect(document.activeElement?.getAttribute('data-event-id')).toBe('5000')
+    wrapper.unmount()
+  })
+
+  it('resets a distant scroll position when filtering and restores a filtered-out selection', async () => {
+    const events = Array.from({ length: 300 }, (_, index) => event({ id: index + 1, period: index < 150 ? 1 : 2 }))
+    const wrapper = mount(ReplayTimelinePanel, { props: { events, selectedEvent: null } })
+    const scroller = wrapper.get('.timeline-scroll').element as HTMLElement
+    Object.defineProperties(scroller, { clientHeight: { value: 600 }, scrollHeight: { value: 300 * 128 } })
+    scroller.scrollTop = 20_000; await wrapper.get('.timeline-scroll').trigger('scroll')
+    await wrapper.findAll('.filter-btn').find(button => button.text() === 'Q1')!.trigger('click')
+    expect(scroller.scrollTop).toBe(0)
+    expect(wrapper.find('[data-event-id="1"]').exists()).toBe(true)
+    await wrapper.setProps({ selectedEvent: events[299] }); await flushPromises()
+    expect(wrapper.get('[data-event-id="300"]').attributes('aria-pressed')).toBe('true')
+    wrapper.unmount()
+  })
+
   it('centers the selected event in the list when its offset parent is outside the scroller', async () => {
     const events = [event(), event({ id: 2, eventOrder: 2 })]
     const wrapper = mount(ReplayTimelinePanel, { props: { events, selectedEvent: null } })

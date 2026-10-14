@@ -30,7 +30,7 @@ class PlayoffServiceTest {
     private PlayoffService playoffService;
 
     @Test
-    void getPlayoffBracketUsesReferenceDataForSupportedSeasonEvenWhenDatabaseIsStale() {
+    void getPlayoffBracketUsesReferenceOnlyWhenDatabaseIsEmpty() {
         PlayoffMatchup stale = new PlayoffMatchup();
         stale.setSeason("2025-26");
         stale.setConference("East");
@@ -80,5 +80,17 @@ class PlayoffServiceTest {
                 .containsEntry("team2Name", "马刺")
                 .containsEntry("team1Wins", 4)
                 .containsEntry("team2Wins", 1);
+    }
+
+    @Test
+    void getPlayoffBracketDisplaysSynchronizedDatabaseSnapshot() {
+        PlayoffMatchup row = new PlayoffMatchup();
+        row.setSeason("2025-26"); row.setRound(4); row.setConference("Finals");
+        row.setTeam1Name("同步球队A"); row.setTeam2Name("同步球队B");
+        row.setTeam1Wins(4); row.setTeam2Wins(2); row.setStatus("COMPLETED");
+        when(matchupRepository.findBySeasonOrderByRoundAsc("2025-26")).thenReturn(List.of(row));
+        assertThat((Map<String, Object>) playoffService.getPlayoffBracket("2025-26").get("finals"))
+                .containsEntry("team1Name", "同步球队A").containsEntry("team2Wins", 2);
+        org.mockito.Mockito.verifyNoInteractions(playoffReferenceData);
     }
 }

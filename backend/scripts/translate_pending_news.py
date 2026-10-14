@@ -9,16 +9,12 @@ import io
 import os
 import sys
 import time
+import json
+from dotenv import load_dotenv
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-env = {}
-for line in io.open(os.path.join(ROOT, '.env'), encoding='utf-8'):
-    line = line.strip()
-    if line and not line.startswith('#') and '=' in line:
-        k, v = line.split('=', 1)
-        env[k] = v
-os.environ.setdefault('DEEPSEEK_API_KEY', env.get('DEEPSEEK_API_KEY', ''))
-os.environ.setdefault('DEEPSEEK_API_BASE', env.get('DEEPSEEK_API_BASE', 'https://api.deepseek.com'))
+load_dotenv(os.path.join(ROOT, '.env'))
+env = os.environ
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from nba_data_fetcher import translate_with_mapping, needs_translation  # noqa: E402
@@ -30,7 +26,7 @@ DRY = '--dry-run' in sys.argv
 conn = mysql.connector.connect(
     host=env.get('DB_HOST', 'localhost'), port=int(env.get('DB_PORT', 3306)),
     user=env['DB_USERNAME'], password=env['DB_PASSWORD'],
-    database='nba_manager', charset='utf8mb4')
+    database=env.get('DB_NAME', 'nba_manager'), charset='utf8mb4', connection_timeout=5)
 cur = conn.cursor()
 cur.execute("SELECT id, title, summary, content, title_en FROM game_news "
             "WHERE title_en IS NOT NULL AND title = title_en")
@@ -72,3 +68,4 @@ for idx, (nid, title, summary, content, title_en) in enumerate(rows):
 
 print(f"\n完成: 成功 {ok}, 失败 {fail}")
 conn.close()
+print(json.dumps({'fetched': len(rows), 'translated': ok, 'failed': fail}))

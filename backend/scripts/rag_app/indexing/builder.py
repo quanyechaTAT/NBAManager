@@ -17,27 +17,20 @@ def build_all_indexes(settings: RAGSettings | None = None, clear_first: bool = T
     settings.ensure_runtime_dirs()
     started = time.time()
 
-    source = MySQLDocumentSource(Database(settings))
-    documents = source.load_all()
-
     store = store or ChromaVectorStore(settings, SentenceTransformerEmbeddings(settings))
     batch_size = max(1, min(1000, batch_size))
+    with store.build_lock():
+        return _build_snapshot(settings, store, clear_first, batch_size, started)
+
+
+def _build_snapshot(settings, store, clear_first, batch_size, started):
+    documents = MySQLDocumentSource(Database(settings)).load_all()
     progress = {'status': 'building', 'collection_name': settings.collection_name,
                 'chroma_path': settings.chroma_path, 'data_contract_version': 2,
                 'document_count': len(documents)}
     write_report(progress)
     try:
-        if clear_first:
-            store.clear()
-        for start in range(0, len(documents), batch_size):
-            batch = documents[start : start + batch_size]
-            store.upsert_texts(
-                [doc.text for doc in batch],
-                [{**{key:value for key,value in doc.metadata.items() if value is not None}, "data_contract_version": 2} for doc in batch],
-                [doc.id for doc in batch],
-            )
-            print(f"Indexed {min(start + batch_size, len(documents))}/{len(documents)}", flush=True)
-        removed = store.prune_published([doc.id for doc in documents])
+        result = store.replace_published(documents, clear_first, batch_size)
     except Exception as exc:
         write_report({**progress, 'status': 'failed', 'error_type': type(exc).__name__})
         raise
@@ -48,7 +41,7 @@ def build_all_indexes(settings: RAGSettings | None = None, clear_first: bool = T
         "elapsed_seconds": round(time.time() - started, 2),
         "collection_name": settings.collection_name,
         "chroma_path": settings.chroma_path,
-        "removed_stale_published": removed,
+        **result,
         'data_contract_version': 2,
     }
     write_report(report)
@@ -67,13 +60,14 @@ def ensure_index_contract(engine):
     if store.has_published_index() and not incomplete:
         engine.retriever._index_status = 'ready'
         return {'status': 'current'}
-    engine.retriever._index_status = 'building'
+    usable = store.has_published_index()
+    engine.retriever._index_status = 'rebuilding' if usable else 'building'
     try:
         report = build_all_indexes(engine.settings, clear_first=False, store=store)
         engine.retriever._index_status = 'ready'
         return report
     except Exception:
-        engine.retriever._index_status = 'failed'
+        engine.retriever._index_status = 'ready' if usable else 'failed'
         raise
 
 

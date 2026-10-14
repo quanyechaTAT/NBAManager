@@ -20,7 +20,8 @@ import lombok.Setter;
         @Index(name = "idx_player_team", columnList = "team_id"),
         @Index(name = "idx_player_position", columnList = "position"),
         @Index(name = "idx_player_team_position", columnList = "team_id, position"),
-        @Index(name = "idx_player_nba_id", columnList = "nba_player_id")
+        @Index(name = "idx_player_nba_id", columnList = "nba_player_id"),
+        @Index(name = "idx_player_ppg_rank", columnList = "points_per_game DESC, id ASC")
 })
 @Getter
 @Setter

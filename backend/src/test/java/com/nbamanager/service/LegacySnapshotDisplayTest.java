@@ -62,7 +62,9 @@ class LegacySnapshotDisplayTest {
             player.setName("球员" + i); player.setTeam(team); player.setPointsPerGame(40.0 - i);
             return player;
         }).toList();
-        when(players.findAll()).thenReturn(rows);
+        when(players.count()).thenReturn((long) rows.size());
+        when(players.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(rows.subList(0, 9)));
         var result = new DashboardService(teams, players).buildStats();
         assertThat(result.topScorers()).hasSize(9);
         assertThat(result.topScorers().get(0).ppg()).isEqualTo(40.0);

@@ -48,14 +48,14 @@ public class HistoricalDataSyncService {
         syncSeasonDataSync(season, null);
     }
 
-    public void syncSeasonDataSync(String season, Long jobId) {
+    public int syncSeasonDataSync(String season, Long jobId) {
         if (!syncing.compareAndSet(false, true)) {
             throw new IllegalStateException("历史数据同步正在进行中，跳过: " + season);
         }
         log.info("开始同步 {} 赛季常规赛数据（同步模式）", season);
-        seasonService.updateSyncStatus(season, "SYNCING", 0, 0);
         boolean attemptedWrite = false;
         try {
+            seasonService.updateSyncStatus(season, "SYNCING", 0, 0);
             JSONObject playerData = executeForJob("historical_players", season, 180, jobId);
             int playerCount = 0;
             if (playerData != null && playerData.has("players")) {
@@ -78,6 +78,7 @@ public class HistoricalDataSyncService {
             }
             seasonService.updateSyncStatus(season, "COMPLETED", playerCount, teamCount);
             log.info("同步完成: {} 赛季, 球员{}条, 球队{}条", season, playerCount, teamCount);
+            return playerCount + teamCount;
         } catch (PartialSyncException e) {
             // 部分失败：状态已在上方写入 PARTIAL，不再覆盖
             log.warn("同步 {} 赛季数据不完整: {}", season, e.getMessage());
@@ -90,8 +91,8 @@ public class HistoricalDataSyncService {
             seasonService.updateSyncStatus(season, "FAILED", 0, 0);
             throw e;
         } finally {
-            if (attemptedWrite) historicalStatsCache.evictAll();
             syncing.set(false);
+            if (attemptedWrite) historicalStatsCache.evictAll();
         }
     }
 
