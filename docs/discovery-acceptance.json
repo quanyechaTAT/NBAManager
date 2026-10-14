@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-15T00:29:31.306434+08:00",
+  "generatedAt": "2026-10-15T00:42:24.446177+08:00",
   "status": "PARTIAL_ACCEPTANCE",
   "scope": "Unified search and recommendations for NBAManager; advertising excluded",
   "baseline": {
@@ -59,7 +59,7 @@
       "bytes": 70113410,
       "sha256": "72fa7a687bd99a3ae6e2766a0b4e61f0fe8aee4a5d92117128e742934551c95e"
     },
-    "pythonImage": "sha256:c12310e3a28f3a6fb15f99658a68848d4a416b9c190f4ac59e9c60d972263ddd",
+    "pythonImage": "sha256:9c916937d237eb9e6af0376eb1bbba6e21b08a86544e061d037fde7173c2273e",
     "linuxActualEncoder": {
       "status": "PASS",
       "model": "richinfoai/ritrieve_zh_v1",
@@ -92,8 +92,8 @@
       "build": "PASS"
     },
     "pythonUnit": {
-      "hostPassed": 23,
-      "linuxContainerPassed": 23,
+      "hostPassed": 24,
+      "linuxContainerPassed": 24,
       "files": [
         "test_discovery_learning.py",
         "test_discovery_serving.py",
@@ -122,6 +122,12 @@
         "test_real_coengagement_builds_itemcf_without_fabricated_impressions",
         "test_actual_synthetic_candidate_shadow_rollout_and_rollback"
       ]
+    },
+    "postFixOperations": {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
     },
     "browser": {
       "status": "BLOCKED",
@@ -591,7 +597,7 @@
     "timingsAre": "Single fault probes, not latency percentiles"
   },
   "restoration": {
-    "checkedAt": "2026-10-15T00:21:37.813627+08:00",
+    "checkedAt": "2026-10-15T00:42:12.523192+08:00",
     "benchmarkRowsRemaining": {
       "game_news": 0,
       "posts": 0
@@ -608,6 +614,11 @@
     ],
     "pythonApiStatus": {
       "status": "up"
+    },
+    "apiWorkers": 1,
+    "finalHybridCheck": {
+      "strategyVersion": "hybrid-rrf-v1",
+      "degraded": false
     }
   },
   "diagnosticSmallFixture50Concurrency": {
@@ -639,6 +650,98 @@
       "errors": 0,
       "degraded": 13
     }
+  },
+  "parallelismExperiment": {
+    "apiWorkers": 2,
+    "acceptedAsDefault": false,
+    "result": {
+      "generatedAt": "2026-10-15T00:34:36.909224",
+      "documents": 1000,
+      "concurrency": 50,
+      "requestsPerCase": 500,
+      "accountCount": 1,
+      "warmupRequestsPerCase": 16,
+      "boundary": "Public Java API including authentication, hydration, request persistence, Python and OpenSearch",
+      "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
+      "python": "3.12.5",
+      "vectorDimensions": 1792,
+      "vectorTemplates": 113,
+      "cases": {
+        "suggest": {
+          "p50Ms": 159.4,
+          "p95Ms": 311.1,
+          "p99Ms": 443.6,
+          "requestsPerSecond": 263.8,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 0,
+          "statusCounts": {
+            "200": 500
+          },
+          "strategies": {
+            "bm25-v1": 500
+          }
+        },
+        "lexical": {
+          "p50Ms": 164.3,
+          "p95Ms": 324.0,
+          "p99Ms": 435.9,
+          "requestsPerSecond": 254.4,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 0,
+          "statusCounts": {
+            "200": 500
+          },
+          "strategies": {
+            "bm25-v1": 500
+          }
+        },
+        "hybrid": {
+          "p50Ms": 204.6,
+          "p95Ms": 490.8,
+          "p99Ms": 653.5,
+          "requestsPerSecond": 179.8,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 152,
+          "statusCounts": {
+            "200": 500
+          },
+          "strategies": {
+            "database-fallback-v1": 4,
+            "bm25-v1": 148,
+            "hybrid-rrf-v1": 348
+          }
+        },
+        "recommendations": {
+          "p50Ms": 277.8,
+          "p95Ms": 465.3,
+          "p99Ms": 522.8,
+          "requestsPerSecond": 165.0,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 0,
+          "statusCounts": {
+            "200": 500
+          },
+          "strategies": {
+            "baseline-v1": 500
+          }
+        }
+      },
+      "querySet": [
+        "库里",
+        "勇士",
+        "湖人",
+        "詹姆斯",
+        "凯尔特人",
+        "防守",
+        "进攻",
+        "三分"
+      ]
+    },
+    "restoredApiWorkers": 1
   },
   "limitations": [
     "Browser visual and interaction acceptance remains blocked by the tool permission policy.",

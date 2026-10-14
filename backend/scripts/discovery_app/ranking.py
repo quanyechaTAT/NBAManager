@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from collections import Counter
 import hashlib
+import logging
 import math
 from typing import Callable
 
 from discovery_app.domain import Candidate, FEATURE_NAMES, baseline_score, features, reason
+
+log = logging.getLogger(__name__)
 
 
 def merge_channels(channels: dict[str, list[Candidate]]) -> list[Candidate]:
@@ -49,7 +52,9 @@ def rank(candidates: list[Candidate], *, profile: dict, followed: set[str], bloc
             for row, score in zip(refinement, scores):
                 row['score'] = float(score)
             used_model = True
-        except (ValueError, RuntimeError, OSError):
+        except Exception:
+            # Native library errors (including LightGBMError) must not escape to SQL fallback.
+            log.warning('Model inference failed; keeping the rule baseline', exc_info=True)
             used_model = False
     refinement.sort(key=lambda row: (-row['score'], row['candidate'].document.item_key))
     limit = max(1, min(20, limit))

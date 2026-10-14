@@ -57,6 +57,17 @@ def test_invalid_model_scores_fall_back_and_explanations_are_grounded():
     assert rows[0]['reason'] == '近期热门内容'
 
 
+def test_native_model_failure_preserves_the_rule_baseline():
+    from lightgbm.basic import LightGBMError
+    pool = [candidate(1), candidate(2, featured=True), candidate(3, entities=['TEAM:1'])]
+    context = dict(profile={}, followed={'TEAM:1'}, blocked=set(), scene='NEWS_FEED', now=NOW)
+    expected, _ = rank(pool, **context)
+    def unavailable(values):
+        raise LightGBMError('Inference unavailable')
+    actual, used = rank(pool, **context, predict=unavailable)
+    assert not used and actual == expected
+
+
 def test_diversity_uses_alternatives_before_relaxing():
     pool = [candidate(i, 'POST', author_id=str(i // 8), team_keys=[f'TEAM:{i // 8}']) for i in range(1, 65)]
     rows, _ = rank(pool, profile={}, followed=set(), blocked=set(), scene='COMMUNITY_FEED', now=NOW, limit=10)

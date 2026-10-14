@@ -132,6 +132,8 @@ Python 需要 `backend/scripts/venv312`，安装 `requirements-discovery.txt`，
 
 日志与 PID 在 `backend/scripts/runtime/discovery/`。注册连接器前把 `.env.local` 变量加载到进程环境，执行 `python -m discovery_app.register_connector`；主机默认访问 Connect 18083，连接器在容器内访问 `mysql:3306`。只注册已建好表的库。通过 `/connectors/nba-discovery/status` 检查 RUNNING 和任务状态。
 
+主机 API 默认单进程；`-Role api -ApiWorkers 2` 可用于资源充足环境的对比测试，允许 1–4 个进程。每个进程分别加载编码器和维护查询缓存，增加进程数时必须同时验证内存、模型预热和混合检索降级比例，不能只看推荐吞吐。当前已恢复默认单进程。
+
 容器模式使用 `docker compose ... --profile app up -d --build api cdc-worker jobs-worker embedding-worker`，与主机 Python 模式二选一。模型和训练产物各有持久卷；首次启动需要模型下载或挂载已有只读权重。容器内部注册连接器需设置 `DISCOVERY_CONNECT_URL=http://connect:8083`。Compose 暴露的端口均绑定 127.0.0.1；它是开发验收配置，接入现有部署时需要将数据库、内部网络和模型路径改为实际环境配置。
 
 Java 配置 `DISCOVERY_SERVER_URL`（主机模式也可用 `--app.discovery.server-url=...`）和与 Python 相同的 `DISCOVERY_INTERNAL_TOKEN`。不能把内部令牌放到 Vite 环境变量或浏览器代码。当前 `.env.local`、JWT、模型、日志、数据库和测试运行文件均被 Git 忽略。
@@ -143,8 +145,8 @@ Java 配置 `DISCOVERY_SERVER_URL`（主机模式也可用 `--app.discovery.serv
 - [x] Java 全量及后续针对修改的回归：124 个测试类、659 项报告，656 项通过、3 项因未配置原有迁移集成测试环境而跳过，零失败；新增鉴权、事件归因、时序、偏好清除、比赛数据可见性和真实查询测试。
 - [x] 新闻保留策略：H2 和独立 MySQL 8.0 测试库均通过，覆盖时间边界、收藏、赛事保护与数量限制。
 - [x] 前端原全量 41 文件/206 项通过；类型检查和生产构建通过。新增 1 项账号切换竞态测试，连同 4 项行为统计回归均通过。
-- [x] Python 23 项检索/特征/训练/缓存测试通过；真实组件栈 10 项通过，包括真实合成模型训练和完整灰度回滚。
-- [x] 原有数据同步脚本 10 项离线回归通过；Linux 容器内的 23 项检索/训练/缓存测试也通过。
+- [x] Python 24 项检索/特征/训练/缓存测试通过，包含 LightGBM 原生推理异常时保留规则基线；真实组件栈 10 项通过，包括真实合成模型训练和完整灰度回滚。
+- [x] 原有数据同步脚本 10 项离线回归通过；最新 Linux 容器内的 24 项检索/训练/缓存测试也通过。
 - [x] 真实 CDC 首次导入、直接翻译更新、删除、重复/旧消息、向量 hash 校验、重建双写和回滚；暂停 Connect 和重启消费者后提交的数据已成功追赶。
 - [x] Redis 中断仍返回内容，推荐标记降级；OpenSearch 中断时两类接口使用数据库降级，恢复后服务正常。
 - [x] Docker 镜像成功构建，容器内依赖、MySQL、Redis 与 OpenSearch 连通性通过；挂载只读权重后的真实 1792 维编码及业务投影通过。
@@ -167,6 +169,8 @@ Java 配置 `DISCOVERY_SERVER_URL`（主机模式也可用 `--app.discovery.serv
 原始数值、测试覆盖、版本与限制保存在 [discovery-acceptance.json](discovery-acceptance.json)。这些结果证明当前隔离环境中的功能与可用性，不能宣称全部验收完成或生产性能已达标。
 
 补充的小语料 50 并发诊断中，推荐延迟存在波动并出现了降级；因此上表单次 2,000 请求的成功不能替代持续稳定性结论。顺序执行推荐的采样显示时间分布在 Redis 往返、候选转换和排序等环节，尚不足以把剩余延迟单独归因于硬件。下一步需要在参考资源上进行多账号、冷查询及持续负载的性能验证。
+
+双进程对比使用 1,000 条合成内容、50 并发、每类 500 请求：推荐 P95 为 465.3 ms，但混合检索有 152/500 次降级，未接受为默认方案。此结果与上表的 10 万条测试规模不同，不能用它替代完整规模的性能验收。
 
 复现测试：在 `backend/scripts` 下激活 `venv312` 后，设置 `$env:PYTHONPATH=(Get-Location).Path`，运行 `python -m pytest tests/test_discovery_learning.py tests/test_discovery_serving.py tests/test_discovery_query_cache.py`；真实栈测试另设 `$env:DISCOVERY_STACK_TEST='1'`，运行 `test_discovery_stack.py` 和 `test_discovery_operations.py`。先用 `tests/discovery_stack.py` 创建隔离样本，所有脚本要求 `nba_discovery_test:13306`。模型操作测试只运行于该独立库。
 
