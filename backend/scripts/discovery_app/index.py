@@ -15,7 +15,7 @@ from discovery_app.domain import Document
 
 
 class QueryCache:
-    """One-second, bounded shared retrieval cache; values are read-only to callers.
+    """Bounded shared retrieval cache; values are read-only to callers.
 
     Only index queries are cached, never authorization, profiles, personalized ranks or hydration.
     Coalescing concurrent misses prevents popular queries from occupying every recall worker.
@@ -103,7 +103,8 @@ class Index:
                                  pool_maxsize=32, http_compress=True)
         self.admin = OpenSearch(settings.search_url, timeout=60, max_retries=2)
         self.alias = settings.index_alias
-        self.queries = QueryCache()
+        if not 0 < settings.query_cache_seconds <= 10: raise ValueError('DISCOVERY_QUERY_CACHE_SECONDS must be in (0, 10]')
+        self.queries = QueryCache(ttl=settings.query_cache_seconds)
 
     def create(self, name: str):
         keyword = {'type': 'keyword'}
@@ -186,14 +187,14 @@ class Index:
         if dates: filters.append({'range': {'published_at': dates}})
         return filters
 
-    def search(self, query: dict, size=100, *, sort=None, documents=False) -> list[dict]:
+    def search(self, query: dict, size=100, *, sort=None, documents=False, cache_key=None) -> list[dict]:
         # Source filtering still decodes the entire 1792-dimensional vector for every hit.
         # Retrieval needs IDs; ranking reads only compact doc values, not full stored source JSON.
         body = {'size': min(size, 300), 'query': query, '_source': False, 'track_total_hits': False}
         fields = ['entities','team_keys','category','season','source','author_id','views','likes','favorites','revision','deleted','featured']
         if documents: body['docvalue_fields'] = fields + [{'field':'published_at','format':'epoch_millis'}]
         if sort: body['sort'] = sort
-        key=hashlib.sha256(json.dumps(body,sort_keys=True,separators=(',',':')).encode()).digest()
+        key=cache_key if cache_key is not None else hashlib.sha256(json.dumps(body,sort_keys=True,separators=(',',':')).encode()).digest()
         def retrieve():
             hits = self.client.search(index=self.alias, body=body)['hits']['hits']
             if documents:
@@ -201,6 +202,8 @@ class Index:
                     values=hit.get('fields', {})
                     hit['_source']={'item_key':hit['_id'],'title':'',**{key:(value if key in ('entities','team_keys') else value[0])
                         for key,value in values.items() if value}}
+                    # Share only the index document; each request creates its own candidate and features.
+                    hit['_document']=Document.from_index(hit['_source'])
             return hits
         return self.queries.get(key,retrieve)
 
@@ -212,8 +215,11 @@ class Index:
         return self.search(query, size=size, sort=None if q else [{'published_at': 'desc'}, {'item_key': 'asc'}])
 
     def semantic(self, vector: list[float], request: dict, size=100, documents=True):
+        filters=self.filters(request)
+        # Tuple hashing handles the dense vector directly; JSON encoding is only needed on a cache miss.
+        key=('semantic',tuple(vector),json.dumps(filters,sort_keys=True,separators=(',',':')),size,documents)
         return self.search({'knn': {'embedding': {'vector': vector, 'k': size,
-                            'filter': {'bool': {'filter': self.filters(request)}}}}}, size=size,documents=documents)
+                            'filter': {'bool': {'filter': filters}}}}}, size=size,documents=documents,cache_key=key)
 
     def recall(self, request: dict, kinds: list[str], *, entities=None, latest=False):
         filters = self.filters(request, kinds)

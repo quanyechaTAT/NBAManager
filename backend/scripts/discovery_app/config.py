@@ -17,6 +17,8 @@ class Settings:
     kafka: str = field(default_factory=lambda: os.getenv('DISCOVERY_KAFKA', '127.0.0.1:19092'))
     topic_prefix: str = field(default_factory=lambda: os.getenv('DISCOVERY_TOPIC_PREFIX', 'nba'))
     internal_token: str = field(default_factory=lambda: os.getenv('DISCOVERY_INTERNAL_TOKEN', ''))
+    api_threads: int = field(default_factory=lambda: int(os.getenv('DISCOVERY_API_THREADS', '8')))
+    query_cache_seconds: float = field(default_factory=lambda: float(os.getenv('DISCOVERY_QUERY_CACHE_SECONDS', '5')))
     index_alias: str = field(default_factory=lambda: os.getenv('DISCOVERY_INDEX_ALIAS', 'nba-discovery'))
     embedding_model: str = field(default_factory=lambda: os.getenv('DISCOVERY_EMBEDDING_MODEL', 'richinfoai/ritrieve_zh_v1'))
     embedding_dim: int = field(default_factory=lambda: int(os.getenv('DISCOVERY_EMBEDDING_DIM', '1792')))

@@ -11,6 +11,7 @@ import pytest
 from discovery_app.database import Database
 from discovery_app.index import Index
 from discovery_app.worker import Worker
+from discovery_app.serving import ITEMCF_NEIGHBORS
 from discovery_stack import settings, eventually, RUNTIME, JAVA
 
 pytestmark=pytest.mark.skipif(os.getenv('DISCOVERY_STACK_TEST')!='1',reason='Requires isolated compose stack')
@@ -23,6 +24,26 @@ def stack():
     clients=[httpx.Client(base_url=JAVA,headers={'Authorization':'Bearer '+person['token']},timeout=20) for person in people]
     yield db,index,people,clients
     for client in clients: client.close()
+
+
+def test_itemcf_neighbors_follow_one_active_generation_in_redis(stack):
+    import redis
+    cache=redis.Redis.from_url(settings().redis_url,decode_responses=True)
+    generation='acceptance-'+uuid.uuid4().hex
+    active='discovery:acceptance:itemcf:'+generation
+    first=f'discovery:itemcf:{generation}:NEWS:1'
+    second=f'discovery:itemcf:{generation}:NEWS:2'
+    try:
+        assert cache.eval(ITEMCF_NEIGHBORS,1,active,'NEWS:1')==[]
+        cache.setex(active,60,generation)
+        cache.setex(first,60,json.dumps([['POST:3',.5]]))
+        cache.setex(second,60,json.dumps([['POST:4',.9]]))
+        values=cache.eval(ITEMCF_NEIGHBORS,1,active,'NEWS:1','NEWS:2','NEWS:999')
+        assert [json.loads(value) if value else None for value in values]==[[['POST:3',.5]],[['POST:4',.9]],None]
+        cache.setex(active,60,generation+'-empty')
+        assert cache.eval(ITEMCF_NEIGHBORS,1,active,'NEWS:1')==[None]
+    finally:
+        cache.delete(active,first,second); cache.close()
 
 
 def test_migrations_and_all_five_types_with_bilingual_alias_filters_and_real_targets(stack):

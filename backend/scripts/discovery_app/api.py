@@ -4,9 +4,11 @@ from contextlib import asynccontextmanager
 import hmac
 import logging
 import threading
+import anyio.to_thread
 from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, model_validator
 import redis
 
@@ -55,6 +57,7 @@ class Request(BaseModel):
 
 def create_app(settings: Settings | None = None, service=None):
     settings = settings or Settings()
+    if not 1 <= settings.api_threads <= 64: raise ValueError('DISCOVERY_API_THREADS must be between 1 and 64')
     if service is None:
         db, index, embedder = Database(settings), Index(settings), Embedder(settings)
         cache = redis.Redis.from_url(settings.redis_url, decode_responses=True, socket_timeout=.15, socket_connect_timeout=.15)
@@ -62,6 +65,8 @@ def create_app(settings: Settings | None = None, service=None):
 
     @asynccontextmanager
     async def lifespan(app):
+        # Bound synchronous requests independently from the parallel recall executor.
+        anyio.to_thread.current_default_thread_limiter().total_tokens = settings.api_threads
         def warm():
             try: service.embedder.warm()
             except Exception: log.exception('Embedding model unavailable; lexical retrieval remains available')
@@ -71,7 +76,7 @@ def create_app(settings: Settings | None = None, service=None):
 
     app = FastAPI(title='NBA Discovery (internal)', docs_url=None, redoc_url=None, lifespan=lifespan)
 
-    def authenticate(x_discovery_token: str = Header(default='')):
+    async def authenticate(x_discovery_token: str = Header(default='')):
         if not settings.internal_token:
             raise HTTPException(503, 'DISCOVERY_INTERNAL_TOKEN is required')
         if not hmac.compare_digest(x_discovery_token, settings.internal_token): raise HTTPException(401, 'Invalid internal token')
@@ -89,7 +94,8 @@ def create_app(settings: Settings | None = None, service=None):
     def recommendations(request: Request): return invoke(service.recommendations, request)
 
     def invoke(function, request):
-        try: return function(request.model_dump())
+        try:
+            return JSONResponse(function(request.model_dump()))
         except CursorError as error: raise HTTPException(410, str(error)) from error
         except Exception as error:
             log.exception('Discovery request failed')

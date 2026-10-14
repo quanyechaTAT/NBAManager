@@ -1,5 +1,6 @@
 # Discovery runs separately from the RAG process. Record resolved versions in acceptance evidence.
 fastapi>=0.115,<1
+anyio>=4.7,<5
 uvicorn>=0.32,<1
 pydantic>=2.9,<3
 pymysql>=1.1,<2

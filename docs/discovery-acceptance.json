@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-15T00:42:24.446177+08:00",
+  "generatedAt": "2026-10-15T02:35:10.760322+08:00",
   "status": "PARTIAL_ACCEPTANCE",
   "scope": "Unified search and recommendations for NBAManager; advertising excluded",
   "baseline": {
@@ -25,7 +25,8 @@
       "cores": 8,
       "memoryGiB": 32
     },
-    "matchesReference": false
+    "matchesReference": false,
+    "acceptedEnvironment": "Current local host, explicitly confirmed by user; original latency targets unchanged"
   },
   "runtime": {
     "python": "3.12.5",
@@ -38,17 +39,39 @@
     "dockerEngine": "29.5.3",
     "hostPythonPackages": {
       "fastapi": "0.139.0",
+      "anyio": "4.14.1",
       "uvicorn": "0.51.0",
       "pydantic": "2.13.4",
-      "opensearch-py": "3.2.0",
-      "redis": "6.4.0",
-      "confluent-kafka": "2.16.0",
-      "pymysql": "1.2.0",
       "numpy": "2.5.1",
-      "pyarrow": "23.0.1",
       "lightgbm": "4.7.0",
+      "pyarrow": "23.0.1",
       "sentence-transformers": "5.6.0",
-      "torch": "2.13.0"
+      "torch": "2.13.0",
+      "redis": "6.4.0",
+      "opensearch-py": "3.2.0",
+      "confluent-kafka": "2.16.0",
+      "pymysql": "1.2.0"
+    },
+    "localConfiguration": {
+      "apiWorkers": 1,
+      "apiThreads": 4,
+      "retrievalCacheSeconds": 5,
+      "javaSuggestionCacheSeconds": 1,
+      "hikariMaximumPoolSize": 50,
+      "hikariMinimumIdle": 50,
+      "mysqlSyncBinlog": 1,
+      "mysqlFlushLogAtCommit": 1
+    },
+    "linuxPythonPackages": {
+      "fastapi": "0.143.1",
+      "anyio": "4.15.1",
+      "uvicorn": "0.54.0",
+      "pydantic": "2.14.1",
+      "numpy": "2.5.4",
+      "lightgbm": "4.7.0",
+      "pyarrow": "23.0.1",
+      "sentence-transformers": "5.7.0",
+      "torch": "2.14.1+cpu"
     }
   },
   "builds": {
@@ -56,25 +79,36 @@
     "java": {
       "profile": "discovery-package",
       "path": "backend/target/nba-manager-discovery.jar",
-      "bytes": 70113410,
-      "sha256": "72fa7a687bd99a3ae6e2766a0b4e61f0fe8aee4a5d92117128e742934551c95e"
+      "bytes": 70118973,
+      "sha256": "b97049f807df535d19ec752dd3702f417d6beae0d7f8b06f655797cc77311bf5"
     },
-    "pythonImage": "sha256:9c916937d237eb9e6af0376eb1bbba6e21b08a86544e061d037fde7173c2273e",
+    "pythonImage": "sha256:0fe96946946d85ec2b5b583d23af3b272782d417f116585126f7422062270ff1",
     "linuxActualEncoder": {
-      "status": "PASS",
-      "model": "richinfoai/ritrieve_zh_v1",
-      "dimensions": 1792,
-      "weightsReadOnly": true
+      "sourceMatchesWorkspace": true,
+      "encoderDimensions": 1792,
+      "norm": 1.000000075541219,
+      "weightsReadOnly": true,
+      "packages": {
+        "fastapi": "0.143.1",
+        "anyio": "4.15.1",
+        "uvicorn": "0.54.0",
+        "pydantic": "2.14.1",
+        "numpy": "2.5.4",
+        "lightgbm": "4.7.0",
+        "pyarrow": "23.0.1",
+        "sentence-transformers": "5.7.0",
+        "torch": "2.14.1+cpu"
+      }
     }
   },
   "tests": {
     "java": {
-      "classes": 124,
-      "tests": 659,
+      "classes": 126,
+      "tests": 664,
       "failures": 0,
       "errors": 0,
       "skipped": 3,
-      "passed": 656,
+      "passed": 661,
       "skippedReason": "Three pre-existing migration/publication integration tests require COURTSIDE_MIGRATION_JDBC_URL"
     },
     "retention": {
@@ -92,8 +126,8 @@
       "build": "PASS"
     },
     "pythonUnit": {
-      "hostPassed": 24,
-      "linuxContainerPassed": 24,
+      "hostPassed": 28,
+      "linuxContainerPassed": 28,
       "files": [
         "test_discovery_learning.py",
         "test_discovery_serving.py",
@@ -105,12 +139,13 @@
       "mode": "Offline mocked providers"
     },
     "realStack": {
-      "tests": 10,
+      "tests": 11,
       "failures": 0,
       "errors": 0,
       "skipped": 0,
-      "timestamp": "2026-10-15T00:18:25.823826+08:00",
+      "timestamp": "2026-10-15T02:13:47.597578+08:00",
       "cases": [
+        "test_itemcf_neighbors_follow_one_active_generation_in_redis",
         "test_migrations_and_all_five_types_with_bilingual_alias_filters_and_real_targets",
         "test_snapshot_cursor_identity_and_deletion_are_checked_again_before_response",
         "test_real_request_attribution_idempotency_trusted_favorites_and_profile_updates",
@@ -139,21 +174,24 @@
     }
   },
   "benchmark": {
-    "generatedAt": "2026-10-15T00:09:29.038529",
+    "generatedAt": "2026-10-15T02:28:09.369421",
     "documents": 100000,
     "concurrency": 50,
     "requestsPerCase": 500,
+    "accountCount": 1,
+    "warmupRequestsPerCase": 16,
     "boundary": "Public Java API including authentication, hydration, request persistence, Python and OpenSearch",
     "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
     "python": "3.12.5",
     "vectorDimensions": 1792,
-    "vectorTemplates": 114,
+    "vectorTemplates": 112,
     "cases": {
       "suggest": {
-        "p50Ms": 171.6,
-        "p95Ms": 421.2,
-        "p99Ms": 444.6,
-        "requestsPerSecond": 223.9,
+        "p50Ms": 121.2,
+        "p95Ms": 232.5,
+        "p99Ms": 247.7,
+        "requestsPerSecond": 370.8,
+        "clientCpuMs": 360,
         "errors": 0,
         "empty": 0,
         "degraded": 0,
@@ -164,30 +202,35 @@
           "bm25-v1": 500
         },
         "p95TargetMs": 150,
-        "p95TargetMet": false
+        "p95TargetMet": false,
+        "meetsAllCriteria": false
       },
       "lexical": {
-        "p50Ms": 189.2,
-        "p95Ms": 257.7,
-        "p99Ms": 296.0,
-        "requestsPerSecond": 249.8,
+        "p50Ms": 173.5,
+        "p95Ms": 1190.3,
+        "p99Ms": 1223.4,
+        "requestsPerSecond": 165.9,
+        "clientCpuMs": 532,
         "errors": 0,
         "empty": 0,
-        "degraded": 0,
+        "degraded": 49,
         "statusCounts": {
           "200": 500
         },
         "strategies": {
-          "bm25-v1": 500
+          "bm25-v1": 451,
+          "database-fallback-v1": 49
         },
         "p95TargetMs": 300,
-        "p95TargetMet": true
+        "p95TargetMet": false,
+        "meetsAllCriteria": false
       },
       "hybrid": {
-        "p50Ms": 251.6,
-        "p95Ms": 382.5,
-        "p99Ms": 480.6,
-        "requestsPerSecond": 183.8,
+        "p50Ms": 198.1,
+        "p95Ms": 280.1,
+        "p99Ms": 361.7,
+        "requestsPerSecond": 236.3,
+        "clientCpuMs": 438,
         "errors": 0,
         "empty": 0,
         "degraded": 0,
@@ -198,13 +241,16 @@
           "hybrid-rrf-v1": 500
         },
         "p95TargetMs": 500,
-        "p95TargetMet": true
+        "p95TargetMet": true,
+        "meetsAllCriteria": true,
+        "semanticPathVerified": true
       },
       "recommendations": {
-        "p50Ms": 431.4,
-        "p95Ms": 669.6,
-        "p99Ms": 713.8,
-        "requestsPerSecond": 103.6,
+        "p50Ms": 313,
+        "p95Ms": 482.7,
+        "p99Ms": 508.4,
+        "requestsPerSecond": 145.2,
+        "clientCpuMs": 515,
         "errors": 0,
         "empty": 0,
         "degraded": 0,
@@ -215,11 +261,93 @@
           "baseline-v1": 500
         },
         "p95TargetMs": 500,
-        "p95TargetMet": false
+        "p95TargetMet": true,
+        "meetsAllCriteria": true
       }
     },
-    "accountCount": 1,
-    "warmupRequestsPerCase": 16,
+    "loadGenerator": "Node native HTTP",
+    "comparison": {
+      "loadGenerator": "Python httpx sync threads",
+      "cases": {
+        "suggest": {
+          "p50Ms": 138.5,
+          "p95Ms": 233.5,
+          "p99Ms": 383.1,
+          "requestsPerSecond": 306.4,
+          "clientCpuMs": 1609.4,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 0,
+          "statusCounts": {
+            "200": 500
+          },
+          "strategies": {
+            "bm25-v1": 500
+          },
+          "p95TargetMs": 150,
+          "p95TargetMet": false,
+          "meetsAllCriteria": false
+        },
+        "lexical": {
+          "p50Ms": 190.0,
+          "p95Ms": 267.6,
+          "p99Ms": 306.5,
+          "requestsPerSecond": 249.5,
+          "clientCpuMs": 1093.8,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 0,
+          "statusCounts": {
+            "200": 500
+          },
+          "strategies": {
+            "bm25-v1": 500
+          },
+          "p95TargetMs": 300,
+          "p95TargetMet": true,
+          "meetsAllCriteria": true
+        },
+        "hybrid": {
+          "p50Ms": 195.7,
+          "p95Ms": 227.6,
+          "p99Ms": 248.6,
+          "requestsPerSecond": 242.6,
+          "clientCpuMs": 1343.8,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 0,
+          "statusCounts": {
+            "200": 500
+          },
+          "strategies": {
+            "hybrid-rrf-v1": 500
+          },
+          "p95TargetMs": 500,
+          "p95TargetMet": true,
+          "meetsAllCriteria": true,
+          "semanticPathVerified": true
+        },
+        "recommendations": {
+          "p50Ms": 410.2,
+          "p95Ms": 664.7,
+          "p99Ms": 682.0,
+          "requestsPerSecond": 113.7,
+          "clientCpuMs": 953.1,
+          "errors": 0,
+          "empty": 0,
+          "degraded": 0,
+          "statusCounts": {
+            "200": 500
+          },
+          "strategies": {
+            "baseline-v1": 500
+          },
+          "p95TargetMs": 500,
+          "p95TargetMet": false,
+          "meetsAllCriteria": false
+        }
+      }
+    },
     "querySet": [
       "库里",
       "勇士",
@@ -230,10 +358,11 @@
       "进攻",
       "三分"
     ],
+    "nodeRuntime": "Node v24.15.0 native HTTP",
     "sourceTimestampTimezone": "Asia/Shanghai"
   },
   "quality": {
-    "at": "2026-10-15T00:20:00.346440+08:00",
+    "at": "2026-10-15T02:23:09.549710+08:00",
     "corpus": "Isolated synthetic fixtures; 19 fixed entity/name/alias queries",
     "modes": {
       "lexical": {
@@ -519,44 +648,44 @@
     },
     "textLag": {
       "observations": 20,
-      "p95Ms": 2428.7,
+      "p95Ms": 5137.3,
       "valuesMs": [
-        1219.9,
-        1221.5,
-        1223.3,
-        1219.4,
-        1220.0,
-        2428.7,
-        1217.5,
-        1223.8,
-        1227.1,
-        2432.1,
-        1223.3,
-        1225.4,
-        2425.5,
-        1221.8,
-        1233.4,
-        1236.8,
-        1222.3,
-        1220.1,
-        1221.6,
-        1219.9
+        5145.8,
+        5128.3,
+        5125.2,
+        5130.4,
+        5136.8,
+        5125.9,
+        5130.6,
+        5124.2,
+        5123.8,
+        5125.9,
+        5125.1,
+        5123.2,
+        5128.7,
+        5128.7,
+        5125.9,
+        5137.3,
+        5124.8,
+        5137.1,
+        5124.4,
+        5124.1
       ]
     },
     "featureLag": {
       "observations": 10,
-      "p95Ms": 667.3,
+      "p95Ms": 647.7,
       "valuesMs": [
-        667.3,
-        640.8,
-        335.9,
-        644.1,
-        359.0,
-        647.1,
-        347.1,
-        652.7,
-        339.6,
-        645.9
+        369.6,
+        643.8,
+        340.1,
+        647.7,
+        348.3,
+        640.9,
+        343.0,
+        641.2,
+        340.5,
+        641.9
       ]
     }
   },
@@ -597,7 +726,7 @@
     "timingsAre": "Single fault probes, not latency percentiles"
   },
   "restoration": {
-    "checkedAt": "2026-10-15T00:42:12.523192+08:00",
+    "checkedAt": "2026-10-15T02:35:09.788788+08:00",
     "benchmarkRowsRemaining": {
       "game_news": 0,
       "posts": 0
@@ -616,9 +745,15 @@
       "status": "up"
     },
     "apiWorkers": 1,
+    "apiThreads": 4,
     "finalHybridCheck": {
       "strategyVersion": "hybrid-rrf-v1",
       "degraded": false
+    },
+    "mysqlDurability": {
+      "binlog_group_commit_sync_delay": "0",
+      "innodb_flush_log_at_trx_commit": "1",
+      "sync_binlog": "1"
     }
   },
   "diagnosticSmallFixture50Concurrency": {
@@ -745,12 +880,156 @@
   },
   "limitations": [
     "Browser visual and interaction acceptance remains blocked by the tool permission policy.",
-    "Suggest and recommendations did not meet the initial P95 latency targets on this host; performance is not fully accepted.",
-    "Additional small-fixture probes show latency variability and some recommendation degradation; the 2000-request benchmark is one measured run, not a sustained availability guarantee.",
     "The benchmark uses one test account, eight fixed warmed queries and synthetic documents with copied real fixture vectors. It does not represent 50 distinct user profiles, cold arbitrary queries or production semantic relevance.",
     "The fixed 19-query relevance set checks entity/name/alias regression only. Production relevance and online recommendation lift remain unproven.",
     "Text and feature lag were measured independently from query load.",
     "Synthetic model lifecycle tests do not satisfy the production training gate or justify rollout to real users. Online control was restored to the baseline.",
-    "The host does not match the 8-core/32-GiB reference; no reference-hardware performance claim is made."
-  ]
+    "One or more primary native HTTP latency/availability criteria remain unmet; inspect each case.",
+    "The same-host Python threaded client is retained as a separate comparison, including its CPU cost. Its results are not mixed with the native HTTP measurements or treated as interchangeable."
+  ],
+  "previousBenchmark": {
+    "generatedAt": "2026-10-15T00:09:29.038529",
+    "documents": 100000,
+    "concurrency": 50,
+    "requestsPerCase": 500,
+    "boundary": "Public Java API including authentication, hydration, request persistence, Python and OpenSearch",
+    "data": "Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance",
+    "python": "3.12.5",
+    "vectorDimensions": 1792,
+    "vectorTemplates": 114,
+    "cases": {
+      "suggest": {
+        "p50Ms": 171.6,
+        "p95Ms": 421.2,
+        "p99Ms": 444.6,
+        "requestsPerSecond": 223.9,
+        "errors": 0,
+        "empty": 0,
+        "degraded": 0,
+        "statusCounts": {
+          "200": 500
+        },
+        "strategies": {
+          "bm25-v1": 500
+        }
+      },
+      "lexical": {
+        "p50Ms": 189.2,
+        "p95Ms": 257.7,
+        "p99Ms": 296.0,
+        "requestsPerSecond": 249.8,
+        "errors": 0,
+        "empty": 0,
+        "degraded": 0,
+        "statusCounts": {
+          "200": 500
+        },
+        "strategies": {
+          "bm25-v1": 500
+        }
+      },
+      "hybrid": {
+        "p50Ms": 251.6,
+        "p95Ms": 382.5,
+        "p99Ms": 480.6,
+        "requestsPerSecond": 183.8,
+        "errors": 0,
+        "empty": 0,
+        "degraded": 0,
+        "statusCounts": {
+          "200": 500
+        },
+        "strategies": {
+          "hybrid-rrf-v1": 500
+        }
+      },
+      "recommendations": {
+        "p50Ms": 431.4,
+        "p95Ms": 669.6,
+        "p99Ms": 713.8,
+        "requestsPerSecond": 103.6,
+        "errors": 0,
+        "empty": 0,
+        "degraded": 0,
+        "statusCounts": {
+          "200": 500
+        },
+        "strategies": {
+          "baseline-v1": 500
+        }
+      }
+    }
+  },
+  "primaryPerformanceCriteriaMet": false,
+  "performanceDiagnosis": {
+    "javaJfr": {
+      "requests": 5000,
+      "connectionPool": 20,
+      "aggregateCommitSocketWaitSeconds": 147.8029,
+      "aggregatePreferenceConnectionWaitSeconds": 362.7036,
+      "note": "Diagnostic recording adds overhead; these aggregate concurrent waits are not latency percentiles."
+    },
+    "mysqlGroupCommitExperiment": [
+      {
+        "operation": "suggest",
+        "requests": 1000,
+        "concurrency": 50,
+        "p50Ms": 103.5,
+        "p95Ms": 138.3,
+        "rps": 469.3,
+        "clientCpuMs": 687,
+        "errors": 0,
+        "degraded": 0,
+        "empty": 0,
+        "groupCommitDelayMicros": 0
+      },
+      {
+        "operation": "suggest",
+        "requests": 1000,
+        "concurrency": 50,
+        "p50Ms": 104,
+        "p95Ms": 134,
+        "rps": 468.9,
+        "clientCpuMs": 735,
+        "errors": 0,
+        "degraded": 0,
+        "empty": 0,
+        "groupCommitDelayMicros": 1000
+      },
+      {
+        "operation": "suggest",
+        "requests": 1000,
+        "concurrency": 50,
+        "p50Ms": 99.7,
+        "p95Ms": 128.6,
+        "rps": 496.6,
+        "clientCpuMs": 610,
+        "errors": 0,
+        "degraded": 0,
+        "empty": 0,
+        "groupCommitDelayMicros": 0
+      },
+      {
+        "operation": "suggest",
+        "requests": 1000,
+        "concurrency": 50,
+        "p50Ms": 108.2,
+        "p95Ms": 142.4,
+        "rps": 458.4,
+        "clientCpuMs": 641,
+        "errors": 0,
+        "degraded": 0,
+        "empty": 0,
+        "groupCommitDelayMicros": 1000
+      }
+    ],
+    "mysqlGroupCommitConfigurationRestored": true,
+    "changes": [
+      "One-page autocomplete and HOME responses avoid unused Redis cursors.",
+      "Parsed index documents are reused; candidates and user features remain per request.",
+      "Dense-vector cache keys avoid JSON encoding on hits.",
+      "ItemCF generation and neighbors are read atomically in one Redis call.",
+      "Bounded Java autocomplete coalescing, four Python request threads and fifty JDBC connections."
+    ]
+  }
 }

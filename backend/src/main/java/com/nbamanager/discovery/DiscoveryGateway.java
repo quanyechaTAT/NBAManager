@@ -17,10 +17,13 @@ import org.springframework.web.client.RestClientResponseException;
 public class DiscoveryGateway {
     private final RestClient client;
     private final String token;
+    private final int timeout;
+    private final DiscoverySuggestionCache suggestions=new DiscoverySuggestionCache();
     public DiscoveryGateway(@Value("${app.discovery.server-url}") String url,
                             @Value("${app.discovery.internal-token:}") String token,
                             @Value("${app.discovery.timeout-millis:800}") int timeout) {
         this.token=token;
+        this.timeout=timeout;
         var factory=new JdkClientHttpRequestFactory(HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofMillis(150)).build());
         factory.setReadTimeout(Duration.ofMillis(timeout));
@@ -28,6 +31,11 @@ public class DiscoveryGateway {
     }
     public Map<String,Object> fetch(String operation, Map<String,Object> request) {
         if(token.isBlank()) return null;
+        if(operation.equals("suggest")&&!request.containsKey("cursor"))
+            return suggestions.get(request,timeout,()->call(operation,request));
+        return call(operation,request);
+    }
+    private Map<String,Object> call(String operation, Map<String,Object> request) {
         try {
             return client.post().uri("/internal/"+operation).header("X-Discovery-Token",token)
                     .body(request).retrieve().body(new ParameterizedTypeReference<>() {});

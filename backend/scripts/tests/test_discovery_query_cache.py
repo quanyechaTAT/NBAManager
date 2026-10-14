@@ -2,7 +2,10 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 import time
 import pytest
-from discovery_app.index import QueryCache
+from unittest.mock import Mock
+from discovery_app.config import Settings
+from discovery_app.index import Index, QueryCache
+from discovery_app.serving import Serving
 
 
 def test_concurrent_identical_queries_share_a_single_lookup():
@@ -32,3 +35,37 @@ def test_failures_do_not_poison_the_cache_or_future_requests():
     cache=QueryCache()
     with pytest.raises(RuntimeError): cache.get('q',lambda:(_ for _ in ()).throw(RuntimeError('offline')))
     assert cache.get('q',lambda:['NEWS:1'])==['NEWS:1']
+
+
+def test_cached_documents_do_not_share_request_candidates_and_refresh_after_expiry(monkeypatch):
+    now=[0.0]; monkeypatch.setattr(time,'monotonic',lambda:now[0])
+    index=Index(Settings()); index.client=Mock()
+    def hits(views):
+        return {'hits':{'hits':[{'_id':'NEWS:1','fields':{'views':[views],'entities':['TEAM:1'],
+            'published_at':['1700000000000']}}]}}
+    index.client.search.side_effect=[hits(10),hits(20)]
+    query={'match_all':{}}
+    first=Serving.candidates(index.search(query,documents=True))[0]
+    second=Serving.candidates(index.search(query,documents=True))[0]
+    assert first.document is second.document
+    first.channels.add('followed'); first.semantic=.9
+    assert second.channels==set() and second.semantic==0
+    assert second.document.published_at==1700000000 and second.document.views==10
+    now[0]=6
+    refreshed=Serving.candidates(index.search(query,documents=True))[0]
+    assert refreshed.document.views==20 and refreshed.document is not first.document
+    assert index.client.search.call_count==2
+
+
+def test_semantic_cache_binds_vector_values_filters_size_and_projection():
+    index=Index(Settings()); index.client=Mock()
+    index.client.search.return_value={'hits':{'hits':[]}}
+    vector=[.1,.2,.3]
+    index.semantic(vector,{'types':['NEWS']})
+    index.semantic(list(vector),{'types':['NEWS']})
+    assert index.client.search.call_count==1
+    index.semantic([.1,.2,.4],{'types':['NEWS']})
+    index.semantic(vector,{'types':['POST']})
+    index.semantic(vector,{'types':['NEWS']},size=20)
+    index.semantic(vector,{'types':['NEWS']},documents=False)
+    assert index.client.search.call_count==5

@@ -91,3 +91,39 @@ def test_opt_out_does_not_use_saved_interests_following_or_itemcf():
     assert result['items'][0]['features']['entity_interest'] == 0
     profiles.get.assert_not_called()
     service.pool.shutdown()
+
+
+def test_suggestions_are_a_single_page_without_redis_or_recall_worker_contention():
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    cache=Mock(); cache.setex.side_effect=AssertionError('Autocomplete must not allocate an unused cursor')
+    index=Mock(); index.lexical.return_value=[{'_id':f'NEWS:{i}'} for i in range(1,13)]
+    service=Serving(Mock(),cache,index,Mock(),Mock(),Settings())
+    service.pool.shutdown()
+    service.pool=ThreadPoolExecutor(max_workers=1)
+    occupied=threading.Event(); release=threading.Event()
+    def block(): occupied.set(); release.wait(2)
+    service.pool.submit(block)
+    try:
+        assert occupied.wait(.5)
+        with ThreadPoolExecutor(max_workers=1) as requests:
+            response=requests.submit(service.search,{'userId':1,'scene':'SEARCH','q':'库里','limit':8},True).result(.5)
+        assert len(response['items'])==8 and response['nextCursor'] is None and not response['degraded']
+        cache.setex.assert_not_called()
+        service.embedder.encode.assert_not_called()
+    finally:
+        release.set(); service.pool.shutdown()
+
+
+def test_home_ranks_only_the_visible_page_and_does_not_allocate_a_cursor():
+    cache=Mock(); cache.setex.side_effect=AssertionError('Home has no load-more control')
+    db,index=Mock(),Mock(); db.control.return_value={}; index.documents.return_value=[]
+    docs=[Document(f'{"NEWS" if n%2 else "POST"}:{n}','内容',published_at=time.time()) for n in range(1,41)]
+    index.recall.return_value=[{'_id':doc.item_key,'_source':doc.as_index()} for doc in docs]
+    service=Serving(db,cache,index,Mock(),Mock(),Settings())
+    try:
+        response=service.recommendations({'userId':1,'scene':'HOME','limit':6,'personalized':False})
+        assert len(response['items'])==6 and response['nextCursor'] is None
+        assert {row['itemKey'].split(':')[0] for row in response['items']}=={'NEWS','POST'}
+        cache.setex.assert_not_called()
+    finally: service.pool.shutdown()

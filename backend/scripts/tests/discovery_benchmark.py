@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import json
 import math
 import platform
+import subprocess
 import time
 
 import httpx
@@ -26,7 +27,7 @@ START=10_000_000
 def percentile(values, fraction): return sorted(values)[max(0,math.ceil(len(values)*fraction)-1)]
 
 
-def run(count, concurrency, requests):
+def run(count, concurrency, requests, load_client='httpx'):
     s=settings(); db=Database(s); index=Index(s)
     original=list(index.admin.indices.get_alias(name=index.alias))
     name='nba-discovery-benchmark-'+str(time.time_ns())
@@ -39,6 +40,8 @@ def run(count, concurrency, requests):
             'boundary':'Public Java API including authentication, hydration, request persistence, Python and OpenSearch',
             'data':'Synthetic copies of fixture text and vectors; no claim about real-world semantic relevance',
             'python':platform.python_version(),'vectorDimensions':s.embedding_dim,'vectorTemplates':len(templates), 'cases':{}}
+    report['loadGenerator']='Node native HTTP' if load_client in ('node','both') else 'Python httpx sync threads'
+    if load_client=='both': report['comparison']={'loadGenerator':'Python httpx sync threads','cases':{}}
     alias_changed=False
     for table in ('game_news','posts'):
         assert not db.rows(f'SELECT id FROM {table} WHERE id>=%s AND id<%s LIMIT 1',(START,START+count)), 'Reserved IDs already occupied'
@@ -95,18 +98,26 @@ def run(count, concurrency, requests):
                 except Exception as error:
                     return {'ms':(time.perf_counter()-start)*1000,'status':0,'degraded':True,'strategy':type(error).__name__,'count':0}
             for case in ('suggest','lexical','hybrid','recommendations'):
-                for number in range(16): call(case,number)
-                started=time.perf_counter()
-                with ThreadPoolExecutor(max_workers=concurrency) as pool: rows=list(pool.map(lambda i:call(case,i),range(requests)))
-                duration=time.perf_counter()-started; latencies=[row['ms'] for row in rows]
-                metrics={'p50Ms':round(percentile(latencies,.5),1),'p95Ms':round(percentile(latencies,.95),1),
-                         'p99Ms':round(percentile(latencies,.99),1),'requestsPerSecond':round(requests/duration,1),
-                         'errors':sum(row['status']!=200 for row in rows),'empty':sum(row['count']==0 for row in rows),
-                         'degraded':sum(row['degraded'] for row in rows),
-                         'statusCounts':{str(value):sum(row['status']==value for row in rows) for value in {row['status'] for row in rows}},
-                         'strategies':{value:sum(row['strategy']==value for row in rows) for value in {row['strategy'] for row in rows}}}
-                report['cases'][case]=metrics; print(json.dumps({case:metrics}),flush=True)
-                (RUNTIME/'benchmark.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+                for generator in (('node','httpx') if load_client=='both' else (load_client,)):
+                    if generator=='node':
+                        result=subprocess.run(['node','tests/discovery_load.cjs','--runtime',str(RUNTIME),'--case',case,
+                            '--requests',str(requests),'--concurrency',str(concurrency)],capture_output=True,text=True,encoding='utf-8',check=True)
+                        payload=json.loads(result.stdout); metrics=payload['metrics']; report['nodeRuntime']=payload['client']
+                    else:
+                        for number in range(16): call(case,number)
+                        started=time.perf_counter(); cpu=time.process_time()
+                        with ThreadPoolExecutor(max_workers=concurrency) as pool: rows=list(pool.map(lambda i:call(case,i),range(requests)))
+                        duration=time.perf_counter()-started; cpu=time.process_time()-cpu; latencies=[row['ms'] for row in rows]
+                        metrics={'p50Ms':round(percentile(latencies,.5),1),'p95Ms':round(percentile(latencies,.95),1),
+                                 'p99Ms':round(percentile(latencies,.99),1),'requestsPerSecond':round(requests/duration,1),
+                                 'clientCpuMs':round(cpu*1000,1),
+                                 'errors':sum(row['status']!=200 for row in rows),'empty':sum(row['count']==0 for row in rows),
+                                 'degraded':sum(row['degraded'] for row in rows),
+                                 'statusCounts':{str(value):sum(row['status']==value for row in rows) for value in {row['status'] for row in rows}},
+                                 'strategies':{value:sum(row['strategy']==value for row in rows) for value in {row['strategy'] for row in rows}}}
+                    target=report['comparison']['cases'] if load_client=='both' and generator=='httpx' else report['cases']
+                    target[case]=metrics; print(json.dumps({'client':generator,case:metrics}),flush=True)
+                    (RUNTIME/'benchmark.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
     finally:
         if alias_changed:
             index.admin.indices.update_aliases(body={'actions':[{'remove':{'index':name,'alias':index.alias}}]+
@@ -125,6 +136,7 @@ def run(count, concurrency, requests):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(); parser.add_argument('--count',type=int,default=100000)
     parser.add_argument('--concurrency',type=int,default=50); parser.add_argument('--requests',type=int,default=500)
+    parser.add_argument('--client',choices=['httpx','node','both'],default='httpx')
     args=parser.parse_args()
     assert 100<=args.count<=100000 and 1<=args.concurrency<=50 and 10<=args.requests<=5000
-    run(args.count,args.concurrency,args.requests)
+    run(args.count,args.concurrency,args.requests,args.client)

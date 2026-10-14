@@ -22,7 +22,9 @@ def settings():
         raise RuntimeError('Acceptance helpers only support nba_discovery_test on port 13306')
     return replace(Settings(), db_host='127.0.0.1', db_port=13306, db_name='nba_discovery_test', db_user='root',
                    db_password=values['DISCOVERY_DB_PASSWORD'], internal_token=values['DISCOVERY_INTERNAL_TOKEN'],
-                   search_url='http://127.0.0.1:19200', redis_url='redis://127.0.0.1:16379/2', runtime=RUNTIME)
+                   search_url='http://127.0.0.1:19200', redis_url='redis://127.0.0.1:16379/2', runtime=RUNTIME,
+                   api_threads=int(values.get('DISCOVERY_API_THREADS','8')),
+                   query_cache_seconds=float(values.get('DISCOVERY_QUERY_CACHE_SECONDS','5')))
 
 
 def eventually(function, seconds=30):

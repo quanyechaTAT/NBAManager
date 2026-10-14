@@ -15,6 +15,15 @@ from discovery_app.ranking import merge_channels, rank
 
 log = logging.getLogger(__name__)
 
+# Resolve the active graph and its neighbors in one round trip and one consistent generation.
+ITEMCF_NEIGHBORS = """
+local generation = redis.call('GET', KEYS[1])
+if not generation or #ARGV == 0 then return {} end
+local neighbors = {}
+for i, seed in ipairs(ARGV) do neighbors[i] = 'discovery:itemcf:' .. generation .. ':' .. seed end
+return redis.call('MGET', unpack(neighbors))
+"""
+
 
 class CursorError(ValueError): pass
 
@@ -90,26 +99,30 @@ class Serving:
 
     def search(self, request: dict, suggest=False):
         if request.get('cursor'): return self.cursors.next(request)
-        lexical = self.pool.submit(self.index.lexical, request, 10 if suggest else 150, suggest)
+        hybrid = not suggest and request.get('mode') != 'lexical' and bool(request.get('q'))
+        # A single-channel request has nothing to parallelize and must not queue behind recommendation recalls.
+        lexical = self.pool.submit(self.index.lexical, request, 150, False) if hybrid else None
         vector = None
-        if not suggest and request.get('mode') != 'lexical' and request.get('q'):
+        if hybrid:
             try: vector = self.embedder.encode(request['q'])
             except Exception: log.warning('Query encoder unavailable; using lexical retrieval')
         semantic = self.pool.submit(self.index.semantic, vector, request, 100, False) if vector else None
         degraded = request.get('mode') != 'lexical' and not suggest and vector is None
-        lexical_hits = lexical.result()
+        lexical_hits = lexical.result() if lexical else self.index.lexical(request, 10 if suggest else 150, suggest)
         try: semantic_hits = semantic.result() if semantic else []
         except Exception:
             semantic_hits, degraded = [], True
         rows = rrf(lexical_hits, semantic_hits)
         metadata = {'strategyVersion': 'hybrid-rrf-v1' if semantic_hits else 'bm25-v1', 'degraded': degraded}
+        # Autocomplete opens the full search page for more results; it never consumes a cursor.
+        if suggest: return {**metadata, 'items': rows[:request['limit']], 'nextCursor': None}
         page, cursor = self.cursors.first(request, rows, metadata)
         return {**metadata, 'items': page, 'nextCursor': cursor}
 
     @staticmethod
     def candidates(hits, semantic=False):
-        return [Candidate(Document.from_index(hit['_source']), semantic=max(0., min(1., float(hit.get('_score') or 0))))
-                if semantic else Candidate(Document.from_index(hit['_source'])) for hit in hits]
+        return [Candidate(hit.get('_document') or Document.from_index(hit['_source']),
+                          semantic=max(0., min(1., float(hit.get('_score') or 0))) if semantic else 0.) for hit in hits]
 
     def recommendations(self, request: dict):
         if request.get('cursor'): return self.cursors.next(request)
@@ -138,11 +151,9 @@ class Serving:
                 if entities: tasks['content_entities'] = self.pool.submit(self.index.recall, request, kinds, entities=entities)
         if personalized and not degraded and seeds:
             try:
-                generation = self.cache.get('discovery:itemcf:active')
                 scores = {}
-                if generation:
-                    for value in self.cache.mget([f'discovery:itemcf:{generation}:{key}' for key in seeds]):
-                        for key, score in json.loads(value or '[]'): scores[key] = max(scores.get(key, 0), score)
+                for value in self.cache.eval(ITEMCF_NEIGHBORS, 1, 'discovery:itemcf:active', *seeds):
+                    for key, score in json.loads(value or '[]'): scores[key] = max(scores.get(key, 0), score)
                 channels['itemcf'] = [Candidate(doc, itemcf=scores[doc.item_key]) for doc in self.index.documents(
                     sorted(scores, key=lambda key: -scores[key])[:100])]
             except redis.RedisError: degraded = True
@@ -160,12 +171,14 @@ class Serving:
         kwargs = dict(profile=profile if not degraded else {}, followed=followed if not degraded else set(), blocked=blocked,
                       scene=scene, now=time.time(), seed=f'{user}:{int(time.time()/600)}')
         # One bounded inference of the top 100; all pages share this frozen serving snapshot.
-        rows, used = rank(candidates, **kwargs, limit=request['limit'], pages=5, predict=model.predict if treatment else None)
+        rows, used = rank(candidates, **kwargs, limit=request['limit'], pages=1 if scene == 'HOME' else 5,
+                          predict=model.predict if treatment else None)
         if model and control.get('traffic', 0) == 0 and candidates:
             shadow, ok = rank(candidates, **kwargs, predict=model.predict)
             self.db.set_control('shadow', {'version': model.metadata['version'], 'at': time.time(), 'successful': ok,
                                           'overlap': len({r['itemKey'] for r in shadow} & {r['itemKey'] for r in rows[:20]})})
         metadata = {'strategyVersion': 'lambdarank-'+model.metadata['version'] if used else 'baseline-v1',
                     'modelVersion': model.metadata['version'] if used else None, 'degraded': degraded}
+        if scene == 'HOME': return {**metadata, 'items': rows, 'nextCursor': None}
         page, cursor = self.cursors.first(request, rows, metadata)
         return {**metadata, 'items': page, 'nextCursor': cursor}
