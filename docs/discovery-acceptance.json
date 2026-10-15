@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-15T05:58:11.751329+08:00",
+  "generatedAt": "2026-10-15T10:16:47.041040+08:00",
   "status": "PARTIAL_ACCEPTANCE",
   "scope": "Unified search and recommendations for NBAManager; advertising excluded",
   "baseline": {
@@ -107,6 +107,15 @@
         "sentence-transformers": "5.7.0",
         "torch": "2.14.1+cpu"
       }
+    },
+    "latestFrontendVerification": {
+      "typecheck": "PASS",
+      "build": "PASS",
+      "warning": "Existing ECharts chunk exceeds 500 kB",
+      "indexSha256": "268c7493ef822215f86c71f103585010004014e4855702dbf9cf05ecb6d05c9c",
+      "sourceSha256": "c1abcc074f615f6a7b6ec3b74eb4a7f81c9be21c17606fb60add708053eb8369",
+      "backendPerformanceCheckpoint": "3502673",
+      "note": "This follow-up changes only frontend focus/debounce behavior; it does not rerun or replace backend load measurements."
     }
   },
   "tests": {
@@ -143,9 +152,33 @@
       "initialFullSuiteTests": 206,
       "subsequentNewAccountRaceTest": 1,
       "subsequentTelemetryAndReadingRegressionTests": 4,
-      "distinctTestsPassed": 207,
+      "distinctTestsPassed": 211,
       "typecheck": "PASS",
-      "build": "PASS"
+      "build": "PASS",
+      "subsequentGlobalSearchFocusTests": 4,
+      "latestTargetedRegression": {
+        "files": 4,
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "global search focus and submission > keeps suggestions available after keyboard focus moves from input to a result",
+          "global search focus and submission > cancels an old close timer on refocus and closes after focus leaves the whole control",
+          "global search focus and submission > allows Escape to close the menu from a focused result",
+          "global search focus and submission > does not start a pending suggestion request after Enter opens the full results",
+          "counts only visible detail time toward the 15 second read label",
+          "discovery attribution > requires 50% visibility for a continuous second and cancels a hidden-tab exposure",
+          "discovery attribution > deduplicates repeated exposure and drops an old account context",
+          "discovery attribution > does not attribute a read to a rejected click",
+          "discovery preference account isolation > does not apply a previous account response after switching accounts"
+        ],
+        "scope": "Component tests in happy-dom; not real-browser visual or interaction acceptance.",
+        "originalBehaviorReproduced": {
+          "newTests": 4,
+          "failuresBeforeFix": 4
+        }
+      }
     },
     "pythonUnit": {
       "hostPassed": 38,
@@ -213,6 +246,10 @@
       "sourceHashMatchesVectorHash": true,
       "originalTitleAndVectorRestored": true,
       "note": "One end-to-end worker liveness probe, not a percentile or a concurrent-load measurement."
+    },
+    "jobCancellationAudit": {
+      "status": "PENDING",
+      "finding": "Running training and ItemCF jobs need cancellation checkpoints before publication; dedicated coverage is being added."
     }
   },
   "benchmark": {

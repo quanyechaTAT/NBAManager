@@ -1,6 +1,6 @@
 <template>
-  <div class="global-search">
-    <form role="search" @submit.prevent="allResults"><span aria-hidden="true">⌕</span><input v-model="query" type="search" aria-label="全站搜索" placeholder="球员、球队、比赛、资讯…" autocomplete="off" @input="schedule" @focus="opened = true" @blur="closeLater" @keydown.escape="opened = false" /></form>
+  <div ref="element" class="global-search" @focusin="cancelClose" @focusout="closeLater" @keydown.escape="opened = false">
+    <form role="search" @submit.prevent="allResults"><span aria-hidden="true">⌕</span><input v-model="query" type="search" aria-label="全站搜索" placeholder="球员、球队、比赛、资讯…" autocomplete="off" @input="schedule" @focus="opened = true" /></form>
     <div v-if="opened && query.trim()" class="suggestions" @mousedown.prevent>
       <p v-if="loading">正在查找…</p>
       <button v-for="(item, position) in result?.items || []" :key="item.itemKey" type="button" @click="open(item, position)"><span>{{ discoveryLabels[item.type] }}</span><strong>{{ item.title }}</strong></button>
@@ -16,6 +16,7 @@ import { discover, discoveryLabels, type DiscoveryItem, type DiscoveryResponse }
 import { useAuthStore } from '@/stores/auth'
 import { attribution, sendDiscoveryEvent } from '@/utils/discoveryTelemetry'
 const router = useRouter(), auth = useAuthStore()
+const element = ref<HTMLElement>()
 const query = ref(''), opened = ref(false), loading = ref(false), result = ref<DiscoveryResponse | null>(null)
 let timer: ReturnType<typeof setTimeout> | undefined, blurTimer: ReturnType<typeof setTimeout> | undefined, controller: AbortController | undefined
 function schedule() {
@@ -29,8 +30,12 @@ function schedule() {
     finally { if (controller === pending) loading.value = false }
   }, 200)
 }
-function closeLater() { blurTimer = setTimeout(() => { opened.value = false }, 150) }
-function allResults() { opened.value = false; controller?.abort(); if (query.value.trim()) void router.push({ path: '/search', query: { q: query.value.trim() } }) }
+function cancelClose() { clearTimeout(blurTimer) }
+function closeLater() {
+  cancelClose()
+  blurTimer = setTimeout(() => { if (!element.value?.contains(document.activeElement)) opened.value = false }, 150)
+}
+function allResults() { opened.value = false; clearTimeout(timer); controller?.abort(); if (query.value.trim()) void router.push({ path: '/search', query: { q: query.value.trim() } }) }
 async function open(item: DiscoveryItem, position: number) {
   opened.value = false
   if (result.value) void sendDiscoveryEvent(attribution(result.value.requestId, item.itemKey, position), 'CLICK')
