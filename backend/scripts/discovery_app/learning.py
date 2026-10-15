@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+from typing import Callable
 import uuid
 
 from discovery_app.domain import FEATURE_NAMES, FEATURE_VERSION, baseline_score
@@ -37,15 +38,22 @@ def _matrix(samples: list[dict]):
             np.asarray([row['label'] for row in ordered]), [len(group) for group in grouped.values()])
 
 
-def train(samples: list[dict], directory: Path, *, gate: TrainingGate | None = None) -> dict:
+def train(samples: list[dict], directory: Path, *, gate: TrainingGate | None = None,
+          check_cancel: Callable[[], None] | None = None) -> dict:
+    checkpoint=check_cancel or (lambda: None)
+    checkpoint()
     decision = (gate or TrainingGate()).check(samples)
     if not decision['eligible']:
         return {'status': 'INSUFFICIENT_DATA', 'gate': decision}
     from lightgbm import LGBMRanker, early_stopping, log_evaluation
     partitions = temporal_split(samples)
+    checkpoint()
     train_rows, train_x, train_y, train_groups = _matrix(partitions[0])
+    checkpoint()
     validation_rows, validation_x, validation_y, validation_groups = _matrix(partitions[1])
+    checkpoint()
     test_rows, test_x, _, _ = _matrix(partitions[2])
+    checkpoint()
     informative = lambda rows: len({row['label'] for row in rows}) > 1
     grouped_train = defaultdict(list)
     for row in train_rows: grouped_train[row['requestId']].append(row)
@@ -53,9 +61,16 @@ def train(samples: list[dict], directory: Path, *, gate: TrainingGate | None = N
         return {'status': 'INSUFFICIENT_DATA', 'gate': decision, 'reason': 'No informative within-request ranking pairs'}
     model = LGBMRanker(objective='lambdarank', n_estimators=300, learning_rate=.05,
                       num_leaves=15, max_depth=6, min_child_samples=20, random_state=42, n_jobs=2, verbosity=-1)
+    callbacks=[early_stopping(25, verbose=False), log_evaluation(0)]
+    if check_cancel is not None:
+        def cancel_iteration(_): checkpoint()
+        cancel_iteration.before_iteration=True
+        cancel_iteration.order=0
+        callbacks.append(cancel_iteration)
     model.fit(train_x, train_y, group=train_groups, feature_name=list(FEATURE_NAMES),
               eval_set=[(validation_x, validation_y)], eval_group=[validation_groups], eval_at=[10],
-              callbacks=[early_stopping(25, verbose=False), log_evaluation(0)])
+              callbacks=callbacks)
+    checkpoint()
     predictions = model.booster_.predict(test_x).tolist()
     validation_predictions = model.booster_.predict(validation_x).tolist()
     metrics = {
@@ -67,6 +82,7 @@ def train(samples: list[dict], directory: Path, *, gate: TrainingGate | None = N
     }
     ready = (metrics['testNdcg10'] > metrics['testBaselineNdcg10']
              and metrics['validationNdcg10'] > metrics['validationBaselineNdcg10'])
+    checkpoint()
     version = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex[:8]
     destination = directory / version
     destination.mkdir(parents=True, exist_ok=False)

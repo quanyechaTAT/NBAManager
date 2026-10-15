@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-15T10:16:47.041040+08:00",
+  "generatedAt": "2026-10-15T10:57:02.627330+08:00",
   "status": "PARTIAL_ACCEPTANCE",
   "scope": "Unified search and recommendations for NBAManager; advertising excluded",
   "baseline": {
@@ -89,10 +89,10 @@
       "bytes": 70119896,
       "sha256": "07d72073258a47d2330088ce4b85b3e508fdd784355d71dacd7dd3c026213f71"
     },
-    "pythonImage": "sha256:4a0fbdff752eb6c11df06f056a9121faafed0009f3d8dd64e463d2b23b2d499d",
+    "pythonImage": "sha256:e518806c397d145cd86300d09ffe20d2ad12a05b82d636887b41fbb1e5a8c5c3",
     "linuxActualEncoder": {
       "sourceMatchesWorkspace": true,
-      "sourceFingerprint": "36ef5527af74c23cff75f3411d7f79baa8db094d702ed444ff76aed1cf46f835",
+      "sourceFingerprint": "066667ecd832f5bfacca78fe4a161f2c478e3b9ce68288bae7918badcdf9a0c2",
       "encoderDimensions": 1792,
       "norm": 0.9999999389752379,
       "weightsReadOnly": true,
@@ -116,6 +116,15 @@
       "sourceSha256": "c1abcc074f615f6a7b6ec3b74eb4a7f81c9be21c17606fb60add708053eb8369",
       "backendPerformanceCheckpoint": "3502673",
       "note": "This follow-up changes only frontend focus/debounce behavior; it does not rerun or replace backend load measurements."
+    },
+    "latestBackgroundVerification": {
+      "hostUnitTests": 46,
+      "linuxUnitTests": 46,
+      "realStackTests": 13,
+      "sourceFingerprint": "066667ecd832f5bfacca78fe4a161f2c478e3b9ce68288bae7918badcdf9a0c2",
+      "pythonImage": "sha256:e518806c397d145cd86300d09ffe20d2ad12a05b82d636887b41fbb1e5a8c5c3",
+      "backendPerformanceCheckpoint": "3502673",
+      "scope": "Background training input selection and cooperative job cancellation only; online retrieval/ranking code is unchanged. The frontend focus follow-up is recorded separately. No new 100000-document load run is claimed."
     }
   },
   "tests": {
@@ -181,25 +190,40 @@
       }
     },
     "pythonUnit": {
-      "hostPassed": 38,
-      "linuxContainerPassed": 38,
+      "hostPassed": 46,
+      "linuxContainerPassed": 46,
       "files": [
         "test_discovery_learning.py",
         "test_discovery_serving.py",
         "test_discovery_query_cache.py",
-        "test_discovery_embedding.py"
-      ]
+        "test_discovery_embedding.py",
+        "test_discovery_cancellation.py"
+      ],
+      "latestHostReport": {
+        "tests": 46,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T10:31:12.154683+08:00"
+      },
+      "latestLinuxReport": {
+        "tests": 46,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T02:39:10.946369+00:00"
+      }
     },
     "syncFetcherRegression": {
       "passed": 10,
       "mode": "Offline mocked providers"
     },
     "realStack": {
-      "tests": 11,
+      "tests": 13,
       "failures": 0,
       "errors": 0,
       "skipped": 0,
-      "timestamp": "2026-10-15T04:54:22.367608+08:00",
+      "timestamp": "2026-10-15T10:34:36.518606+08:00",
       "cases": [
         "test_itemcf_neighbors_follow_one_active_generation_in_redis",
         "test_migrations_and_all_five_types_with_bilingual_alias_filters_and_real_targets",
@@ -210,15 +234,18 @@
         "test_training_gate_and_admin_operations_are_real_jobs",
         "test_rebuild_then_rollback_preserves_concurrent_updates",
         "test_cleared_history_rejects_delayed_client_events_and_home_is_mixed",
+        "test_admin_cancellation_reaches_a_running_rebuild_and_queued_training",
         "test_real_coengagement_builds_itemcf_without_fabricated_impressions",
-        "test_actual_synthetic_candidate_shadow_rollout_and_rollback"
+        "test_actual_synthetic_candidate_shadow_rollout_and_rollback",
+        "test_sql_loads_only_mature_exposed_recommendations_and_preserves_serving_features"
       ]
     },
     "postFixOperations": {
-      "tests": 4,
+      "tests": 5,
       "failures": 0,
       "errors": 0,
-      "skipped": 0
+      "skipped": 0,
+      "scope": "Subset of the same 13-test real-stack run; not additional executions."
     },
     "browser": {
       "status": "BLOCKED",
@@ -248,8 +275,61 @@
       "note": "One end-to-end worker liveness probe, not a percentile or a concurrent-load measurement."
     },
     "jobCancellationAudit": {
-      "status": "PENDING",
-      "finding": "Running training and ItemCF jobs need cancellation checkpoints before publication; dedicated coverage is being added."
+      "status": "PASS",
+      "unitCases": [
+        "test_cancel_during_training_does_not_register_or_publish_the_candidate",
+        "test_cancel_after_graph_upload_keeps_the_previous_active_generation",
+        "test_cancel_after_rebuild_refresh_keeps_the_original_alias_and_write_targets",
+        "test_jobs_without_cancellation_still_finish_successfully[TRAIN]",
+        "test_jobs_without_cancellation_still_finish_successfully[ITEMCF]",
+        "test_jobs_without_cancellation_still_finish_successfully[REINDEX]",
+        "test_cancelling_a_queued_job_never_starts_training",
+        "test_native_training_checks_cancellation_before_a_boosting_iteration"
+      ],
+      "realAdminCase": "test_admin_cancellation_reaches_a_running_rebuild_and_queued_training",
+      "checks": [
+        "Queued training never starts",
+        "Running rebuild receives the actual admin cancellation request",
+        "Native LightGBM checks cancellation before a boosting iteration",
+        "Cancelled training does not register its candidate",
+        "Cancelled ItemCF upload does not change the active graph",
+        "Cancelled rebuild preserves the alias and all previous dual-write targets",
+        "Uncancelled TRAIN, ITEMCF and REINDEX jobs still succeed"
+      ],
+      "boundary": "Cooperative cancellation at stage boundaries and before publication. Blocking IO finishes or times out before the next check. A request after the final check does not undo an already committed switch.",
+      "inactiveArtifacts": "Cancelled ItemCF generations expire after two days; unpublished model files and unused rebuild indices can remain for operator cleanup.",
+      "redEvidence": {
+        "initialNewCases": 8,
+        "initialFailures": 4,
+        "rollbackMirrorRegressionAlsoReproduced": true
+      }
+    },
+    "trainingDataSelection": {
+      "status": "PASS",
+      "realSqlCase": "test_sql_loads_only_mature_exposed_recommendations_and_preserves_serving_features",
+      "checks": [
+        "Only mature, exposed recommendation requests are loaded",
+        "SEARCH, unfinished windows, missing or late impressions, opted-out and cleared users are excluded",
+        "Labels and serving-time quality/feature-version snapshots are preserved"
+      ],
+      "inputLimits": {
+        "requests": 500000,
+        "eventBatchRequestIds": 500,
+        "events": 2000000,
+        "eventOverflow": "Fail the job rather than train with partial feedback"
+      },
+      "fixtureScope": "Synthetic SQL fixtures exist only in nba_discovery_test; session binlogging is disabled for insertion/deletion and restored afterward. Exact fixture rows are removed, training control restored, and no model published.",
+      "priorFailure": {
+        "tests": 12,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T10:26:21.385004+08:00",
+        "passed": 11,
+        "case": "test_training_gate_and_admin_operations_are_real_jobs",
+        "cause": "Reading unexposed/recent load-test request snapshots hit the MySQL read timeout",
+        "resolution": "Filter eligible mature exposure in SQL and read events only for selected requests"
+      }
     }
   },
   "benchmark": {
@@ -807,7 +887,7 @@
     "timingsAre": "Single fault probes, not latency percentiles"
   },
   "restoration": {
-    "checkedAt": "2026-10-15T05:58:09.968145+08:00",
+    "checkedAt": "2026-10-15T10:48:44.071336+08:00",
     "benchmarkRowsRemaining": {
       "game_news": 0,
       "posts": 0
@@ -844,38 +924,38 @@
     "isolatedProcesses": {
       "recommendations": {
         "workers": 4,
-        "pid": 23392,
         "liveChildren": 2,
-        "commandIdentityVerified": true
+        "commandIdentityVerified": true,
+        "pid": 23392
       },
-      "cdc": {
-        "pid": 25640,
+      "jobs": {
         "liveChildren": 2,
-        "commandIdentityVerified": true
+        "commandIdentityVerified": true,
+        "pid": 8808
       },
       "api": {
         "workers": 1,
-        "pid": 3132,
         "liveChildren": 2,
-        "commandIdentityVerified": true
+        "commandIdentityVerified": true,
+        "pid": 3132
+      },
+      "cdc": {
+        "liveChildren": 2,
+        "commandIdentityVerified": true,
+        "pid": 25640
       },
       "embeddings": {
-        "pid": 31944,
         "liveChildren": 2,
-        "commandIdentityVerified": true
-      },
-      "jobs": {
-        "pid": 24012,
-        "liveChildren": 2,
-        "commandIdentityVerified": true
+        "commandIdentityVerified": true,
+        "pid": 31944
       },
       "java": {
-        "pid": 29540,
         "liveChildren": 1,
-        "commandIdentityVerified": true
+        "commandIdentityVerified": true,
+        "pid": 29540
       }
     },
-    "processesCheckedAt": "2026-10-15T05:57:59.2665678+08:00",
+    "processesCheckedAt": "2026-10-15T10:48:31.3778832+08:00",
     "embeddingQueueDepth": 0,
     "mysqlBufferPoolBytes": 134217728
   },

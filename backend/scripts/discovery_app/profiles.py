@@ -4,6 +4,7 @@ import json
 import math
 import time
 from datetime import timezone
+from typing import Callable
 
 import redis
 from discovery_app.database import Database
@@ -81,18 +82,23 @@ def apply_event(profile: dict, event: dict, entities: list[str]):
     profile['updated'] = max(now, float(profile.get('updated', 0)))
 
 
-def build_itemcf(db: Database, cache: redis.Redis):
+def build_itemcf(db: Database, cache: redis.Redis, *, check_cancel: Callable[[], None] | None = None):
     """Binary positive co-engagement, capped per user and time window; no invented impressions."""
     from collections import Counter, defaultdict
+    checkpoint=check_cancel or (lambda: None)
+    checkpoint()
     rows = db.rows("SELECT e.user_id,e.item_key FROM discovery_events e LEFT JOIN discovery_preferences p "
                    "ON p.user_id=e.user_id WHERE e.received_at>=UTC_TIMESTAMP()-INTERVAL 30 DAY "
                    "AND (p.personalized IS NULL OR p.personalized=TRUE) AND (p.cleared_at IS NULL OR e.received_at>p.cleared_at) "
                    "AND (e.event_type IN ('FAVORITE','LIKE') OR (e.event_type='READ' AND e.dwell_ms>=15000)) "
                    "ORDER BY e.received_at DESC LIMIT 200000")
+    checkpoint()
     users, counts, pairs = defaultdict(set), Counter(), defaultdict(Counter)
-    for row in rows:
+    for number,row in enumerate(rows):
+        if number%1000==0: checkpoint()
         if len(users[row['user_id']]) < 50: users[row['user_id']].add(row['item_key'])
-    for items in users.values():
+    for number,items in enumerate(users.values()):
+        if number%50==0: checkpoint()
         counts.update(items)
         weight = 1 / math.log2(2+len(items))
         for left in items:
@@ -100,10 +106,14 @@ def build_itemcf(db: Database, cache: redis.Redis):
                 if left != right: pairs[left][right] += weight
     generation = str(time.time_ns())
     pipeline = cache.pipeline(transaction=False)
-    for left, neighbors in pairs.items():
+    for number,(left, neighbors) in enumerate(pairs.items()):
+        if number%1000==0: checkpoint()
         scores = sorted(((right, value / math.sqrt(counts[left]*counts[right])) for right, value in neighbors.items()),
                         key=lambda pair: (-pair[1], pair[0]))[:100]
         pipeline.setex(f'discovery:itemcf:{generation}:{left}', 2*86400, json.dumps(scores))
+    checkpoint()
     pipeline.execute()
+    # Uploaded generations remain inactive until this last cooperative cancellation point.
+    checkpoint()
     cache.setex('discovery:itemcf:active', 2*86400, generation)
     return {'items': len(pairs), 'users': len(users), 'generation': generation}

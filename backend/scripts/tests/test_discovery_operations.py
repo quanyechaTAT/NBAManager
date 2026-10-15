@@ -70,6 +70,56 @@ def test_cleared_history_rejects_delayed_client_events_and_home_is_mixed(stack):
     assert client.post('/api/discovery/events',json={'events':[event]}).status_code==410
 
 
+def test_admin_cancellation_reaches_a_running_rebuild_and_queued_training(stack):
+    s,db,index,clients=stack; admin=clients[2]
+    assert not db.rows("SELECT id FROM discovery_jobs WHERE status IN ('QUEUED','RUNNING')"), 'Wait for isolated jobs to finish'
+    previous=list(index.admin.indices.get_alias(name=index.alias))
+    targets=db.control('indices',[index.alias]); rollback=db.control('indexPrevious',[])
+    before=set(index.admin.indices.get(index=index.alias+'-*'))
+    training_before=db.control('training',{}); models_before=db.rows('SELECT COUNT(*) AS n FROM discovery_models')[0]['n']
+    player=db.rows('SELECT id FROM players ORDER BY id LIMIT 1')[0]['id']
+    identifiers=[]
+    def finished(identifier):
+        row=db.rows('SELECT status FROM discovery_jobs WHERE id=%s',(identifier,))[0]
+        return row['status'] if row['status'] not in ('QUEUED','RUNNING') else None
+    try:
+        # Hold the first source row so the real worker remains in REINDEX while both cancellation requests arrive.
+        with db.connection() as connection,connection.cursor() as cursor:
+            lock=f'discovery:index:PLAYER:{player}'
+            cursor.execute('SELECT GET_LOCK(%s,1) AS acquired',(lock,)); assert cursor.fetchone()['acquired']==1
+            try:
+                response=admin.post('/api/admin/discovery/jobs',json={'kind':'REINDEX'}); response.raise_for_status()
+                rebuild=response.json()['id']; identifiers.append(rebuild)
+                eventually(lambda:db.rows('SELECT status FROM discovery_jobs WHERE id=%s',(rebuild,))[0]['status']=='RUNNING'
+                    and any(name not in before for name in db.control('indices',[])),5)
+                response=admin.post('/api/admin/discovery/jobs',json={'kind':'TRAIN'}); response.raise_for_status()
+                training=response.json()['id']; identifiers.append(training)
+                for identifier in identifiers:
+                    response=admin.post(f'/api/admin/discovery/jobs/{identifier}/cancel'); response.raise_for_status()
+                    assert response.json()['cancelRequested']
+                assert db.rows('SELECT status FROM discovery_jobs WHERE id=%s',(training,))[0]['status']=='QUEUED'
+            finally:
+                cursor.execute('SELECT RELEASE_LOCK(%s)',(lock,))
+        assert [eventually(lambda identifier=identifier:finished(identifier),30) for identifier in identifiers]==['CANCELLED','CANCELLED']
+        assert list(index.admin.indices.get_alias(name=index.alias))==previous
+        assert db.control('indices',[])==targets
+        assert db.control('training',{})==training_before
+        assert db.rows('SELECT COUNT(*) AS n FROM discovery_models')[0]['n']==models_before
+        assert not admin.post(f'/api/admin/discovery/jobs/{training}/cancel').json()['cancelRequested']
+    finally:
+        for identifier in identifiers:
+            admin.post(f'/api/admin/discovery/jobs/{identifier}/cancel').raise_for_status()
+            eventually(lambda identifier=identifier:finished(identifier),30)
+        current=list(index.admin.indices.get_alias(name=index.alias))
+        if current!=previous:
+            index.admin.indices.update_aliases(body={'actions':[{'remove':{'index':name,'alias':index.alias}} for name in current]+
+                [{'add':{'index':name,'alias':index.alias}} for name in previous]})
+        db.set_control('indices',targets); db.set_control('indexPrevious',rollback)
+        for name in set(index.admin.indices.get(index=index.alias+'-*'))-before:
+            assert name.startswith(index.alias+'-') and name not in previous and name not in targets
+            index.admin.indices.delete(index=name)
+
+
 def test_real_coengagement_builds_itemcf_without_fabricated_impressions(stack):
     s,db,index,clients=stack
     news=clients[1].get('/api/discovery/search',params={'q':'库里','types':'NEWS','mode':'lexical'}).json()['items'][:2]

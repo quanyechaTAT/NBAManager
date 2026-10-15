@@ -130,19 +130,24 @@ class Worker:
 
     def progress(self, job, value):
         self.db.execute('UPDATE discovery_jobs SET progress=%s WHERE id=%s', (min(99, value), job))
+        self.check_cancel(job)
+
+    def check_cancel(self, job):
         row = self.db.rows('SELECT cancel_requested FROM discovery_jobs WHERE id=%s', (job,))[0]
         if row['cancel_requested']: raise InterruptedError('Cancelled by administrator')
 
     def rebuild(self, job):
         self.index.ensure()
         previous = list(self.index.admin.indices.get_alias(name=self.index.alias))
+        previous_targets = self.db.control('indices', previous)
         name = self.index.alias + '-' + datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')
         self.index.create(name)
-        targets = list(dict.fromkeys(previous + [name]))
+        targets = list(dict.fromkeys(previous + previous_targets + [name]))
         self.db.set_control('indices', targets)
         try:
             self.snapshot(job)
             self.index.admin.indices.refresh(index=name)
+            self.check_cancel(job)
             actions = [{'remove': {'index': old, 'alias': self.index.alias}} for old in previous]
             actions.append({'add': {'index': name, 'alias': self.index.alias}})
             self.index.admin.indices.update_aliases(body={'actions': actions})
@@ -151,7 +156,7 @@ class Worker:
             self.db.set_control('indices', [name] + previous[:1])
             return {'index': name, 'previous': previous}
         except Exception:
-            self.db.set_control('indices', previous)
+            self.db.set_control('indices', previous_targets)
             raise
 
     def snapshot(self, job, kinds=None):
@@ -176,12 +181,30 @@ class Worker:
         self.db.set_control('indices', [previous[0]] + current[:1])
         return {'index': previous[0]}
 
-    def training(self):
+    def training(self, job=None):
+        checkpoint = (lambda: self.check_cancel(job)) if job else (lambda: None)
+        checkpoint()
         requests = self.db.rows('SELECT r.* FROM discovery_requests r JOIN discovery_preferences p ON p.user_id=r.user_id '
                                'WHERE r.created_at>=UTC_TIMESTAMP()-INTERVAL 90 DAY AND p.personalized=TRUE '
-                               'AND (p.cleared_at IS NULL OR r.created_at>p.cleared_at) ORDER BY r.created_at LIMIT 500000')
-        events = self.db.rows('SELECT * FROM discovery_events WHERE received_at>=UTC_TIMESTAMP()-INTERVAL 90 DAY '
-                             'ORDER BY received_at LIMIT 2000000')
+                               "AND r.created_at<=UTC_TIMESTAMP()-INTERVAL 1 DAY AND r.scene<>'SEARCH' "
+                               'AND (p.cleared_at IS NULL OR r.created_at>p.cleared_at) '
+                               'AND EXISTS (SELECT 1 FROM discovery_events e WHERE e.request_id=r.request_id '
+                               "AND e.user_id=r.user_id AND e.event_type='IMPRESSION' "
+                               'AND e.occurred_at>=r.created_at AND e.occurred_at<=r.created_at+INTERVAL 1 DAY '
+                               'AND e.received_at>=UTC_TIMESTAMP()-INTERVAL 90 DAY) '
+                               'ORDER BY r.created_at LIMIT 500000')
+        checkpoint()
+        events=[]
+        for offset in range(0,len(requests),500):
+            checkpoint()
+            identifiers=[row['request_id'] for row in requests[offset:offset+500]]
+            placeholders=','.join(['%s']*len(identifiers))
+            events.extend(self.db.rows('SELECT * FROM discovery_events WHERE received_at>=UTC_TIMESTAMP()-INTERVAL 90 DAY '
+                f'AND request_id IN ({placeholders}) ORDER BY received_at LIMIT %s',
+                (*identifiers,2_000_001-len(events))))
+            if len(events)>2_000_000:
+                raise ValueError('Training event budget exceeded; keep the current model and reduce the training window')
+        checkpoint()
         shaped_requests = [{'requestId': r['request_id'], 'userId': r['user_id'], 'scene': r['scene'],
                             'createdAt': r['created_at'], 'featureVersion': r['feature_version'],
                             'context': json.loads(r['context_json']), 'items': json.loads(r['items_json'])} for r in requests]
@@ -189,7 +212,9 @@ class Worker:
                           'itemKey': e['item_key'], 'eventType': e['event_type'], 'dwellMs': e['dwell_ms'],
                           'occurredAt': e['occurred_at']} for e in events]
         samples = build_samples(shaped_requests, shaped_events, now=time.time())
-        result = train(samples, self.settings.runtime / 'models')
+        checkpoint()
+        result = train(samples, self.settings.runtime / 'models', check_cancel=checkpoint)
+        checkpoint()
         if result.get('version'):
             self.db.execute('INSERT INTO discovery_models(version,status,feature_version,artifact_path,artifact_sha256,'
                             'metrics_json,trained_until,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s,UTC_TIMESTAMP(6))',
@@ -240,8 +265,8 @@ class Worker:
                     elif kind == 'REFRESH_ENTITIES':
                         self.projection.refresh_entities(force=True)
                         result = self.snapshot(identifier, ['NEWS', 'POST', 'MATCH'])
-                    elif kind == 'ITEMCF': result = build_itemcf(self.db, self.cache)
-                    elif kind == 'TRAIN': result = self.training()
+                    elif kind == 'ITEMCF': result = build_itemcf(self.db, self.cache, check_cancel=lambda: self.check_cancel(identifier))
+                    elif kind == 'TRAIN': result = self.training(identifier)
                     elif kind == 'PUBLISH': result = self.publish(detail)
                     elif kind == 'ROLLBACK_INDEX': result = self.rollback_index()
                     elif kind == 'ROLLBACK_MODEL':
